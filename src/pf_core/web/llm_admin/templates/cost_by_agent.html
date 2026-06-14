@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "macros.html" import cost %}
+{% block title %}Cost by Agent · LLM Admin{% endblock %}
+{% block content %}
+<h1>Cost by Agent</h1>
+<div class="meta">Window: {{ since }} → {{ until }}</div>
+{% if rows %}
+<table>
+  <tr><th>Agent</th><th class="num">Runs</th><th class="num">Total</th><th class="num">Avg/run</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="{{ admin_prefix }}/runs?agent_type={{ r.agent_type }}">{{ r.agent_type }}</a></td>
+    <td class="num">{{ r.runs }}</td>
+    <td class="num">{{ cost(r.total_cost) }}</td>
+    <td class="num">{{ cost(r.avg_cost) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No runs in the window.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Lint: ruff + pf-core's structural build gate (file-size + layering for app/).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+.venv/bin/python -m ruff check app tests
+.venv/bin/python -m pf_core.guards --root app

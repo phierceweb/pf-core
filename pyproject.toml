@@ -1,0 +1,273 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pf-core"
+version = "0.1.0"
+description = "Dependency-light Python foundation (logging, exceptions, config, utils) with LLM clients, anti-slop guards, cost tracking, and an opinionated FastAPI+SQLAlchemy framework available as opt-in extras"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Mike Farr" }]
+keywords = [
+    "llm",
+    "openrouter",
+    "anthropic",
+    "fastapi",
+    "sqlalchemy",
+    "framework",
+    "cost-tracking",
+    "eval",
+    "structured-logging",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    # Foundation kernel: the dependency-light architectural base — structured
+    # logging, exception hierarchy, config + env resolvers, utils, the
+    # ``Service`` base class, and console output. Everything else (LLM
+    # clients + anti-slop guards, HTTP utils, CLI scaffolding, database, web,
+    # jobs, eval) lives behind opt-in extras so a project can adopt pf-core's
+    # discipline without installing the LLM/HTTP stack. See
+    # docs/INSTALLATION.md for the extras matrix.
+    #
+    # These five are the only hard deps: dotenv (config), pyyaml (yaml config,
+    # imported lazily), structlog (logging), nanoid (id generation), rich
+    # (console output in pf_core.output). No httpx, pydantic, json-repair,
+    # tenacity, or typer here — those moved to [http]/[validate]/[llm]/[cli].
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "structlog>=24.0",
+    "nanoid>=2.0",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+# ---------------------------------------------------------------------------
+# Capability extras — each unlocks a tier of pf-core's framework surface.
+# Each composes orthogonally on the foundation base: [db] without LLM, [web]
+# without [db], [llm] standalone.
+# ---------------------------------------------------------------------------
+
+# HTTP utils: pf_core.utils.url_liveness / pf_core.utils.urls (URL liveness +
+# Wayback round-timestamp checks). The lightest network tier — just httpx.
+# Pulled in transitively by [llm].
+http = ["httpx>=0.27"]
+
+# CLI scaffolding: pf_core.cli.create_cli. Install this to reuse pf-core's
+# Typer-based command scaffolding in your own CLI; foundation-only projects
+# can equally just depend on typer directly. Pulled in by [jobs].
+cli = [
+    "typer>=0.12",
+    "click>=8.0",
+]
+
+# Anti-slop output guards: pf_core.llm.parse (+ json-repair recovery) and
+# pf_core.llm.validate (pydantic schema/semantic validation). Pure-Python —
+# NO httpx / clients / tenacity / db — so a project can validate LLM output
+# (or wire its own transport) without the client stack. The stdlib/pyyaml
+# members of pf_core.llm (json_helpers, url_check, prompts, router,
+# safe_apply) need no extra at all once pf_core.llm imports lazily.
+validate = [
+    "json-repair>=0.40",
+    "pydantic>=2.0",
+]
+
+# LLM tier: pf_core.clients.* (OpenRouter / Brave / Claude Code) on top of
+# the anti-slop guards. = [validate] + [http] (clients need httpx) + tenacity
+# (retry). [llm] ⊇ [validate], so every existing [llm]/[full]/[tracking]
+# consumer keeps the same dependency closure (mirrors [tracking] = [db,llm]).
+# Note: tracked_call records to the DB, so it additionally needs [tracking]
+# (= [db,llm]); importing it without [db] raises a friendly 'tracking' error.
+llm = [
+    "pf-core[validate,http]",
+    "tenacity>=8.0",
+]
+
+# Database layer: pf_core.db.*, pf_core.alembic, fully-functional cost guards
+# (BudgetRepo / CostRateRepo). Without [db], pf_core.budget.check_budget still
+# imports and short-circuits gracefully; pf_core.db.* and pf_core.alembic
+# raise ImportError. SQLite needs no driver extra (stdlib).
+db = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+]
+
+# FastAPI web layer: pf_core.web.app_factory, error pages, markdown,
+# pagination, templates.
+web = [
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "uvicorn[standard]>=0.30",
+]
+
+# Job tracker: pf_core.jobs.* (state machine, step history, worker leases)
+# and the pf-jobs CLI. Requires [db] for persistence and [cli] for the CLI;
+# pydantic backs job-argument schema validation in pf_core.jobs.registry.
+jobs = ["pf-core[db,cli]", "pydantic>=2.0"]
+
+# DB-backed LLM run tracking: pf_core.llm.tracking.* and pf_core.llm.cache.*
+# (one row per call with prompts, tokens, cost, validations, job
+# attribution). Requires [db] for persistence and [llm] for the parse/retry
+# machinery it records around (tracking code itself uses tenacity).
+tracking = ["pf-core[db,llm]"]
+
+# Admin dashboard sub-app: pf_core.web.llm_admin (runs, costs, jobs, cache
+# stats, budgets). Requires [web,tracking].
+admin = ["pf-core[web,tracking]"]
+
+# Eval harness: pf_core.eval.* (golden-set replay, structured-diff and
+# LLM-judge comparators, pf-eval CLI). Requires [tracking,jobs].
+eval = ["pf-core[tracking,jobs]"]
+
+# ---------------------------------------------------------------------------
+# Database driver extras — pick one per consumer (mutually exclusive).
+# ---------------------------------------------------------------------------
+mysql = ["pymysql>=1.1"]
+postgres = ["psycopg[binary]>=3.2"]
+
+# ---------------------------------------------------------------------------
+# Other capability extras
+# ---------------------------------------------------------------------------
+
+# Redis-backed cache region: pf_core.cache (with graceful no-op fallback
+# when Redis is unreachable).
+redis = ["dogpile.cache>=1.3", "redis>=5.0"]
+
+# Per-IP rate limiting on FastAPI routes. Requires [web].
+ratelimit = [
+    "pf-core[web]",
+    "slowapi>=0.1.9",
+]
+
+# Strict JSON Schema validation in pf_core.llm.validate (stdlib jsonschema
+# rather than the lighter Pydantic path).
+jsonschema = ["jsonschema>=4.0"]
+
+# Article fetch + extract: pf_core.utils.article_fetch (title, body,
+# publish-date with Wayback Machine fallback for paywalled URLs). tenacity
+# drives the Wayback retry loop.
+articles = [
+    "trafilatura>=1.6",
+    "htmldate>=1.7",
+    "tenacity>=8.0",
+]
+
+# Intent-named meta-extra: "I want to crawl/fetch web pages." Composes the
+# fetch+extract stack ([articles]) with the URL-utils tier ([http]) —
+# article_fetch imports pf_core.utils.urls, which needs httpx. Exists so a
+# consumer asking "how do I crawl?" gets one named line instead of having to
+# know the composition. Front-end serving is a different intent: [web].
+crawl = ["pf-core[http,articles]"]
+
+# Direct Anthropic API client (pf_core.clients.anthropic). Provides a
+# multimodal-capable alternative to the OpenRouter and Claude Code
+# transports for consumers that want the official SDK's vision support
+# and direct usage / cache-token reporting.
+anthropic = ["anthropic>=0.30"]
+
+# Perceptual-hash image dedup: pf_core.utils.phash (DCT-based phash via
+# ImageHash + Pillow). Used by document-processing consumers to detect
+# repeated page decorations (header logos, footer marks) and re-encoded
+# duplicates that sha256 would miss.
+image-phash = [
+    "ImageHash>=4.3",
+    "Pillow>=10.0",
+]
+
+# ---------------------------------------------------------------------------
+# Meta-extra for full-stack apps that want the whole framework.
+# Add the dialect driver ([mysql]/[postgres]) and any optional capability
+# extras ([articles]) separately.
+# ---------------------------------------------------------------------------
+full = [
+    "pf-core[db]",
+    "pf-core[web]",
+    "pf-core[llm]",
+    "pf-core[cli]",
+    "pf-core[jobs]",
+    "pf-core[tracking]",
+    "pf-core[admin]",
+    "pf-core[eval]",
+    "pf-core[redis]",
+    "pf-core[ratelimit]",
+    "pf-core[jsonschema]",
+]
+
+# ---------------------------------------------------------------------------
+# Dev / test extras
+# ---------------------------------------------------------------------------
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "factory-boy>=3.3",
+    "ruff>=0.6",
+    "pre-commit>=3.5",
+]
+test-containers = [
+    "testcontainers[mysql]>=4.0",
+]
+
+[project.urls]
+Repository = "https://github.com/phierceweb/pf-core"
+Changelog = "https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md"
+Issues = "https://github.com/phierceweb/pf-core/issues"
+
+[project.scripts]
+pf-guards = "pf_core.guards.structure:run_cli"
+
+[project.entry-points.pytest11]
+pf_core = "pf_core.testing.fixtures"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"pf_core" = ["docs/*.md", "py.typed"]
+"pf_core.web.llm_admin" = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]   # don't collect templates/consumer-*/tests/ (they hold __PKG__ tokens)
+pythonpath = ["."]
+
+# ---------------------------------------------------------------------------
+# Lint config — ruff
+# ---------------------------------------------------------------------------
+# Conservative starting set: what ruff catches by default (E, W, F) plus
+# bugbear (B) for common bug/antipattern checks. isort (I) and pyupgrade
+# (UP) are deferred to a separate formatting pass to keep enforcement
+# diffs reviewable. Line length (E501) is also deferred — most existing
+# code is within 100, but enforcing E501 would force a layout pass we
+# haven't decided on yet.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (unused imports, undefined names, etc.)
+    "B",   # flake8-bugbear (common bugs / antipatterns)
+]
+ignore = [
+    "E501",  # line too long — defer to a separate formatting pass
+    "B008",  # function call in default arg — common in FastAPI / Typer
+    "B904",  # raise-from — `raise X from y` discipline pre-dates this lint
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files are allowed to use bare asserts and unused-but-imported
+# fixtures; F841 (unused local) often shows up when a test imports a
+# class only to verify it's importable. Keep these lints active in
+# `src/` where they actually catch bugs.
+"tests/**/*.py" = ["B011"]

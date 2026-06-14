@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# bin/setup-common — Shared setup functions for pf-core consumer projects.
+#
+# Source this file from your project's bin/setup, then call the functions you
+# need.  It never runs anything on its own — the consumer script controls flow.
+#
+# Usage (in your project's bin/setup):
+#   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#   ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+#   cd "$ROOT"
+#   PF_ROOT="$(cd "$ROOT/../pf-core" && pwd)"
+#   source "$PF_ROOT/bin/setup-common"
+#
+# Available functions:
+#   pf_info, pf_ok, pf_warn, pf_header   — output helpers
+#   pf_pick_python [ENV_VAR_NAME]         — find Python 3.11+ interpreter
+#   pf_ensure_venv                        — create or validate .venv
+#   pf_install_deps                       — pip install from requirements.txt
+#   pf_sync_env                           — copy/sync .env from .env.example
+#   pf_ensure_symlinks                    — wire .claude/ and .cursor/ to .ai/
+
+set -euo pipefail
+
+# ── Output helpers ────────────────────────────────────────────────────────────
+pf_info()   { echo "  $*"; }
+pf_ok()     { echo "  ✓ $*"; }
+pf_warn()   { echo "  ! $*"; }
+pf_header() { echo; echo "── $* ──────────────────────────────────────────"; }
+
+# ── Python detection ──────────────────────────────────────────────────────────
+# Finds a Python >= 3.11 interpreter.  Honours an optional env-var override
+# whose name is passed as the first argument (e.g. pf_pick_python GRADING_PYTHON).
+# Prints the path to stdout; exits 1 if nothing suitable is found.
+pf_pick_python() {
+  local env_var="${1:-}"
+  local p tried="" candidates=() i
+
+  # Honour project-specific override env var (e.g. GRADING_PYTHON)
+  if [[ -n "$env_var" && -n "${!env_var:-}" ]]; then
+    candidates+=("${!env_var}")
+  fi
+
+  for i in python3.13 python3.12 python3.11; do
+    p="$(command -v "$i" 2>/dev/null || true)"
+    [[ -n "$p" ]] && candidates+=("$p")
+  done
+  p="$(command -v python3 2>/dev/null || true)"
+  [[ -n "$p" ]] && candidates+=("$p")
+
+  for p in "${candidates[@]}"; do
+    [[ -n "$p" && -x "$p" ]] || continue
+    case " $tried " in *" $p "*) continue ;; esac
+    tried+=" $p"
+    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+      echo "$p"
+      return 0
+    fi
+  done
+
+  if [[ -n "$env_var" && -n "${!env_var:-}" ]]; then
+    pf_warn "$env_var (${!env_var}) is not Python 3.11+ — no other interpreter worked."
+  fi
+  echo "No Python 3.11+ interpreter found. Install 3.11 or newer (e.g. brew install python@3.12)" >&2
+  echo "or set ${env_var:-PYTHON} to a 3.11+ binary, then run bin/setup again." >&2
+  exit 1
+}
+
+# ── Venv ──────────────────────────────────────────────────────────────────────
+# Creates .venv if it doesn't exist; validates the interpreter version if it does.
+# Pass the env-var name for pf_pick_python (optional).
+pf_ensure_venv() {
+  local env_var="${1:-}"
+
+  if [[ ! -d ".venv" ]]; then
+    local py
+    py="$(pf_pick_python "$env_var")"
+    pf_info "Creating .venv with $("$py" --version | tr -d '\r') ($py) ..."
+    "$py" -m venv .venv
+    pf_ok "Created .venv"
+  elif [[ -x ".venv/bin/python3" ]]; then
+    if ! .venv/bin/python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+      echo "This project requires Python 3.11+. Your .venv uses an older interpreter." >&2
+      echo "Recreate the venv, then run bin/setup again:" >&2
+      echo "  rm -rf .venv && bin/setup" >&2
+      exit 1
+    fi
+    pf_ok ".venv already exists ($(.venv/bin/python3 --version | tr -d '\r'))"
+  fi
+}
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
+# Installs from requirements.txt (or a custom file passed as $1).
+pf_install_deps() {
+  local req="${1:-requirements.txt}"
+  pf_info "Installing requirements ($req) ..."
+  .venv/bin/python3 -m pip install --quiet --upgrade pip
+  .venv/bin/python3 -m pip install --quiet -r "$req"
+  pf_ok "Dependencies installed"
+}
+
+# ── .env ──────────────────────────────────────────────────────────────────────
+# Copies .env.example -> .env if missing; syncs new keys if .env exists.
+# Pass a message to show after first-time copy (optional).
+pf_sync_env() {
+  local first_copy_msg="${1:-}"
+  local pf_root
+  pf_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd 2>/dev/null || echo "")"
+
+  if [[ ! -f ".env" ]]; then
+    if [[ -f ".env.example" ]]; then
+      cp .env.example .env
+      pf_ok "Copied .env.example -> .env"
+      [[ -n "$first_copy_msg" ]] && pf_warn "$first_copy_msg"
+    fi
+  else
+    pf_ok ".env already exists — syncing any new keys ..."
+    if [[ -n "$pf_root" && -x "$pf_root/bin/sync-env" ]]; then
+      bash "$pf_root/bin/sync-env" .env.example .env
+    elif [[ -x "bin/sync-env" ]]; then
+      bash bin/sync-env .env.example .env
+    fi
+  fi
+}
+
+# ── Symlinks ──────────────────────────────────────────────────────────────────
+# Wires .claude/{rules,skills} and .cursor/{rules,skills} to .ai/{rules,skills}.
+pf_ensure_symlinks() {
+  _pf_ensure_symlink() {
+    local link="$1" target="$2"
+    local dir
+    dir="$(dirname "$link")"
+    mkdir -p "$dir"
+    if [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
+      pf_ok "$link -> $target"
+    else
+      rm -f "$link"
+      ln -s "$target" "$link"
+      pf_ok "Created $link -> $target"
+    fi
+  }
+
+  _pf_ensure_symlink ".claude/rules" "../.ai/rules"
+  _pf_ensure_symlink ".claude/skills" "../.ai/skills"
+  _pf_ensure_symlink ".cursor/rules" "../.ai/rules"
+  _pf_ensure_symlink ".cursor/skills" "../.ai/skills"
+}

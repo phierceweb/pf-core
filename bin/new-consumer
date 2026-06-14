@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Scaffold a new pf-core consumer project.
+
+    bin/new-consumer <name> --layout {lib|app} [--extras cli,llm] [--dest DIR]
+
+Stamps a runnable, conformant project: a `pyproject.toml` with the correct
+pf-core pin + extras, `bin/` wrappers, the chosen layout's skeleton,
+`.ai/rules/` copied from pf-core, and a day-1 vertical slice so `bin/run`
+works immediately after `bin/setup`.
+
+This is a from-checkout dev tool — it reads `templates/` and `.ai/rules/` from
+the pf-core source tree (they are not shipped in the wheel). The *generated*
+project then depends on pf-core via a PyPI version pin (see the templates).
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import sys
+from pathlib import Path
+
+PF_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_EXTRAS = {"lib": "cli", "app": "full"}
+
+
+def _pkg_name(name: str) -> str:
+    pkg = name.strip().lower().replace("-", "_").replace(" ", "_")
+    if not pkg.isidentifier():
+        sys.exit(f"error: {name!r} does not yield a valid package name ({pkg!r})")
+    return pkg
+
+
+def _substitute(text: str, *, name: str, pkg: str, extras: str) -> str:
+    return (
+        text.replace("__NAME__", name)
+        .replace("__PKG__", pkg)
+        .replace("__EXTRAS__", extras)
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="new-consumer", description="Scaffold a pf-core consumer.")
+    p.add_argument("name", help="Project / distribution name, e.g. my-tool.")
+    p.add_argument(
+        "--layout", choices=("lib", "app"), required=True,
+        help="lib = CLI/library (src-layout); app = FastAPI + DB (app-layout).",
+    )
+    p.add_argument(
+        "--extras", default=None,
+        help="pf-core extras, comma-separated. Default: cli (lib) / full (app).",
+    )
+    p.add_argument(
+        "--dest", default=".",
+        help="Parent directory to create the project in (default: cwd).",
+    )
+    args = p.parse_args(argv)
+
+    name = args.name.strip()
+    pkg = _pkg_name(name)
+    extras = args.extras or DEFAULT_EXTRAS[args.layout]
+    template = PF_ROOT / "templates" / f"consumer-{args.layout}"
+    if not template.is_dir():
+        sys.exit(f"error: template not found: {template}")
+
+    dest = Path(args.dest).resolve() / name
+    if dest.exists() and any(dest.iterdir()):
+        sys.exit(f"error: {dest} already exists and is not empty")
+
+    # 1. Stamp the template — substitute tokens in both content and path.
+    for src in sorted(template.rglob("*")):
+        if src.is_dir() or "__pycache__" in src.parts or src.suffix == ".pyc":
+            continue
+        rel_parts = [part.replace("__PKG__", pkg) for part in src.relative_to(template).parts]
+        out = dest.joinpath(*rel_parts)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            _substitute(src.read_text(encoding="utf-8"), name=name, pkg=pkg, extras=extras),
+            encoding="utf-8",
+        )
+        if rel_parts[0] == "bin":
+            out.chmod(0o755)
+
+    # 2. Copy pf-core's project rules; stub the rest of .ai/.
+    rules_dst = dest / ".ai" / "rules"
+    rules_dst.mkdir(parents=True, exist_ok=True)
+    for md in sorted((PF_ROOT / ".ai" / "rules").glob("*.md")):
+        shutil.copy2(md, rules_dst / md.name)
+    for d in ("plans", "docs", "scripts"):
+        sub = dest / ".ai" / d
+        sub.mkdir(parents=True, exist_ok=True)
+        (sub / ".gitkeep").touch()
+
+    print(f"✓ scaffolded {args.layout} project at {dest}")
+    print(f"  package: {pkg}   extras: [{extras}]")
+    print("\nNext:")
+    print(f"  cd {dest}")
+    print("  bin/setup")
+    print("  bin/run hello" if args.layout == "lib" else "  bin/run")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

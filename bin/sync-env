@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# bin/sync-env — Adds missing keys from .env.example to .env (preserves existing values).
+set -euo pipefail
+
+EXAMPLE="${1:-.env.example}"
+TARGET="${2:-.env}"
+
+if [[ ! -f "$EXAMPLE" ]]; then
+  echo "Error: $EXAMPLE not found" >&2
+  exit 1
+fi
+
+if [[ ! -f "$TARGET" ]]; then
+  echo "Error: $TARGET not found — copy .env.example to .env first" >&2
+  exit 1
+fi
+
+added=0
+
+while IFS= read -r line; do
+  # Skip blank lines and comments
+  if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+    continue
+  fi
+
+  # Extract key (everything before the first =)
+  key="${line%%=*}"
+  [[ -z "$key" ]] && continue
+
+  # Check if key already exists in target (as KEY= at line start)
+  if ! grep -qE "^${key}=" "$TARGET"; then
+    echo "" >> "$TARGET"
+    echo "# (added from $EXAMPLE)" >> "$TARGET"
+    echo "$line" >> "$TARGET"
+    echo "  + $key"
+    ((added++)) || true
+  fi
+done < "$EXAMPLE"
+
+if [[ $added -eq 0 ]]; then
+  echo "  .env is already up to date."
+else
+  echo ""
+  echo "  Added $added key(s) to $TARGET."
+fi

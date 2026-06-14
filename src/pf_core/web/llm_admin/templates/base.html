@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}LLM Admin{% endblock %}</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 0; background: #f7f7f9; color: #222; }
+    nav { background: #222; color: #eee; padding: 12px 24px; display: flex; gap: 16px; align-items: center; }
+    nav a { color: #ccc; text-decoration: none; font-size: 14px; }
+    nav a:hover, nav a.active { color: #fff; }
+    nav .brand { font-weight: 600; color: #fff; margin-right: 24px; }
+    main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 16px 0; }
+    h2 { font-size: 16px; margin: 24px 0 8px 0; color: #444; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+    th { background: #fafafa; font-weight: 600; color: #666; }
+    tr:last-child td { border-bottom: none; }
+    a { color: #0366d6; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .kpi { background: #fff; padding: 14px 18px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .kpi .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+    .kpi .sub { font-size: 11px; color: #999; margin-top: 2px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+    .badge-success { background: #e6f4ea; color: #1e7e34; }
+    .badge-error { background: #fde8e8; color: #b02a37; }
+    .badge-warn { background: #fff4e5; color: #a65100; }
+    .badge-info { background: #e7f3ff; color: #0b5cad; }
+    .meta { color: #888; font-size: 12px; margin-bottom: 16px; }
+    .filters { background: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .filters input, .filters select { padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+    .filters button { padding: 4px 14px; background: #0366d6; color: #fff; border: 0; border-radius: 4px; font-size: 12px; cursor: pointer; }
+    pre { background: #f4f4f6; padding: 10px; border-radius: 4px; overflow: auto; font-size: 12px; }
+    .pager { margin-top: 12px; display: flex; gap: 12px; align-items: center; font-size: 13px; }
+    .progress { background: #eee; border-radius: 3px; height: 6px; overflow: hidden; }
+    .progress > div { height: 100%; background: #0366d6; }
+    .progress.warn > div { background: #f5a623; }
+    .progress.danger > div { background: #b02a37; }
+    .num { font-variant-numeric: tabular-nums; text-align: right; }
+  </style>
+</head>
+<body>
+<nav>
+  <span class="brand">pf-core LLM Admin</span>
+  <a href="{{ admin_prefix }}/">Dashboard</a>
+  <a href="{{ admin_prefix }}/runs">Runs</a>
+  <a href="{{ admin_prefix }}/cost-by-model">Cost by Model</a>
+  <a href="{{ admin_prefix }}/cost-by-agent">Cost by Agent</a>
+  <a href="{{ admin_prefix }}/jobs">Jobs</a>
+  <a href="{{ admin_prefix }}/cache">Cache</a>
+  <a href="{{ admin_prefix }}/budgets">Budgets</a>
+</nav>
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
