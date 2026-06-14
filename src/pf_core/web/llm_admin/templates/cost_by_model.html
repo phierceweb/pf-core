@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "macros.html" import cost %}
+{% block title %}Cost by Model · LLM Admin{% endblock %}
+{% block content %}
+<h1>Cost by Model</h1>
+<div class="meta">Window: {{ since }} → {{ until }}</div>
+{% if rows %}
+<table>
+  <tr><th>Model</th><th class="num">Runs</th><th class="num">Total</th><th class="num">Avg/run</th><th class="num">Prompt tok</th><th class="num">Completion tok</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.model }}</td>
+    <td class="num">{{ r.runs }}</td>
+    <td class="num">{{ cost(r.total_cost) }}</td>
+    <td class="num">{{ cost(r.avg_cost) }}</td>
+    <td class="num">{{ r.prompt_tokens }}</td>
+    <td class="num">{{ r.completion_tokens }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No runs in the window.</p>
+{% endif %}
+{% endblock %}

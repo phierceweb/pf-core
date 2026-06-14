@@ -1,0 +1,23 @@
+{% macro status_badge(status) -%}
+  {%- if status == 'success' -%}
+    <span class="badge badge-success">{{ status }}</span>
+  {%- elif status in ('cache_hit',) -%}
+    <span class="badge badge-info">{{ status }}</span>
+  {%- elif status in ('budget_blocked', 'error', 'failure') -%}
+    <span class="badge badge-error">{{ status }}</span>
+  {%- else -%}
+    <span class="badge badge-warn">{{ status }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro cost(v) -%}
+  {%- if v is none -%}—{%- else -%}${{ '%.4f' | format(v | float) }}{%- endif -%}
+{%- endmacro %}
+
+{% macro pct(v) -%}
+  {%- if v is none -%}—{%- else -%}{{ '%.1f' | format((v | float) * 100) }}%{%- endif -%}
+{%- endmacro %}
+
+{% macro timestamp(ts) -%}
+  {%- if ts is none -%}—{%- else -%}{{ ts }}{%- endif -%}
+{%- endmacro %}

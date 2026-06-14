@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "__NAME__"
+version = "0.1.0"
+description = "A pf-core full-stack app (FastAPI + SQLAlchemy)."
+requires-python = ">=3.11"
+dependencies = [
+    # pf-core with the whole framework surface. Add a DB driver extra
+    # ([postgres] or [mysql]) for non-SQLite backends. Until pf-core is on
+    # PyPI, pin a git tag; afterwards: "pf-core[__EXTRAS__]>=0.1.0".
+    "pf-core[__EXTRAS__] @ git+https://github.com/phierceweb/pf-core.git@v0.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+# Ruff config mirrors pf-core's conservative set (see .ai/rules/code-style.md).
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "B"]
+ignore = ["E501", "B008", "B904"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B011"]

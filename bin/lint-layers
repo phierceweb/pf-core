@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Check layered architecture import rules.
+
+Run from a consumer project root:
+    python ../pf-core/bin/lint-layers
+
+Exit codes:
+    0 — no violations
+    1 — violations found
+    2 — no app/ directory found
+"""
+
+import ast
+import sys
+from pathlib import Path
+
+ALLOWED_IMPORTS: dict[str, set[str]] = {
+    "api": {"services", "orchestrators"},
+    "cli": {"services", "orchestrators"},
+    "orchestrators": {"services"},
+    "services": {"repo", "clients"},
+    "repo": set(),
+    "clients": set(),
+}
+
+ALL_LAYERS = set(ALLOWED_IMPORTS)
+
+FRIENDLY_HINT: dict[tuple[str, str], str] = {
+    ("api", "repo"): "should go through services",
+    ("cli", "repo"): "should go through services",
+    ("orchestrators", "repo"): "should go through services",
+    ("orchestrators", "clients"): "should go through services",
+    ("repo", "services"): "repo must not import from upper layers",
+    ("repo", "orchestrators"): "repo must not import from upper layers",
+    ("clients", "services"): "clients must not import from upper layers",
+    ("clients", "orchestrators"): "clients must not import from upper layers",
+    ("services", "orchestrators"): "services must not import from orchestrators",
+    ("services", "api"): "services must not import from entry points",
+    ("services", "cli"): "services must not import from entry points",
+}
+
+
+def _layer_for_path(path: Path) -> str | None:
+    """Return the layer name for a file path, or None if not in a checked layer."""
+    parts = path.parts
+    try:
+        app_idx = parts.index("app")
+    except ValueError:
+        return None
+    if app_idx + 1 >= len(parts):
+        return None
+    candidate = parts[app_idx + 1]
+    return candidate if candidate in ALL_LAYERS else None
+
+
+def _imported_layer(module_name: str) -> str | None:
+    """Extract the layer from an app.* import, or None if not an app import."""
+    parts = module_name.split(".")
+    if len(parts) >= 2 and parts[0] == "app" and parts[1] in ALL_LAYERS:
+        return parts[1]
+    return None
+
+
+def _should_skip(filepath: Path) -> bool:
+    """Check if file should be skipped via magic comment."""
+    try:
+        with open(filepath, encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i >= 5:
+                    break
+                if "lint-layers: skip" in line:
+                    return True
+    except OSError:
+        return True
+    return False
+
+
+def _check_file(filepath: Path, app_root: Path) -> list[dict]:
+    """Return list of violation dicts for a single file."""
+    source_layer = _layer_for_path(filepath)
+    if source_layer is None:
+        return []
+
+    if _should_skip(filepath):
+        return []
+
+    try:
+        source = filepath.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(filepath))
+    except SyntaxError as e:
+        print(f"Warning: skipping {filepath} (syntax error: {e})", file=sys.stderr)
+        return []
+
+    allowed = ALLOWED_IMPORTS[source_layer]
+    violations = []
+    rel_path = filepath.relative_to(app_root.parent)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                target_layer = _imported_layer(alias.name)
+                if target_layer and target_layer != source_layer and target_layer not in allowed:
+                    hint = FRIENDLY_HINT.get((source_layer, target_layer), "not allowed")
+                    violations.append({
+                        "file": str(rel_path),
+                        "line": node.lineno,
+                        "import": alias.name,
+                        "source": source_layer,
+                        "target": target_layer,
+                        "hint": hint,
+                    })
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            target_layer = _imported_layer(node.module)
+            if target_layer and target_layer != source_layer and target_layer not in allowed:
+                hint = FRIENDLY_HINT.get((source_layer, target_layer), "not allowed")
+                violations.append({
+                    "file": str(rel_path),
+                    "line": node.lineno,
+                    "import": node.module,
+                    "source": source_layer,
+                    "target": target_layer,
+                    "hint": hint,
+                })
+
+    return violations
+
+
+def main() -> int:
+    app_root = Path.cwd() / "app"
+    if not app_root.is_dir():
+        print("Error: no app/ directory found in current directory.", file=sys.stderr)
+        return 2
+
+    all_violations: dict[str, list[dict]] = {}
+
+    for pyfile in sorted(app_root.rglob("*.py")):
+        # Skip test files and conftest
+        if "tests" in pyfile.parts or pyfile.name == "conftest.py":
+            continue
+        violations = _check_file(pyfile, app_root)
+        if violations:
+            key = violations[0]["file"]
+            all_violations.setdefault(key, []).extend(violations)
+
+    if not all_violations:
+        print("No layer violations found.")
+        return 0
+
+    total = 0
+    for filepath, violations in sorted(all_violations.items()):
+        print(f"\nLAYER VIOLATION: {filepath}")
+        for v in violations:
+            print(f"  line {v['line']}: import {v['import']} ({v['source']} → {v['target']}, {v['hint']})")
+            total += 1
+
+    print(f"\nFound {total} violation(s) in {len(all_violations)} file(s).")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

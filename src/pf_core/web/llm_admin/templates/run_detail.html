@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, cost %}
+{% block title %}Run #{{ run.id }} · LLM Admin{% endblock %}
+{% block content %}
+<h1>Run #{{ run.id }}</h1>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">Agent</div><div class="value">{{ run.agent_type }}</div></div>
+  <div class="kpi"><div class="label">Model</div><div class="value">{{ run.model }}</div></div>
+  <div class="kpi"><div class="label">Status</div><div class="value">{{ status_badge(run.status) }}</div></div>
+  <div class="kpi"><div class="label">Cost</div><div class="value">{{ cost(run.cost_usd) }}</div></div>
+  <div class="kpi"><div class="label">Tokens (in/out)</div><div class="value">{{ run.prompt_tokens or 0 }} / {{ run.completion_tokens or 0 }}</div></div>
+  <div class="kpi"><div class="label">Duration</div><div class="value">{{ run.duration_ms or 0 }}ms</div></div>
+</div>
+
+<h2>Sampling</h2>
+<table>
+  <tr><th>temperature</th><td>{{ run.temperature }}</td><th>top_p</th><td>{{ run.top_p }}</td><th>max_tokens</th><td>{{ run.max_tokens }}</td></tr>
+  <tr><th>seed</th><td>{{ run.seed }}</td><th>provider</th><td>{{ run.provider }}</td><th>fingerprint</th><td>{{ run.model_fingerprint or '—' }}</td></tr>
+  <tr><th>input_hash</th><td colspan="5"><code>{{ run.input_hash or '—' }}</code></td></tr>
+</table>
+
+{% if run.job_id %}
+<h2>Job</h2>
+<p><a href="{{ admin_prefix }}/job/{{ run.job_id }}">Job #{{ run.job_id }}</a></p>
+{% endif %}
+
+{% if run.payload %}
+<h2>Rendered prompts</h2>
+{% if run.payload.rendered_system %}<h3 style="font-size:13px;color:#666;">system</h3><pre>{{ run.payload.rendered_system }}</pre>{% endif %}
+{% if run.payload.rendered_user %}<h3 style="font-size:13px;color:#666;">user</h3><pre>{{ run.payload.rendered_user }}</pre>{% endif %}
+
+<h2>Response</h2>
+{% if run.payload.raw_response %}<pre>{{ run.payload.raw_response }}</pre>{% endif %}
+{% if run.payload.parsed_output %}<h3 style="font-size:13px;color:#666;">parsed</h3><pre>{{ run.payload.parsed_output | tojson(indent=2) }}</pre>{% endif %}
+{% endif %}
+
+{% if run.configs %}
+<h2>Configs</h2>
+<table>
+  <tr><th>Kind</th><th>Label</th></tr>
+  {% for c in run.configs %}
+  <tr><td>{{ c.config_kind }}</td><td>{{ resolve_config(c.config_kind, c.config_id) }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if run.validations %}
+<h2>Validations</h2>
+<table>
+  <tr><th>Validator</th><th>Severity</th><th>Passed</th><th>Details</th></tr>
+  {% for v in run.validations %}
+  <tr>
+    <td>{{ v.validator }}</td>
+    <td>{{ v.severity }}</td>
+    <td>{% if v.passed %}✅{% else %}❌{% endif %}</td>
+    <td><pre style="margin:0;">{{ v.details | tojson if v.details else '—' }}</pre></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if run.outcomes %}
+<h2>Outcomes</h2>
+<table>
+  <tr><th>Kind</th><th class="num">Score</th><th>Notes</th><th>Recorded</th></tr>
+  {% for o in run.outcomes %}
+  <tr><td>{{ o.outcome_kind }}</td><td class="num">{{ o.score if o.score is not none else '—' }}</td><td>{{ o.notes or '—' }}</td><td>{{ o.recorded_at }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if run.tags %}
+<h2>Tags</h2>
+<p>{% for t in run.tags %}<span class="badge badge-info" style="margin-right:6px;">{{ t }}</span>{% endfor %}</p>
+{% endif %}
+
+{% if run.metrics %}
+<h2>Metrics</h2>
+<table>
+  <tr><th>Name</th><th class="num">Value</th></tr>
+  {% for m in run.metrics %}
+  <tr><td>{{ m.metric_name }}</td><td class="num">{{ m.metric_value }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if run.links_out or run.links_in %}
+<h2>Links</h2>
+{% if run.links_out %}
+<h3 style="font-size:13px;color:#666;">Outgoing (this → child)</h3>
+<table>
+  <tr><th>Relation</th><th>Child</th></tr>
+  {% for l in run.links_out %}
+  <tr><td>{{ l.relation }}</td><td><a href="{{ admin_prefix }}/run/{{ l.child_run_id }}">#{{ l.child_run_id }}</a></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if run.links_in %}
+<h3 style="font-size:13px;color:#666;">Incoming (parent → this)</h3>
+<table>
+  <tr><th>Relation</th><th>Parent</th></tr>
+  {% for l in run.links_in %}
+  <tr><td>{{ l.relation }}</td><td><a href="{{ admin_prefix }}/run/{{ l.parent_run_id }}">#{{ l.parent_run_id }}</a></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endif %}
+
+{% if run.error %}
+<h2>Error</h2>
+<pre style="background:#fde8e8;color:#b02a37;">{{ run.error }}</pre>
+{% endif %}
+{% endblock %}

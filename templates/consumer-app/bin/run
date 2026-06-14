@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Run a sibling bin/ command, or start the web server (the default).
+#
+#   bin/run          # start the server (same as bin/web)
+#   bin/run test     # delegates to bin/test
+#   bin/run lint     # delegates to bin/lint
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+if [[ "$#" -gt 0 && "$1" != "run" && -x "$ROOT/bin/$1" ]]; then
+  CMD="$1"; shift
+  exec "$ROOT/bin/$CMD" "$@"
+fi
+
+if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
+  echo "No .venv found. Run bin/setup first." >&2
+  exit 1
+fi
+exec "$ROOT/.venv/bin/python" -m app "$@"

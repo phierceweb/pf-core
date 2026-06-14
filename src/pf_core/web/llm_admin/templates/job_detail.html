@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, cost %}
+{% block title %}Job #{{ job.id }} · LLM Admin{% endblock %}
+{% block content %}
+<h1>Job #{{ job.id }}</h1>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">Kind</div><div class="value">{{ job.kind }}</div></div>
+  <div class="kpi"><div class="label">Status</div><div class="value">{{ status_badge(job.status) }}</div></div>
+  <div class="kpi"><div class="label">Progress</div><div class="value">
+    {% if job.progress_total %}{{ job.progress_current }}/{{ job.progress_total }}{% else %}—{% endif %}
+  </div></div>
+  <div class="kpi"><div class="label">LLM runs</div><div class="value">{{ job.runs_summary.runs or 0 }}</div></div>
+  <div class="kpi"><div class="label">Total cost</div><div class="value">{{ cost(job.runs_summary.total_cost) }}</div></div>
+</div>
+
+<h2>Timeline</h2>
+<table>
+  <tr><th>Created</th><td>{{ job.created_at }}</td><th>Started</th><td>{{ job.started_at or '—' }}</td><th>Finished</th><td>{{ job.finished_at or '—' }}</td></tr>
+  <tr><th>Priority</th><td>{{ job.priority }}</td><th>Created by</th><td>{{ job.created_by or '—' }}</td><th>Claimed by</th><td>{{ job.claimed_by or '—' }}</td></tr>
+</table>
+
+{% if job.error %}
+<h2>Error</h2>
+<pre style="background:#fde8e8;color:#b02a37;">{{ job.error }}</pre>
+{% endif %}
+
+{% if job.steps %}
+<h2>Steps</h2>
+<table>
+  <tr><th>#</th><th>Name</th><th>Status</th><th class="num">Duration</th><th>Started</th><th>Finished</th></tr>
+  {% for s in job.steps %}
+  <tr>
+    <td class="num">{{ s.step_index }}</td>
+    <td>{{ s.name }}</td>
+    <td>{{ status_badge(s.status) }}</td>
+    <td class="num">{{ s.duration_ms or 0 }}ms</td>
+    <td>{{ s.started_at }}</td>
+    <td>{{ s.finished_at or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if job.events %}
+<h2>Events (most recent 200)</h2>
+<table>
+  <tr><th>Time</th><th>Type</th><th>Message</th></tr>
+  {% for e in job.events %}
+  <tr>
+    <td>{{ e.created_at }}</td>
+    <td><span class="badge badge-info">{{ e.event_type }}</span></td>
+    <td>{{ e.message }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<p style="margin-top:12px;"><a href="{{ admin_prefix }}/runs?job_id={{ job.id }}">View LLM runs for this job →</a></p>
+{% endblock %}
