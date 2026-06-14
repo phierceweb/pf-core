@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""pf-jobs — admin CLI for the pf-core jobs table.
+
+Thin shim over :mod:`pf_core.cli.jobs`. Consumers can skip this script
+entirely by mounting the same sub-app inside their own CLI::
+
+    from pf_core.cli.jobs import app as jobs_app
+    my_app.add_typer(jobs_app, name="jobs")
+
+Commands::
+
+    pf-jobs list [--kind X] [--status Y] [--since 24h] [--limit 20]
+    pf-jobs show <id>
+    pf-jobs retry <id>
+    pf-jobs cancel <id> [--reason "..."]
+    pf-jobs reclaim [--lease-seconds 300]
+    pf-jobs purge --older-than 90d [--status succeeded]
+"""
+
+from __future__ import annotations
+
+from pf_core.cli import create_cli, run_cli
+from pf_core.cli.jobs import app as jobs_app
+
+app = create_cli("pf-jobs", help="Admin CLI for pf-core jobs.")
+
+# Flatten the sub-app's commands onto the top-level `pf-jobs <cmd>` namespace
+# so existing invocations (``pf-jobs list``) keep working.
+for command in jobs_app.registered_commands:
+    app.registered_commands.append(command)
+
+
+def main() -> None:
+    run_cli(app)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""pf-eval — golden-set replay and regression testing CLI.
+
+Usage::
+
+    pf-eval run --version golden_v1 --agent-type drafter \\
+                --target model=anthropic/claude-opus-4-7 \\
+                [--tag-as experiment:opus47-v5] \\
+                [--output out/report.html]
+
+    pf-eval compare --baseline experiment:current-prod \\
+                    --candidate experiment:opus47-v5 \\
+                    --agent-type drafter
+
+    pf-eval list-golden --version golden_v1 [--agent-type drafter]
+
+    pf-eval promote <run_id> --version golden_v1 [--notes "..."]
+
+    pf-eval demote <run_id> --version golden_v1
+
+Exit code 0 when the eval passes (mean score ≥ threshold), 1 otherwise.
+"""
+
+from __future__ import annotations
+
+import sys
+from typing import Optional
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from pf_core.cli import create_cli, run_cli
+
+app = create_cli("pf-eval", help="Golden-set replay and regression testing.")
+stdout = Console()
+stderr = Console(stderr=True)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_target(target_strs: list[str]) -> dict:
+    """Parse ``key=value`` pairs into a dict."""
+    out: dict = {}
+    for item in target_strs:
+        if "=" not in item:
+            raise typer.BadParameter(
+                f"target must be key=value pairs, got {item!r}"
+            )
+        k, _, v = item.partition("=")
+        out[k.strip()] = v.strip()
+    return out
+
+
+# ---------------------------------------------------------------------------
+# pf-eval run
+# ---------------------------------------------------------------------------
+
+
+@app.command("run")
+def run_eval(
+    version: str = typer.Option(..., "--version", help="Golden set version (e.g. golden_v1)."),
+    agent_type: str = typer.Option(..., "--agent-type", help="Agent type slug (e.g. drafter)."),
+    target: list[str] = typer.Option(
+        [], "--target", help="Target overrides as key=value (e.g. model=claude-opus-4-7)."
+    ),
+    tag_as: Optional[str] = typer.Option(None, "--tag-as", help="Experiment tag for replay runs."),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write HTML report to this path."),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to eval.yaml."),
+) -> None:
+    """Replay a golden set and report pass/fail."""
+    from pf_core.eval import EvalRunner
+
+    target_dict = _parse_target(target)
+    runner = EvalRunner(config_path=config)
+
+    stderr.print(
+        f"[dim]Running eval: {agent_type} vs {version} "
+        f"({'  '.join(f'{k}={v}' for k, v in target_dict.items()) or 'default config'})[/dim]"
+    )
+
+    report = runner.run(
+        version=version,
+        agent_type=agent_type,
+        target=target_dict,
+        tag_as=tag_as,
+    )
+
+    stdout.print(report.summary())
+
+    if output:
+        report.write_html(output)
+        stderr.print(f"[dim]HTML report written to {output}[/dim]")
+
+    if not report.passed:
+        raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# pf-eval compare
+# ---------------------------------------------------------------------------
+
+
+@app.command("compare")
+def compare_experiments(
+    baseline: str = typer.Option(..., "--baseline", help="Experiment tag for baseline."),
+    candidate: str = typer.Option(..., "--candidate", help="Experiment tag for candidate."),
+    agent_type: str = typer.Option(..., "--agent-type", help="Agent type slug."),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to eval.yaml."),
+) -> None:
+    """Compare baseline and candidate experiment runs by paired golden delta."""
+    from pf_core.eval import EvalRunner
+
+    runner = EvalRunner(config_path=config)
+    pairs = runner.compare_experiments(
+        baseline=baseline, candidate=candidate, agent_type=agent_type
+    )
+
+    if not pairs:
+        stderr.print(
+            f"[yellow]No paired runs found for baseline={baseline!r} "
+            f"and candidate={candidate!r} with agent_type={agent_type!r}.[/yellow]"
+        )
+        raise SystemExit(1)
+
+    tbl = Table(title=f"Comparison: {baseline} vs {candidate} ({agent_type})")
+    tbl.add_column("Golden ID", style="dim")
+    tbl.add_column("Baseline", justify="right")
+    tbl.add_column("Candidate", justify="right")
+    tbl.add_column("Delta", justify="right")
+
+    import statistics
+
+    deltas = [p["delta"] for p in pairs]
+    for p in sorted(pairs, key=lambda x: x["delta"]):
+        delta = p["delta"]
+        color = "green" if delta >= 0 else "red"
+        tbl.add_row(
+            str(p["golden_id"]),
+            f"{p['baseline_score']:.3f}",
+            f"{p['candidate_score']:.3f}",
+            f"[{color}]{delta:+.3f}[/{color}]",
+        )
+
+    stdout.print(tbl)
+    stdout.print(
+        f"Mean delta: {statistics.mean(deltas):+.3f}   "
+        f"Median: {statistics.median(deltas):+.3f}   "
+        f"Pairs: {len(pairs)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# pf-eval list-golden
+# ---------------------------------------------------------------------------
+
+
+@app.command("list-golden")
+def list_golden(
+    version: str = typer.Option(..., "--version", help="Golden set version."),
+    agent_type: Optional[str] = typer.Option(None, "--agent-type", help="Filter by agent type."),
+    limit: int = typer.Option(50, "--limit", help="Max rows to display."),
+) -> None:
+    """List golden runs for a version."""
+    from pf_core.eval import GoldenSetRepo
+
+    repo = GoldenSetRepo()
+    rows = repo.list(version=version, agent_type=agent_type, limit=limit)
+
+    if not rows:
+        stderr.print(f"[yellow]No golden runs for version={version!r}.[/yellow]")
+        return
+
+    tbl = Table(title=f"Golden set: {version}")
+    tbl.add_column("Run ID")
+    tbl.add_column("Agent type", style="dim")
+    tbl.add_column("Model", style="dim")
+    tbl.add_column("Created at", style="dim")
+    tbl.add_column("Status", style="dim")
+
+    for r in rows:
+        tbl.add_row(
+            str(r["id"]),
+            str(r.get("agent_type_slug", "")),
+            str(r.get("model_name", "")),
+            str(r.get("created_at", ""))[:19],
+            str(r.get("status", "")),
+        )
+
+    stdout.print(tbl)
+    stdout.print(f"[dim]{len(rows)} row(s) shown[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# pf-eval seed
+# ---------------------------------------------------------------------------
+
+
+@app.command("seed")
+def seed(
+    version: str = typer.Option(..., "--version", help="Golden set version (e.g. golden_v1)."),
+    outcome_kind: str = typer.Option(
+        ..., "--outcome-kind", help="Outcome kind to seed from (e.g. draft_accepted)."
+    ),
+    agent_type: Optional[str] = typer.Option(None, "--agent-type", help="Filter by agent type slug."),
+    limit: int = typer.Option(50, "--limit", help="Max runs to seed."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List candidates without promoting."),
+) -> None:
+    """Bulk-seed golden set from runs that have a given outcome."""
+    from pf_core.eval import GoldenSetRepo
+
+    repo = GoldenSetRepo()
+    run_ids = repo.seed_from_outcomes(
+        version=version,
+        outcome_kind=outcome_kind,
+        agent_type=agent_type,
+        limit=limit,
+        dry_run=dry_run,
+    )
+
+    if not run_ids:
+        stderr.print(
+            f"[yellow]No runs found with outcome_kind={outcome_kind!r}"
+            + (f" and agent_type={agent_type!r}" if agent_type else "")
+            + ".[/yellow]"
+        )
+        return
+
+    label = "Candidates (dry-run)" if dry_run else "Seeded"
+    tbl = Table(title=f"{label}: {version} ← outcome_kind={outcome_kind!r}")
+    tbl.add_column("Run ID")
+    for rid in run_ids:
+        tbl.add_row(str(rid))
+
+    stdout.print(tbl)
+    action = "found" if dry_run else "promoted"
+    stdout.print(f"[dim]{len(run_ids)} run(s) {action}.[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# pf-eval promote
+# ---------------------------------------------------------------------------
+
+
+@app.command("promote")
+def promote(
+    run_id: int = typer.Argument(..., help="llm_runs.id to promote."),
+    version: str = typer.Option(..., "--version", help="Golden set version."),
+    notes: Optional[str] = typer.Option(None, "--notes", help="Optional note."),
+) -> None:
+    """Add a run to the golden set."""
+    from pf_core.eval import GoldenSetRepo
+
+    GoldenSetRepo().add(run_id=run_id, version=version, notes=notes)
+    stdout.print(f"[green]Run {run_id} promoted to {version}.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# pf-eval demote
+# ---------------------------------------------------------------------------
+
+
+@app.command("demote")
+def demote(
+    run_id: int = typer.Argument(..., help="llm_runs.id to demote."),
+    version: str = typer.Option(..., "--version", help="Golden set version."),
+) -> None:
+    """Remove a run from the golden set (tag removed; outcomes + metrics kept)."""
+    from pf_core.eval import GoldenSetRepo
+
+    GoldenSetRepo().remove(run_id=run_id, version=version)
+    stdout.print(f"[yellow]Run {run_id} removed from {version}. History preserved.[/yellow]")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    run_cli(app)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "macros.html" import cost, pct %}
+{% block title %}Dashboard · LLM Admin{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="meta">Window: {{ since }} → {{ until }}</div>
+
+<h2>Last 24h</h2>
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">Runs</div><div class="value">{{ kpis_24h.total_runs }}</div></div>
+  <div class="kpi"><div class="label">Cost</div><div class="value">{{ cost(kpis_24h.total_cost) }}</div></div>
+  <div class="kpi"><div class="label">Error rate</div><div class="value">{{ pct(kpis_24h.error_rate) }}</div></div>
+  <div class="kpi"><div class="label">Cache hit rate</div><div class="value">{{ pct(kpis_24h.cache_hit_rate) }}</div></div>
+  <div class="kpi"><div class="label">Budget-blocked</div><div class="value">{{ blocked_24h }}</div></div>
+</div>
+
+<h2>Last 7d</h2>
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">Runs</div><div class="value">{{ kpis_7d.total_runs }}</div></div>
+  <div class="kpi"><div class="label">Cost</div><div class="value">{{ cost(kpis_7d.total_cost) }}</div></div>
+  <div class="kpi"><div class="label">Error rate</div><div class="value">{{ pct(kpis_7d.error_rate) }}</div></div>
+  <div class="kpi"><div class="label">Cache hit rate</div><div class="value">{{ pct(kpis_7d.cache_hit_rate) }}</div></div>
+</div>
+
+<h2>Top agents by cost (7d)</h2>
+{% if top_agents %}
+<table>
+  <tr><th>Agent</th><th class="num">Runs</th><th class="num">Total</th><th class="num">Avg/run</th></tr>
+  {% for a in top_agents %}
+  <tr>
+    <td><a href="{{ admin_prefix }}/runs?agent_type={{ a.agent_type }}">{{ a.agent_type }}</a></td>
+    <td class="num">{{ a.runs }}</td>
+    <td class="num">{{ cost(a.total_cost) }}</td>
+    <td class="num">{{ cost(a.avg_cost) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No runs in the window.</p>
+{% endif %}
+{% endblock %}

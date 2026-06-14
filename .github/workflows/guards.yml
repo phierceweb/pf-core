@@ -1,0 +1,15 @@
+name: guards
+on: [push, pull_request]
+jobs:
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: file-size gate
+        run: python -m pf_core.guards --root src/pf_core --baseline .ai/guards/file_size_baseline.json
+      - name: ruff
+        run: pip install ruff && ruff check src tests

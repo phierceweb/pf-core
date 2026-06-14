@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Run the __NAME__ CLI (or a sibling bin/ command) via the project venv.
+#
+#   bin/run --help
+#   bin/run hello Ada
+#   bin/run test          # delegates to bin/test
+#   bin/run lint          # delegates to bin/lint
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+# Delegate to a sibling bin/ script when the first arg names one.
+if [[ "$#" -gt 0 && "$1" != "run" && -x "$ROOT/bin/$1" ]]; then
+  CMD="$1"; shift
+  exec "$ROOT/bin/$CMD" "$@"
+fi
+
+if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
+  echo "No .venv found. Run bin/setup first." >&2
+  exit 1
+fi
+exec "$ROOT/.venv/bin/python" -m __PKG__.cli "$@"

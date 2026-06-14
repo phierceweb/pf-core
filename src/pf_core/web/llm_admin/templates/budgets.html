@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "macros.html" import cost, pct %}
+{% block title %}Budgets · LLM Admin{% endblock %}
+{% block content %}
+<h1>Budgets</h1>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">Blocked (24h)</div><div class="value">{{ blocked_24h }}</div></div>
+  <div class="kpi"><div class="label">Active budgets</div><div class="value">{{ budgets | length }}</div></div>
+</div>
+
+{% if budgets %}
+<table>
+  <tr>
+    <th>Scope</th><th>Period</th>
+    <th class="num">Spent</th><th class="num">Limit</th><th class="num">%</th>
+    <th>Status</th><th>Action</th>
+  </tr>
+  {% for b in budgets %}
+  {% set pct_val = (b.pct_of_limit | float) %}
+  {% set bar_class = 'danger' if pct_val >= 0.95 else ('warn' if pct_val >= 0.8 else '') %}
+  <tr>
+    <td>
+      {{ b.scope_kind }}{% if b.scope_value %}: <strong>{{ b.scope_value }}</strong>{% endif %}
+    </td>
+    <td>{{ b.period }}</td>
+    <td class="num">{{ cost(b.spent_usd) }}</td>
+    <td class="num">{{ cost(b.limit_usd) }}</td>
+    <td class="num">{{ pct(b.pct_of_limit) }}</td>
+    <td style="min-width:120px;">
+      <div class="progress {{ bar_class }}"><div style="width: {{ [pct_val * 100, 100] | min }}%;"></div></div>
+    </td>
+    <td>
+      {% if b.action == 'block' %}
+        <span class="badge badge-error">block</span>
+      {% else %}
+        <span class="badge badge-warn">warn</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No budgets configured. Add some to <code>config/budgets.yaml</code> and run <code>sync_budgets_from_yaml()</code>.</p>
+{% endif %}
+{% endblock %}

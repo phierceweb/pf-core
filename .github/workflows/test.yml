@@ -1,0 +1,29 @@
+name: test
+on: [push, pull_request]
+jobs:
+  # Full suite against the [full] framework surface, across supported Pythons.
+  full:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[full,articles,anthropic,image-phash,dev]"
+      - run: python -m pytest tests/ -q
+
+  # The extras-tiering claims stay honest: the base install must import and
+  # pass the bare smoke without the LLM/db/web stacks present.
+  bare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - run: python bin/bare_install_smoke.py

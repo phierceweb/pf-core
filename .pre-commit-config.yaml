@@ -1,0 +1,18 @@
+# pf-core build gates. Run `pre-commit install` once per clone (from the project
+# venv) so these run on every commit. CI (.github/workflows/guards.yml) is the
+# unskippable backstop. See docs/guards.md.
+repos:
+  - repo: local
+    hooks:
+      - id: pf-guards-file-size
+        name: pf-core file-size gate
+        entry: .venv/bin/python -m pf_core.guards --root src/pf_core --baseline .ai/guards/file_size_baseline.json
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: ruff
+        entry: .venv/bin/ruff check src tests
+        language: system
+        pass_filenames: false
+        always_run: true

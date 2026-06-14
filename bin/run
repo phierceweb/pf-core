@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Run any command via pf-core's .venv. Single entry point so a single
+# allow-list rule (`Bash(./bin/run:*)` or absolute glob) covers test
+# runs, alembic, ruff, raw python, and any project script.
+#
+# Dispatch order:
+#   1. `<binary>` is an executable under .venv/bin/  → exec it
+#   2. anything else → exec via `.venv/bin/python` (treats as a script
+#      path; bare names without `/` get an error so typos surface fast)
+#
+# Examples:
+#   bin/run pytest tests/test_utils_periods.py
+#   bin/run pytest -v
+#   bin/run ruff check src tests
+#   bin/run python -c "from pf_core.utils.periods import resolve; print(resolve('yesterday', now=__import__('datetime').datetime.now(__import__('datetime').timezone.utc)))"
+#
+# Mirrors the convention used across pf-core consumer projects so the
+# same permission rule covers every one of them.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+
+if [ ! -x .venv/bin/python ]; then
+    echo "venv not found at ${ROOT}/.venv. Run bin/setup-common first." >&2
+    exit 1
+fi
+
+export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+
+if [ $# -eq 0 ]; then
+    echo "Usage: bin/run <binary|path/to/script.py> [args...]" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  bin/run pytest tests/test_utils_periods.py" >&2
+    echo "  bin/run ruff check src tests" >&2
+    echo "  bin/run python -c 'import pf_core'" >&2
+    exit 1
+fi
+
+CMD="$1"
+shift
+
+# 1. Known venv binary (pytest, alembic, ruff, pip, python, ...).
+if [ -x ".venv/bin/${CMD}" ]; then
+    exec ".venv/bin/${CMD}" "$@"
+fi
+
+# 2. Explicit path to a script — let python execute it.
+case "${CMD}" in
+    */*) exec .venv/bin/python "${CMD}" "$@" ;;
+    *)
+        echo "bin/run: unknown command '${CMD}'" >&2
+        echo "  Not a .venv/bin/ executable, and not a path-shaped script." >&2
+        exit 1
+        ;;
+esac

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Bootstrap __NAME__: venv (Python 3.11+), editable install, .env, rule symlinks.
+# Self-contained — works whether pf-core is pip-installed or a sibling checkout.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+ok()   { echo "  ✓ $*"; }
+info() { echo "  $*"; }
+
+pick_python() {
+  local p
+  for p in python3.13 python3.12 python3.11 python3; do
+    p="$(command -v "$p" 2>/dev/null || true)"
+    [[ -n "$p" ]] || continue
+    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+      echo "$p"; return 0
+    fi
+  done
+  echo "No Python 3.11+ found. Install 3.11+ (e.g. brew install python@3.12)." >&2
+  exit 1
+}
+
+if [[ ! -d .venv ]]; then
+  PY="$(pick_python)"
+  info "Creating .venv ($("$PY" --version | tr -d '\r'))"
+  "$PY" -m venv .venv
+  ok ".venv created"
+else
+  ok ".venv exists ($(.venv/bin/python --version | tr -d '\r'))"
+fi
+
+info "Installing (editable, with dev extras) — the pf-core git clone can take ~30s..."
+.venv/bin/python -m pip install --quiet --upgrade pip
+GIT_TERMINAL_PROMPT=0 .venv/bin/python -m pip install -e ".[dev]"
+ok "dependencies installed"
+
+if [[ -f .env.example && ! -f .env ]]; then
+  cp .env.example .env
+  ok "copied .env.example -> .env"
+fi
+
+# Wire AI-assistant rule dirs to .ai/ (Claude Code / Cursor read these).
+for tool in .claude .cursor; do
+  mkdir -p "$tool"
+  for d in rules skills; do
+    [[ -e "$ROOT/.ai/$d" ]] || continue
+    rm -rf "${tool:?}/$d"
+    ln -s "../.ai/$d" "$tool/$d"
+    ok "$tool/$d -> ../.ai/$d"
+  done
+done
+
+echo
+echo "Setup complete. Try: bin/run hello"

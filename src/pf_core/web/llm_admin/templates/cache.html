@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "macros.html" import cost, pct %}
+{% block title %}Cache · LLM Admin{% endblock %}
+{% block content %}
+<h1>Cache</h1>
+<div class="meta">Window: {{ since }} → {{ until }}</div>
+
+<h2>Hit rate by agent</h2>
+{% if hit_rate %}
+<table>
+  <tr><th>Agent</th><th class="num">Runs</th><th class="num">Hit rate</th><th class="num">Total cost</th></tr>
+  {% for r in hit_rate %}
+  <tr>
+    <td>{{ r.agent_type }}</td>
+    <td class="num">{{ r.total_runs }}</td>
+    <td class="num">{{ pct(r.hit_rate) }}</td>
+    <td class="num">{{ cost(r.total_cost) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No runs in the window.</p>
+{% endif %}
+
+<h2>Top cache entries by hit count</h2>
+{% if top_entries %}
+<table>
+  <tr><th>ID</th><th>Agent</th><th>Model</th><th class="num">Hits</th><th>Last hit</th><th>Created</th><th>Source run</th></tr>
+  {% for e in top_entries %}
+  <tr>
+    <td>#{{ e.id }}</td>
+    <td>{{ e.agent_type }}</td>
+    <td>{{ e.model }}</td>
+    <td class="num">{{ e.hit_count }}</td>
+    <td>{{ e.last_hit_at or '—' }}</td>
+    <td>{{ e.created_at }}</td>
+    <td><a href="{{ admin_prefix }}/run/{{ e.source_run_id }}">#{{ e.source_run_id }}</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No cache entries yet.</p>
+{% endif %}
+{% endblock %}

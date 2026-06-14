@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, cost %}
+{% block title %}Runs · LLM Admin{% endblock %}
+{% block content %}
+<h1>Runs</h1>
+
+<form class="filters" method="get">
+  <input type="text" name="agent_type" value="{{ filters.agent_type or '' }}" placeholder="agent_type">
+  <input type="text" name="model" value="{{ filters.model or '' }}" placeholder="model">
+  <input type="text" name="status" value="{{ filters.status or '' }}" placeholder="status">
+  <input type="number" name="job_id" value="{{ filters.job_id or '' }}" placeholder="job_id" step="1">
+  <input type="number" name="min_cost" value="{{ filters.min_cost or '' }}" placeholder="min_cost" step="0.01">
+  <input type="text" name="since" value="{{ filters.since or '' }}" placeholder="since (ISO)">
+  <input type="text" name="until" value="{{ filters.until or '' }}" placeholder="until (ISO)">
+  <button type="submit">Filter</button>
+</form>
+
+<div class="meta">{{ total }} run(s) · page {{ page }} · {{ per_page }} per page</div>
+
+{% if runs %}
+<table>
+  <tr>
+    <th>ID</th><th>Created</th><th>Agent</th><th>Model</th><th>Status</th>
+    <th class="num">Cost</th><th class="num">Tokens (in/out)</th><th class="num">Duration</th><th>Job</th>
+  </tr>
+  {% for r in runs %}
+  <tr>
+    <td><a href="{{ admin_prefix }}/run/{{ r.id }}">#{{ r.id }}</a></td>
+    <td>{{ r.created_at }}</td>
+    <td>{{ r.agent_type }}</td>
+    <td>{{ r.model }}</td>
+    <td>{{ status_badge(r.status) }}</td>
+    <td class="num">{{ cost(r.cost_usd) }}</td>
+    <td class="num">{{ r.prompt_tokens or 0 }} / {{ r.completion_tokens or 0 }}</td>
+    <td class="num">{{ r.duration_ms or 0 }}ms</td>
+    <td>{% if r.job_id %}<a href="{{ admin_prefix }}/job/{{ r.job_id }}">#{{ r.job_id }}</a>{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pager">
+  {% if has_prev %}<a href="?page={{ page - 1 }}">← Prev</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="?page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<p>No runs match these filters. Try widening the window.</p>
+{% endif %}
+{% endblock %}

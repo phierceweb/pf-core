@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block title %}Jobs · LLM Admin{% endblock %}
+{% block content %}
+<h1>Jobs</h1>
+
+<form class="filters" method="get">
+  <input type="text" name="status" value="{{ filters.status or '' }}" placeholder="status">
+  <input type="text" name="kind" value="{{ filters.kind or '' }}" placeholder="kind">
+  <button type="submit">Filter</button>
+</form>
+
+<div class="meta">{{ total }} job(s)</div>
+
+{% if jobs %}
+<table>
+  <tr>
+    <th>ID</th><th>Kind</th><th>Status</th><th class="num">Progress</th>
+    <th>Current step</th><th>Created</th><th>Finished</th>
+  </tr>
+  {% for j in jobs %}
+  <tr>
+    <td><a href="{{ admin_prefix }}/job/{{ j.id }}">#{{ j.id }}</a></td>
+    <td>{{ j.kind }}</td>
+    <td>{{ status_badge(j.status) }}</td>
+    <td class="num">
+      {% if j.progress_total %}
+      {{ j.progress_current }}/{{ j.progress_total }}
+      <div class="progress"><div style="width: {{ (j.progress_current / j.progress_total * 100) | int }}%;"></div></div>
+      {% else %}—{% endif %}
+    </td>
+    <td>{{ j.current_step or '—' }}</td>
+    <td>{{ j.created_at }}</td>
+    <td>{{ j.finished_at or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pager">
+  {% if has_prev %}<a href="?page={{ page - 1 }}">← Prev</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="?page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<p>No jobs match these filters.</p>
+{% endif %}
+{% endblock %}
