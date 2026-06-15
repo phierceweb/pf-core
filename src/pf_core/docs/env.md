@@ -79,6 +79,30 @@ def cache_enabled(explicit: bool | None = None) -> bool:
     return resolve_bool(explicit, "MYPROJ_CACHE_ENABLED", default=DEFAULT_ENABLE_CACHE)
 ```
 
+## resolve_positive_int
+
+```python
+resolve_positive_int(arg: int | None, env_var: str, *, default: int, min_value: int = 1) -> int
+```
+
+A bounded form of `resolve_int` for counts and sizes that must be `>= min_value` (worker pools, chunk sizes). The asymmetry is deliberate:
+
+1. An explicit `arg` below `min_value` is a **caller bug** — raises `ValueError` so the mistake surfaces at the call site.
+2. An env value that parses but is below `min_value` is an **operator typo** — emits a structured `env_var_out_of_range` warning and falls back to `default` rather than crashing a long-running process. (Non-numeric env still routes through `resolve_int`'s `env_var_malformed` path.)
+3. `default` is trusted (assumed `>= min_value`) — it's the floor a bad env value lands on.
+
+```python
+resolve_positive_int(8, "WORKERS", default=4)      # 8   (explicit wins)
+resolve_positive_int(0, "WORKERS", default=4)      # ValueError (caller bug)
+resolve_positive_int(None, "WORKERS", default=4)   # 4   (env unset, default)
+# $WORKERS=12:
+resolve_positive_int(None, "WORKERS", default=4)   # 12  (env wins)
+# $WORKERS=-3:
+resolve_positive_int(None, "WORKERS", default=4)   # 4   (warn env_var_out_of_range + default)
+```
+
+Only a lower bound is provided; add an upper bound the day a consumer needs one.
+
 ## Recipe: wrap a resolver in a tiny module helper
 
 For values used in multiple places within a single module, wrap the resolver in a `_foo()` helper so the env-var name + default live in one place:
@@ -106,3 +130,4 @@ A typo in `MAX_PER_PAGE=20O` (letter O, not digit zero) shouldn't crash producti
 
 - The project's `config-driven` rule — the framework rule that drives this helper.
 - [`config.md`](config.md) — where to register a new tunable in `AppConfig`.
+- [`config-path.md`](config-path.md) — the file-path half of the configuration convention (`resolve_config_path`).

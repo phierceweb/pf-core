@@ -2,6 +2,12 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.2.0 — config-path resolver & bounded env helper
+
+### Added
+- `pf_core.utils.config_path.resolve_config_path` — resolve a config file via an override chain (env-named directory → CWD `config/` → package-bundled default), returning an absolute path with the bundled file as a guaranteed floor. The file-path half of the config-driven convention. See [`docs/config-path.md`](src/pf_core/docs/config-path.md).
+- `pf_core.utils.env.resolve_positive_int` — a bounded form of `resolve_int` that enforces `>= min_value`: an out-of-range explicit arg raises `ValueError` (caller bug); an out-of-range env value warns (`env_var_out_of_range`) and falls back to the default (operator typo). Additive — existing resolvers unchanged.
+
 ## 0.1.0 — initial public release
 
 The feature set, by area.
