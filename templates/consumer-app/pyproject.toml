@@ -9,9 +9,9 @@ description = "A pf-core full-stack app (FastAPI + SQLAlchemy)."
 requires-python = ">=3.11"
 dependencies = [
     # pf-core with the whole framework surface. Add a DB driver extra
-    # ([postgres] or [mysql]) for non-SQLite backends. Until pf-core is on
-    # PyPI, pin a git tag; afterwards: "pf-core[__EXTRAS__]>=0.1.0".
-    "pf-core[__EXTRAS__] @ git+https://github.com/phierceweb/pf-core.git@v0.1.0",
+    # ([postgres] or [mysql]) for non-SQLite backends. Pinned to a compatible
+    # PyPI release (picks up patch/minor within the line; bump for 0.3+).
+    "pf-core[__EXTRAS__]~=0.2.0",
 ]
 
 [project.optional-dependencies]

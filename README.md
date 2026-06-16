@@ -27,13 +27,13 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Until the first PyPI release, install from a tagged commit:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.2.0"` (picks up `0.2.x` fixes, holds below `0.3.0`). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
-pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@v0.1.0"
+pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
 ```
 
-Pinning to a **tagged release** is recommended for stability — `main` is the development line and may contain unreleased work between tags. Extras compose orthogonally (`[db]` without LLM, `[web]` without `[db]`, `[llm]` standalone); importing a gated module without its extra raises an `ImportError` naming the extra and the pip command. Full matrix and release/update flow: **[docs/INSTALLATION.md](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/INSTALLATION.md)**.
+Extras compose orthogonally (`[db]` without LLM, `[web]` without `[db]`, `[llm]` standalone); importing a gated module without its extra raises an `ImportError` naming the extra and the pip command. Full matrix and release/update flow: **[docs/INSTALLATION.md](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/INSTALLATION.md)**.
 
 ## Documentation
 

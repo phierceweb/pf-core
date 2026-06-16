@@ -112,8 +112,8 @@ In `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "pf-core @ file:///${PROJECT_ROOT}/../pf-core",
-    # or when published: "pf-core>=0.1.0",
+    "pf-core~=0.2.0",
+    # local co-development instead: "pf-core @ file:///${PROJECT_ROOT}/../pf-core",
 ]
 ```
 

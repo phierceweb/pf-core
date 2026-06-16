@@ -1,6 +1,6 @@
 # Installation
 
-How to install `pf-core` for local development, deploy from GitHub, and pick the right combination of extras for your project's shape.
+How to install `pf-core` for local development, deploy from PyPI, and pick the right combination of extras for your project's shape.
 
 `pf-core` is a dependency-light Python foundation. The default install is the **architectural foundation only** — structured logging, an exception hierarchy, config + env resolvers, utils, and the `Service` base class, on just five small dependencies (structlog, python-dotenv, pyyaml, nanoid, rich). Everything else — LLM clients + anti-slop guards, HTTP utils, CLI scaffolding, the database layer, the FastAPI web layer, the job tracker, eval harness, and admin dashboard — ships as **opt-in extras** that compose orthogonally. A project can adopt pf-core's discipline without installing httpx, pydantic, or the LLM stack at all; an LLM script can `pip install pf-core[llm]` without dragging in a database or web server.
 
@@ -13,9 +13,9 @@ How to install `pf-core` for local development, deploy from GitHub, and pick the
 | Lightweight LLM tool — clients + anti-slop guards | `pip install pf-core[llm]` |
 | Crawl/fetch web pages — title, body, publish date, liveness | `pip install pf-core[crawl]` |
 | Active pf-core development on this machine | `pip install -e ~/projects/pf-core` |
-| New consumer project, full app framework | Pin `pf-core[full,<dialect>] @ git+...@vX.Y.Z` in `pyproject.toml`, then `pip install -e .` |
-| Fresh machine, consumer only | `git clone <project>` → `pip install -e .` (pulls pf-core from GitHub automatically) |
-| Fresh machine, also editing pf-core | Clone pf-core → `pip install -e ~/projects/pf-core` (overrides the git pin) |
+| New consumer project, full app framework | Pin `pf-core[full,<dialect>]~=0.2.0` in `pyproject.toml`, then `pip install -e .` |
+| Fresh machine, consumer only | `git clone <project>` → `pip install -e .` (pulls pf-core from PyPI automatically) |
+| Fresh machine, also editing pf-core | Clone pf-core → `pip install -e ~/projects/pf-core` (overrides the PyPI pin) |
 
 **Starting a new consumer from scratch?** From a pf-core checkout, `bin/new-consumer <name> --layout {lib|app}` stamps a runnable, conformant project with the pf-core dep, `bin/` wrappers, and a day-1 slice — see [scaffold.md](scaffold.md).
 
@@ -30,17 +30,17 @@ pip install -e ~/projects/pf-core
 
 Edit any file in `~/projects/pf-core/`, and every project using pf-core sees the change on the next import.
 
-## From GitHub (deploy or fresh machine)
+## From PyPI (deploy or fresh machine)
 
-Pin to a git tag in your project's `pyproject.toml`:
+Pin a compatible release in your project's `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "pf-core[full,postgres] @ git+https://github.com/phierceweb/pf-core.git@v0.1.0",
+    "pf-core[full,postgres]~=0.2.0",
 ]
 ```
 
-Then `pip install -e .` pulls pf-core automatically.
+Then `pip install -e .` pulls pf-core from PyPI automatically. To track unreleased work on `main`, pin `"pf-core[full,postgres] @ git+https://github.com/phierceweb/pf-core.git@main"` instead.
 
 ## Choosing extras
 
@@ -127,11 +127,11 @@ Real-world shapes, by project type. Anything importing `pf_core.clients` / `pf_c
 
 | Project shape | Install line |
 |---|---|
-| Full-stack web app, Postgres | `pf-core[full,llm,postgres] @ git+...@vX.Y.Z` |
-| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles] @ git+...@vX.Y.Z` (+ `[redis,ratelimit]` if caching/limits are used) |
-| Full-stack web app, SQLite | `pf-core[full,llm] @ git+...@vX.Y.Z` (SQLite driver is stdlib) |
-| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm] @ git+...@vX.Y.Z` |
-| Foundation-only CLI (no LLM at all) | `pf-core[cli] @ git+...@vX.Y.Z` |
+| Full-stack web app, Postgres | `pf-core[full,llm,postgres]~=0.2.0` |
+| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles]~=0.2.0` (+ `[redis,ratelimit]` if caching/limits are used) |
+| Full-stack web app, SQLite | `pf-core[full,llm]~=0.2.0` (SQLite driver is stdlib) |
+| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm]~=0.2.0` |
+| Foundation-only CLI (no LLM at all) | `pf-core[cli]~=0.2.0` |
 
 ## Updating the dependency
 
@@ -141,26 +141,27 @@ If pf-core is installed as editable (`pip install -e`), there is nothing to do. 
 
 ### Releasing a new version
 
-When a change is stable and you want it available on other machines:
+When a change is stable and you want it on PyPI for other machines:
 
 ```bash
-# 1. Commit and tag in pf-core
+# 1. Bump the version in pyproject.toml (__version__ derives from it), commit
 cd ~/projects/pf-core
 git add -A && git commit -m "what changed"
 
-# 2. Bump the version in pyproject.toml, then tag (__version__ derives from it)
+# 2. Tag the release and push — a v* tag triggers .github/workflows/publish.yml,
+#    which builds the sdist/wheel and uploads to PyPI
 git tag v0.2.0
 git push origin main --tags
 
-# 3. Update the pin in each project's pyproject.toml
-#    "pf-core[full,postgres] @ git+https://github.com/phierceweb/pf-core.git@v0.2.0"
+# 3. Bump the compatible-release pin in each consumer's pyproject.toml
+#    "pf-core[full,postgres]~=0.2.0"
 
-# 4. Reinstall in each project
+# 4. Reinstall in each consumer
 cd ~/projects/my-project
-pip install -e .
+pip install -U -e .
 ```
 
-You don't need to tag every small edit. Only tag when you want a checkpoint that other machines can pull.
+PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). `~=0.2.0` consumers pick up `0.2.x` patches on the next reinstall with no pin change; only a new minor (`0.3.0`) requires them to bump. If OIDC trusted publishing isn't active for the run, publish manually from the pf-core checkout: `python -m build && twine upload -u __token__ dist/*`.
 
 There's a `pf-core-rollout` skill that automates the consumer-side reinstall + verify loop across all projects (`/pf-rollout` slash command).
 
@@ -173,13 +174,13 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[full,postgres,redis]"   # whichever extras the project needs
 ```
 
-pf-core is pulled from GitHub automatically via the `git+https://...` pin in `pyproject.toml`.
+pf-core is pulled from PyPI automatically via the version pin in `pyproject.toml`.
 
 If you also need to develop pf-core locally on that machine:
 
 ```bash
 git clone https://github.com/phierceweb/pf-core.git ~/projects/pf-core
-pip install -e ~/projects/pf-core[full]   # overrides the git install with editable
+pip install -e ~/projects/pf-core[full]   # overrides the PyPI install with editable
 ```
 
 ## Verifying which copy is loaded

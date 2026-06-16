@@ -30,4 +30,4 @@ bin/run hello       # the day-1 slice
 
 ## Conventions baked in
 
-The generated project follows [`project-structure.md`](../../../.ai/rules/project-structure.md) for its layout, is linted by `pf_core.guards` via `bin/lint` (`--root src/<pkg>` for lib, `--root app` for app — the layout-agnostic file-size + layering gate), and pins pf-core by git tag (swap to `pf-core[...]>=X` once it's on PyPI).
+The generated project follows [`project-structure.md`](../../../.ai/rules/project-structure.md) for its layout, is linted by `pf_core.guards` via `bin/lint` (`--root src/<pkg>` for lib, `--root app` for app — the layout-agnostic file-size + layering gate), and pins pf-core from PyPI (`pf-core[...]~=0.2.0`).

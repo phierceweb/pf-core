@@ -10,7 +10,7 @@ works immediately after `bin/setup`.
 
 This is a from-checkout dev tool — it reads `templates/` and `.ai/rules/` from
 the pf-core source tree (they are not shipped in the wheel). The *generated*
-project then depends on pf-core however it likes (git pin or, later, PyPI).
+project then depends on pf-core via a PyPI version pin (see the templates).
 """
 
 from __future__ import annotations
