@@ -2,6 +2,14 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.2.1 — PyPI install docs & scaffolder pin fix
+
+### Fixed
+- `bin/new-consumer` scaffolded both layouts with a stale `pf-core[...] @ git+https://…@v0.1.0` pin — the `consumer-lib` / `consumer-app` templates predated the PyPI publish, so every newly scaffolded consumer would have installed pf-core from a moving git tag instead of PyPI. The templates now pin `pf-core[...]~=0.2.0`.
+
+### Docs
+- Install instructions rewritten from git-tag pins to PyPI version pins now that pf-core is published: README, `docs/INSTALLATION.md` (quick reference, the "From PyPI" section, example profiles, and the release flow), `docs/scaffold.md`, and the `project-structure.md` rule. The `git+https…@main` install is kept only as the explicit "track unreleased work" alternative.
+
 ## 0.2.0 — config-path resolver & bounded env helper
 
 ### Added
