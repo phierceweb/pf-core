@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import logging
 
-from pf_core.utils.env import resolve_bool, resolve_int, resolve_str
+import pytest
+
+from pf_core.utils.env import (
+    resolve_bool,
+    resolve_int,
+    resolve_positive_int,
+    resolve_str,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -147,3 +154,44 @@ class TestResolveBool:
         with caplog.at_level(logging.WARNING, logger="pf_core.utils.env"):
             assert resolve_bool(None, "FOO_ENABLED", default=True) is True
         assert any("env_var_malformed" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# resolve_positive_int
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePositiveInt:
+    def test_explicit_arg_wins(self, monkeypatch):
+        monkeypatch.setenv("WORKERS", "99")
+        assert resolve_positive_int(8, "WORKERS", default=4) == 8
+
+    def test_explicit_below_min_raises(self):
+        """An out-of-range explicit arg is a caller bug — fail fast."""
+        with pytest.raises(ValueError, match="must be >= 1"):
+            resolve_positive_int(0, "WORKERS", default=4)
+
+    def test_reads_env(self, monkeypatch):
+        monkeypatch.setenv("WORKERS", "12")
+        assert resolve_positive_int(None, "WORKERS", default=4) == 12
+
+    def test_env_below_min_warns_and_defaults(self, monkeypatch, caplog):
+        """An out-of-range *env* value is an operator typo — warn, don't crash."""
+        monkeypatch.setenv("WORKERS", "-3")
+        with caplog.at_level(logging.WARNING, logger="pf_core.utils.env"):
+            assert resolve_positive_int(None, "WORKERS", default=4) == 4
+        assert any(
+            "env_var_out_of_range" in r.getMessage() and "WORKERS" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_malformed_env_defaults(self, monkeypatch):
+        monkeypatch.setenv("WORKERS", "not-an-int")
+        assert resolve_positive_int(None, "WORKERS", default=4) == 4
+
+    def test_custom_min(self, monkeypatch):
+        monkeypatch.setenv("CHUNK", "0")
+        assert resolve_positive_int(None, "CHUNK", default=50, min_value=1) == 50
+        assert resolve_positive_int(2, "CHUNK", default=50, min_value=2) == 2
+        with pytest.raises(ValueError):
+            resolve_positive_int(1, "CHUNK", default=50, min_value=2)

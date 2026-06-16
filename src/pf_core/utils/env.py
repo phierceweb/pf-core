@@ -155,3 +155,49 @@ def resolve_bool(arg: bool | None, env_var: str, *, default: bool) -> bool:
         falling_back_to=default,
     )
     return default
+
+
+def resolve_positive_int(
+    arg: int | None, env_var: str, *, default: int, min_value: int = 1
+) -> int:
+    """Resolve an int that must be ``>= min_value`` (arg → env → default).
+
+    A bounded form of :func:`resolve_int`. The asymmetry is deliberate:
+
+    - An explicit ``arg`` below ``min_value`` is a **caller bug** — it
+      raises :class:`ValueError` so the mistake surfaces at the call site.
+    - An env value that parses but is below ``min_value`` is an
+      **operator typo** — it emits a structured ``env_var_out_of_range``
+      warning and falls back to ``default`` rather than crashing a
+      long-running process. (Malformed / non-numeric env still routes
+      through :func:`resolve_int`'s ``env_var_malformed`` path.)
+
+    ``default`` itself is trusted (assumed ``>= min_value`` by the
+    caller); it is the floor a bad env value lands on.
+
+    Args:
+        arg: Explicit value, or ``None`` to defer to env / default.
+        env_var: Name of the environment variable to consult.
+        default: Value to return when neither ``arg`` nor ``$env_var``
+            resolves to an in-range int. Trusted as ``>= min_value``.
+        min_value: Inclusive lower bound; defaults to ``1``.
+
+    Returns:
+        The resolved int, guaranteed ``>= min_value``.
+
+    Raises:
+        ValueError: If ``arg`` is not ``None`` and is below ``min_value``.
+    """
+    if arg is not None and arg < min_value:
+        raise ValueError(f"{env_var} arg must be >= {min_value}, got {arg!r}")
+    n = resolve_int(arg, env_var, default=default)
+    if n < min_value:
+        _log.warning(
+            "env_var_out_of_range",
+            var=env_var,
+            value=n,
+            expected=f">= {min_value}",
+            falling_back_to=default,
+        )
+        return default
+    return n
