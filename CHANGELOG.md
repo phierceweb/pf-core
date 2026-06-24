@@ -2,7 +2,7 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
-## 0.1.0 — initial public release
+## 0.1.1 — initial public release
 
 The feature set, by area.
 
