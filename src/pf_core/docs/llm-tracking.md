@@ -177,7 +177,7 @@ LlmRunOutcomeRepo().record(run_id, outcome_kind="summary_accepted", score=1.0)
 
 ## Sidecar writers
 
-Outcomes, validations, and links arrive after the original call (reviewer actions, async checks, retries). Each sub-repo uses delete-then-insert so re-recording the same composite key overwrites cleanly across all three dialects.
+Outcomes, validations, and links arrive after the original call (reviewer actions, async checks, retries). Each sub-repo uses pf-core's portable `insert_ignore` / `upsert` helpers (keyed on the table's primary key) so re-recording the same composite key is idempotent across all three dialects — without the secondary-index gap locks the former delete-then-insert path deadlocked on under concurrent writers.
 
 ```python
 from pf_core.llm.tracking import (

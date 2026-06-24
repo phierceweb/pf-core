@@ -301,7 +301,7 @@ Raised by `parse_and_validate` when `missing_pipeline="raise"` (the default) and
 
 ## DB integration
 
-When `run_id` is provided, the pipeline writes every signal — pass and fail — into `llm_run_validations` via `LlmRunValidationRepo.record`. Each `(run_id, validator)` write is delete-then-insert, so re-running the pipeline cleanly overwrites prior signals.
+When `run_id` is provided, the pipeline writes every signal — pass and fail — into `llm_run_validations` via `LlmRunValidationRepo.record`. Each `(run_id, validator)` write is a portable `upsert`, so re-running the pipeline cleanly overwrites prior signals.
 
 ```
 llm_run_id | validator           | severity | passed | details
@@ -312,7 +312,7 @@ llm_run_id | validator           | severity | passed | details
       1042 | within_max_words    | info     | 1      | NULL
 ```
 
-The pipeline also writes a `schema:<agent>_v<schema_version>` row into `llm_run_tags` (also delete-then-insert).
+The pipeline also writes a `schema:<agent>_v<schema_version>` row into `llm_run_tags` (an idempotent `insert_ignore`).
 
 DB writes are best-effort: validation row failures log `validation_record_failed`, tag failures log `validation_tag_write_failed`, and the pipeline continues. The pipeline never raises on DB issues — validation results always reach the service.
 

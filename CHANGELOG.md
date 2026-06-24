@@ -2,6 +2,11 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.2.2 — concurrency-safe tracking writes
+
+### Cost & observability (`[tracking]`)
+- **Sidecar writes are now portable upserts instead of delete-then-insert.** `LlmRunOutcomeRepo`, `LlmRunValidationRepo`, `LlmRunLinkRepo`, and the validation pipeline's `llm_run_tags` write now use `pf_core.db.insert_ignore` / `upsert`, keyed on each table's primary key. The former delete-then-insert took gap locks on the tables' secondary indexes and deadlocked under concurrent writers on MySQL/InnoDB (error 1213); the new path is idempotent and lock-light across SQLite, MySQL, and PostgreSQL. Two behavioral notes: re-recording an existing key now preserves the original `created_at` / `recorded_at` rather than resetting it, and the deadlock-retry on `LlmRunValidationRepo.record` is kept as defense-in-depth. Public repo APIs are unchanged — a drop-in upgrade.
+
 ## 0.1.1 — initial public release
 
 The feature set, by area.
