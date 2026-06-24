@@ -72,15 +72,15 @@ class TestSearchSuccess:
             "web": {
                 "results": [
                     {
-                        "url": "https://apnews.com/article/abc",
-                        "title": "Mars rover lands",
-                        "description": "The rover touched down...",
+                        "url": "https://example.com/article/abc",
+                        "title": "Product launch announced",
+                        "description": "The product shipped to customers...",
                         "age": "2 days ago",
                         "page_age": "2026-04-13T12:00:00",
                     },
                     {
-                        "url": "https://reuters.com/x",
-                        "title": "Reuters covers the landing",
+                        "url": "https://example.org/x",
+                        "title": "Follow-up coverage",
                         "description": "",
                     },
                 ],
@@ -89,10 +89,10 @@ class TestSearchSuccess:
         with patch("httpx.get", return_value=_mock_response(
             status_code=200, json_data=json_data,
         )):
-            results, usage = c.search("mars rover")
+            results, usage = c.search("product launch")
         assert len(results) == 2
-        assert results[0]["url"] == "https://apnews.com/article/abc"
-        assert results[0]["title"] == "Mars rover lands"
+        assert results[0]["url"] == "https://example.com/article/abc"
+        assert results[0]["title"] == "Product launch announced"
         assert results[0]["age"] == "2 days ago"
         assert results[1]["age"] is None  # missing key → None
         assert usage["cost_usd"] == 0.005

@@ -120,7 +120,7 @@ def _foo_timeout_s() -> int:
 
 Then call `_foo_timeout_s()` at each call site. Reading at call time means a long-lived process picks up `.env` changes between calls. The `int:` annotation pins the return type for mypy strict (pf-core isn't `py.typed` yet, so the resolver's `int` return appears as `Any` to consumers).
 
-See `.ai/rules/config-driven.md` for the full layering and carve-out rules.
+Keep operational tunables in `.env` rather than as function-call parameters, and keep internal constants (regex, schema versions, math) in code — that split is what these resolvers exist to serve.
 
 ## Why warn (don't raise) on malformed env
 

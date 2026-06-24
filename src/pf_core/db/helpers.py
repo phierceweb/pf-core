@@ -1,8 +1,8 @@
 """
 Shared database helper functions.
 
-Consolidates utilities that were duplicated across consumer projects:
-JSON column coercion, ISO timestamps, safe dict conversion.
+Small shared database helpers: JSON column coercion, ISO timestamps,
+safe dict conversion.
 
 Usage::
 

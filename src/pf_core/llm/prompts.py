@@ -18,10 +18,10 @@ Usage::
 
     # Brace style (default)
     prompts = load_prompts("config/prompts.yaml")
-    system = render(prompts["grading"]["system"], total_points=30)
+    system = render(prompts["summarize"]["system"], max_words=200)
 
     # Token style
-    text = render("You are @@ROLE@@.", style="@@", ROLE="a grader")
+    text = render("You are @@ROLE@@.", style="@@", ROLE="a summarizer")
 """
 
 from __future__ import annotations
@@ -91,8 +91,8 @@ def render(template: str, *, style: str = "brace", **variables: Any) -> str:
 
         # Token style
         render("Hello @@NAME@@", style="@@", NAME="world")  # "Hello world"
-        render('{"role": "@@ROLE@@"}', style="@@", ROLE="grader")
-        # '{"role": "grader"}'  — no escaping needed
+        render('{"role": "@@ROLE@@"}', style="@@", ROLE="summarizer")
+        # '{"role": "summarizer"}'  — no escaping needed
     """
     if style == "brace":
         return _render_brace(template, variables)

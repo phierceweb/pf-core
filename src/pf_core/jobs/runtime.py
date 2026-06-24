@@ -8,22 +8,22 @@ Usage::
 
     from pf_core.jobs import Job, JobRepo
 
-    job_id = JobRepo().create(kind="grading_pass", inputs={...}, created_by="cli:grade")
+    job_id = JobRepo().create(kind="export_pass", inputs={...}, created_by="cli:run")
 
     with Job(job_id) as job:
         job.transition("running")
-        submissions = load_submissions(job.inputs["submission_ids"])
-        job.progress(total=len(submissions))
+        records = load_records(job.inputs["record_ids"])
+        job.progress(total=len(records))
 
-        for i, sub in enumerate(submissions):
-            with job.step(f"grade_{sub.id}") as step:
+        for i, rec in enumerate(records):
+            with job.step(f"process_{rec.id}") as step:
                 # @track_run reads the active-job contextvar and sets
                 # llm_runs.job_id automatically.
                 ...
-                step.outputs = {"grade": 28}
-                job.progress(current=i + 1, step=f"graded {sub.id}")
+                step.outputs = {"result": 28}
+                job.progress(current=i + 1, step=f"processed {rec.id}")
 
-        job.outputs = {"n_graded": len(submissions)}
+        job.outputs = {"n_processed": len(records)}
         job.transition("succeeded")
 
 On an unhandled exception inside the block, the job transitions to

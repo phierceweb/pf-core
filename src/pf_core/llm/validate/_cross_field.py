@@ -2,8 +2,8 @@
 
 Project code declares cross-field validators like this::
 
-    @cross_field_validator("grade_within_rubric")
-    def grade_within_rubric(parsed, *, context):
+    @cross_field_validator("score_within_range")
+    def score_within_range(parsed, *, context):
         ...
         return ValidationSignal(...)
 

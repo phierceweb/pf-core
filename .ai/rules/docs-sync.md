@@ -26,7 +26,7 @@
 
 ### Existing module's public API changed?
 - [ ] Update the corresponding `docs/*.md` file
-- [ ] Check consumer projects' import examples if exports were renamed or removed
+- [ ] Check downstream projects' import examples if exports were renamed or removed
 - [ ] Update code examples in docs that use the changed API
 
 ### New rule file added to `.ai/rules/`?
@@ -38,7 +38,7 @@
 
 ### Exception hierarchy changed?
 - [ ] Update `docs/exceptions.md`
-- [ ] Update consumer projects' `errors.py` re-exports if classes were renamed or removed
+- [ ] Update downstream projects' `errors.py` re-exports if classes were renamed or removed
 
 ### New skill added to `.ai/skills/`?
 - [ ] One directory per skill with a `SKILL.md` inside

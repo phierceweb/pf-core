@@ -5,7 +5,9 @@ from __future__ import annotations
 import datetime
 
 import httpx
+import pytest
 
+from pf_core.exceptions import InvalidInputError
 from pf_core.utils.urls import (
     archive_timestamp_is_round,
     canonical_url,
@@ -16,6 +18,18 @@ from pf_core.utils.urls import (
     fetch_url_content,
     wayback_exists_at,
 )
+
+
+@pytest.fixture(autouse=True)
+def _bypass_ssrf_guard(monkeypatch):
+    """Neutralize the SSRF guard for status-mapping tests (avoids real DNS).
+
+    The guard itself is covered in test_url_safety.py; wiring is covered by the
+    explicit ``*_blocks_ssrf`` tests below, which re-patch it to raise.
+    """
+    monkeypatch.setattr(
+        "pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -252,30 +266,30 @@ class TestCanonicalUrl:
     # -- integration-ish -------------------------------------------------
 
     def test_newsletter_style_url_canonicalizes(self):
-        # A real-world shape of how newsletter links arrive: AP URL with newsletter
+        # A real-world shape of how newsletter links arrive: a URL with newsletter
         # utm markers and sometimes a fragment.
         raw = (
-            "https://apnews.com/article/city-council-approves-budget-"
+            "https://example.com/article/quarterly-report-published-"
             "a1b2c3d4?utm_source=newsletter&utm_medium=email"
             "&utm_campaign=newsletter#read-more"
         )
         assert canonical_url(raw) == (
-            "https://apnews.com/article/"
-            "city-council-approves-budget-a1b2c3d4"
+            "https://example.com/article/"
+            "quarterly-report-published-a1b2c3d4"
         )
 
     def test_cross_tracking_variants_match(self):
         # Same article, three different share paths.
-        newsletter = "https://apnews.com/article/foo?utm_source=newsletter"
-        twitter = "https://apnews.com/article/foo?s=20&fbclid=abc"
-        bare = "https://www.apnews.com/article/foo/"
+        newsletter = "https://example.com/article/foo?utm_source=newsletter"
+        twitter = "https://example.com/article/foo?s=20&fbclid=abc"
+        bare = "https://www.example.com/article/foo/"
         canon_newsletter = canonical_url(newsletter)
         canon_twitter = canonical_url(twitter)
         canon_bare = canonical_url(bare)
         # The Twitter variant keeps ?s=20 (we don't strip generic `s`), so
         # newsletter and bare match; twitter differs by `s=20` only.
-        assert canon_newsletter == canon_bare == "https://apnews.com/article/foo"
-        assert canon_twitter == "https://apnews.com/article/foo?s=20"
+        assert canon_newsletter == canon_bare == "https://example.com/article/foo"
+        assert canon_twitter == "https://example.com/article/foo?s=20"
 
 
 class TestArchiveTimestampIsRound:
@@ -396,6 +410,31 @@ class TestCheckUrl:
         check_url("https://example.com")
         assert captured["timeout"] == 12
 
+    # -- TLS verification -------------------------------------------------
+
+    def test_verifies_tls_by_default(self, monkeypatch):
+        monkeypatch.delenv("URL_CHECK_VERIFY_TLS", raising=False)
+        mock = MockClient(head_response=MockResponse(200))
+        captured = self._patch_client(monkeypatch, mock)
+        check_url("https://example.com")
+        assert captured["verify"] is True
+
+    def test_verify_tls_disabled_via_env(self, monkeypatch):
+        monkeypatch.setenv("URL_CHECK_VERIFY_TLS", "0")
+        mock = MockClient(head_response=MockResponse(200))
+        captured = self._patch_client(monkeypatch, mock)
+        check_url("https://example.com")
+        assert captured["verify"] is False
+
+    # -- SSRF guard wiring ------------------------------------------------
+
+    def test_blocked_url_returns_error(self, monkeypatch):
+        def boom(*_a, **_k):
+            raise InvalidInputError("blocked")
+
+        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", boom)
+        assert check_url("http://169.254.169.254/latest/meta-data/") == (0, "error")
+
 
 # -- helper clients that always raise ------------------------------------
 
@@ -436,14 +475,14 @@ class _ErrorClient:
 # ---------------------------------------------------------------------------
 
 class TestExtractPathDate:
-    def test_nytimes_style_path(self):
+    def test_dated_path_with_trailing_segments(self):
         assert extract_path_date(
-            "https://www.nytimes.com/2025/03/15/us/politics/story.html"
+            "https://www.example.com/2025/03/15/us/news/story.html"
         ) == datetime.date(2025, 3, 15)
 
-    def test_wapo_style_path(self):
+    def test_dated_path_leading_section(self):
         assert extract_path_date(
-            "https://www.washingtonpost.com/politics/2024/12/01/year-in-review/"
+            "https://www.example.org/news/2024/12/01/year-in-review/"
         ) == datetime.date(2024, 12, 1)
 
     def test_single_digit_month_and_day(self):
@@ -641,6 +680,19 @@ class TestWaybackExistsAt:
         self._patch(monkeypatch, client)
         assert wayback_exists_at("https://example.com/x") == (False, None)
 
+    def test_verifies_tls_by_default(self, monkeypatch):
+        monkeypatch.delenv("URL_CHECK_VERIFY_TLS", raising=False)
+        captured: dict = {}
+        client = _WaybackClient(_WaybackResponse(200, '[]'))
+
+        def factory(**kwargs):
+            captured.update(kwargs)
+            return client
+
+        monkeypatch.setattr(httpx, "Client", factory)
+        wayback_exists_at("https://example.com/x")
+        assert captured["verify"] is True
+
 
 # ---------------------------------------------------------------------------
 # fetch_url_content
@@ -721,6 +773,41 @@ class TestFetchUrlContent:
         self._patch(monkeypatch, client)
         _, _, body = fetch_url_content("https://example.com/")
         assert len(body.encode("utf-8", errors="ignore")) <= 512 * 1024
+
+    def test_verifies_tls_by_default(self, monkeypatch):
+        # The fetched body flows to downstream LLMs — TLS must be verified
+        # unless an operator explicitly opts out.
+        monkeypatch.delenv("URL_CHECK_VERIFY_TLS", raising=False)
+        captured: dict = {}
+        client = _ContentClient(_ContentResponse(200, "ok"))
+
+        def factory(**kwargs):
+            captured.update(kwargs)
+            return client
+
+        monkeypatch.setattr(httpx, "Client", factory)
+        fetch_url_content("https://example.com/")
+        assert captured["verify"] is True
+
+    def test_verify_tls_disabled_via_env(self, monkeypatch):
+        monkeypatch.setenv("URL_CHECK_VERIFY_TLS", "0")
+        captured: dict = {}
+        client = _ContentClient(_ContentResponse(200, "ok"))
+
+        def factory(**kwargs):
+            captured.update(kwargs)
+            return client
+
+        monkeypatch.setattr(httpx, "Client", factory)
+        fetch_url_content("https://example.com/")
+        assert captured["verify"] is False
+
+    def test_blocked_url_returns_error(self, monkeypatch):
+        def boom(*_a, **_k):
+            raise InvalidInputError("blocked")
+
+        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", boom)
+        assert fetch_url_content("http://127.0.0.1/") == (0, "error", "")
 
 
 # ---------------------------------------------------------------------------

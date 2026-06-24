@@ -95,17 +95,17 @@ If a format placeholder is missing from `**kw`, the raw message is printed witho
 reporter.info("Missing {x}")  # prints "Missing {x}" — no KeyError
 ```
 
-## Migrating from consumer projects
+## Migration
 
-Replace this pattern in services:
+Replace a `verbose`-flag print pattern in services:
 
 ```python
-def run_summarize(items, verbose=True):
+def process_items(items, verbose=True):
     if verbose:
-        print(f"Summarizing {len(items)} items...", file=sys.stderr)
+        print(f"Processing {len(items)} items...", file=sys.stderr)
     # ... work ...
     if verbose:
-        print(f"Done. {len(items)} summarized.", file=sys.stderr)
+        print(f"Done. {len(items)} processed.", file=sys.stderr)
 ```
 
 With:
@@ -113,11 +113,11 @@ With:
 ```python
 from pf_core.output import Reporter, NullReporter
 
-def run_summarize(items, *, reporter: Reporter | None = None):
+def process_items(items, *, reporter: Reporter | None = None):
     reporter = reporter or NullReporter()
-    reporter.info("Summarizing {n} items", n=len(items))
+    reporter.info("Processing {n} items", n=len(items))
     # ... work ...
-    reporter.done("{n} items summarized", n=len(items))
+    reporter.done("{n} items processed", n=len(items))
 ```
 
 CLI entry point passes `ConsoleReporter()`.

@@ -10,13 +10,23 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import httpx
+import pytest
 
+from pf_core.exceptions import InvalidInputError
 from pf_core.utils.url_liveness import (
     CacheBackend,
     DEFAULT_CACHE_TTL_SECONDS,
     _get_with_browser_ua,
     check_url_cached,
 )
+
+
+@pytest.fixture(autouse=True)
+def _bypass_ssrf_guard(monkeypatch):
+    """Neutralize the SSRF guard here (covered in test_url_safety.py)."""
+    monkeypatch.setattr(
+        "pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +87,7 @@ class TestCheckUrlCached:
             assert check_url_cached("https://example.com/fake") == (404, "not_found")
 
     def test_forbidden_triggers_get_fallback_success(self):
-        """HEAD 403 → GET with browser UA → 200 = real content (e.g. NYT)."""
+        """HEAD 403 → GET with browser UA → 200 = real content."""
         with patch(
             "pf_core.utils.url_liveness.check_url",
             return_value=(403, "forbidden"),
@@ -247,6 +257,24 @@ class TestGetWithBrowserUa:
                 RuntimeError("transport failure")
             )
             assert _get_with_browser_ua("https://x.example") == (0, "error")
+
+    def test_verifies_tls_by_default(self, monkeypatch):
+        monkeypatch.delenv("URL_CHECK_VERIFY_TLS", raising=False)
+        with patch("httpx.Client") as mock_client:
+            resp = type("R", (), {"status_code": 200})()
+            mock_client.return_value.__enter__.return_value.get.return_value = resp
+            _get_with_browser_ua("https://x.example")
+            assert mock_client.call_args.kwargs["verify"] is True
+
+    def test_ssrf_block_returns_error(self, monkeypatch):
+        def boom(*_a, **_k):
+            raise InvalidInputError("blocked")
+
+        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", boom)
+        with patch("httpx.Client") as mock_client:
+            resp = type("R", (), {"status_code": 200})()
+            mock_client.return_value.__enter__.return_value.get.return_value = resp
+            assert _get_with_browser_ua("http://127.0.0.1/") == (0, "error")
 
 
 class TestReExports:

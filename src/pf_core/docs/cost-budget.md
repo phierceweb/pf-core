@@ -214,5 +214,5 @@ Sequential, defensively:
 1. **Concurrent race.** Two calls both passing the check at 99.5% can land at 100.3%. Acceptable slop — defending against orders of magnitude overruns, not $0.01 precision.
 2. **Cold start.** First call of a new period has no snapshot and `spent_usd=0`. Fine by design.
 3. **Time zones.** All boundaries are UTC. Document this to human operators loudly.
-4. **Stale projection.** If `llm_cost_rates` drifts from actual costs, run the projection-accuracy query in `.ai/plans/COST_BUDGET.md` weekly and update rates when `|mean_delta| > 5%`.
+4. **Stale projection.** If `llm_cost_rates` drifts from actual costs, run a projection-accuracy query weekly (compare projected vs actual `cost_usd` on recent `llm_runs`) and update rates when `|mean_delta| > 5%`.
 5. **Missing rate.** When a model has no row, projection falls back to 24h mean — slow to adapt but never fails closed on missing data.

@@ -66,10 +66,10 @@ def test_record_minimum_viable_persists_status_default(tracking_db):
 
 
 def test_record_resolves_agent_and_model_ids(tracking_db):
-    run_id = LlmRunRepo().record(agent_type="grader", model="openai/gpt-4o")
+    run_id = LlmRunRepo().record(agent_type="reviewer", model="openai/gpt-4o")
     with tracking_db.connect() as conn:
         agent = conn.execute(
-            s.llm_agent_types.select().where(s.llm_agent_types.c.slug == "grader")
+            s.llm_agent_types.select().where(s.llm_agent_types.c.slug == "reviewer")
         ).mappings().one()
         model = conn.execute(
             s.llm_models.select().where(s.llm_models.c.name == "openai/gpt-4o")
@@ -225,14 +225,14 @@ def test_record_identical_inputs_produce_identical_hashes(tracking_db):
         model="claude-opus-4-7",
         rendered_prompts=("sys", "usr"),
         sampling={"temperature": 0.2, "top_p": 0.9},
-        configs={"essay_config": 42},
+        configs={"report_config": 42},
     )
     b = LlmRunRepo().record(
         agent_type="drafter",
         model="claude-opus-4-7",
         rendered_prompts=("sys", "usr"),
         sampling={"temperature": 0.2, "top_p": 0.9},
-        configs={"essay_config": 42},
+        configs={"report_config": 42},
     )
     ra = LlmRunRepo().get(a)
     rb = LlmRunRepo().get(b)
@@ -294,16 +294,16 @@ def test_record_skips_payload_when_all_fields_none(tracking_db):
 
 def test_record_writes_configs(tracking_db):
     run_id = LlmRunRepo().record(
-        agent_type="grader",
+        agent_type="reviewer",
         model="claude-opus-4-7",
-        configs={"essay_config": 42, "rubric_version": 7},
+        configs={"report_config": 42, "config_version": 7},
     )
     with tracking_db.connect() as conn:
         rows = conn.execute(
             s.llm_run_configs.select().where(s.llm_run_configs.c.llm_run_id == run_id)
         ).mappings().fetchall()
     by_kind = {r["config_kind"]: r["config_id"] for r in rows}
-    assert by_kind == {"essay_config": 42, "rubric_version": 7}
+    assert by_kind == {"report_config": 42, "config_version": 7}
 
 
 def test_record_writes_validations(tracking_db):
@@ -445,18 +445,18 @@ def test_find_by_hash_empty_when_no_matches(tracking_db):
 
 
 def test_outcome_record_roundtrip(tracking_db):
-    run_id = LlmRunRepo().record(agent_type="grader", model="claude-opus-4-7")
+    run_id = LlmRunRepo().record(agent_type="reviewer", model="claude-opus-4-7")
     LlmRunOutcomeRepo().record(
-        run_id, outcome_kind="grade_matches_professor", score=0.92
+        run_id, outcome_kind="result_matches_reviewer", score=0.92
     )
     outcomes = LlmRunOutcomeRepo().list_for_run(run_id)
     assert len(outcomes) == 1
-    assert outcomes[0]["outcome_kind"] == "grade_matches_professor"
+    assert outcomes[0]["outcome_kind"] == "result_matches_reviewer"
     assert outcomes[0]["score"] == pytest.approx(0.92)
 
 
 def test_outcome_record_replaces_same_kind(tracking_db):
-    run_id = LlmRunRepo().record(agent_type="grader", model="claude-opus-4-7")
+    run_id = LlmRunRepo().record(agent_type="reviewer", model="claude-opus-4-7")
     LlmRunOutcomeRepo().record(run_id, outcome_kind="draft_accepted", score=0.5)
     LlmRunOutcomeRepo().record(
         run_id, outcome_kind="draft_accepted", score=1.0, notes="reviewed"
@@ -468,7 +468,7 @@ def test_outcome_record_replaces_same_kind(tracking_db):
 
 
 def test_outcome_record_keeps_distinct_kinds(tracking_db):
-    run_id = LlmRunRepo().record(agent_type="grader", model="claude-opus-4-7")
+    run_id = LlmRunRepo().record(agent_type="reviewer", model="claude-opus-4-7")
     LlmRunOutcomeRepo().record(run_id, outcome_kind="draft_accepted", score=1.0)
     LlmRunOutcomeRepo().record(run_id, outcome_kind="draft_edited", score=0.7)
     outcomes = LlmRunOutcomeRepo().list_for_run(run_id)

@@ -141,8 +141,7 @@ class _server_now_minus_seconds(expression.FunctionElement):
     ``datetime.now(timezone.utc) - timedelta(...)`` and binding it as a
     WHERE-clause value is unsafe on MySQL: TIMESTAMP columns are stored in
     the session time zone and aware-UTC bind values silently skew the
-    comparison by the session offset (the same class of bug that produced
-    21-million-ms ``duration_ms`` readings in v0.7.0).
+    comparison by the session offset.
 
     Holding the subtraction on the server guarantees left- and right-hand
     sides of the comparison share a time-zone frame whatever it is.
@@ -216,7 +215,7 @@ llm_agent_types = Table(
     Column("description", Text, nullable=True),
     Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
 )
-"""Pipeline-role classification for runs (``drafter``, ``grader``, ...)."""
+"""Pipeline-role classification for runs (``drafter``, ``reviewer``, ...)."""
 
 
 llm_prompts = Table(

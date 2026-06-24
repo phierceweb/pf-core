@@ -10,12 +10,12 @@ agent's model or backend without a restart.
 Flat form (single backend, the original shorthand)::
 
     agents:
-      grader:
+      summarizer:
         model: anthropic/claude-haiku-4-5
         temperature: 0.0
 
-Nested form (per-backend models; absorbed from the consumer projects that
-independently built it — model ids are not translatable across backends)::
+Nested form (per-backend models; model ids are not translatable across
+backends)::
 
     default_client: openrouter        # top-level declared default (optional)
     env_prefix: MYPROJ                # enables MYPROJ_<SLUG>_BACKEND overrides

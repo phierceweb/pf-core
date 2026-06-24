@@ -6,11 +6,10 @@ take the highest ``version`` for a given scope. This keeps a full, auditable
 history of every config a pipeline ran under, and makes "did the config change
 since I last read it?" a cheap version comparison.
 
-Two independent consumers built this by hand (per-section research config; a
-versioned grading config with a project-default fallback), so the shared core
-lives here. Policy that differs between them is parameterized: ``carry_forward``
-(copy unspecified columns from the prior version) and ``get_latest_with_fallback``
-(fall back to a default scope).
+It supports carry-forward of unspecified columns and a default-scope
+fallback. Policy is parameterized: ``carry_forward`` (copy unspecified
+columns from the prior version) and ``get_latest_with_fallback`` (fall back
+to a default scope).
 
 The table is referenced by name with caller-supplied column identifiers,
 validated against a strict identifier pattern — **never interpolate user input
@@ -24,10 +23,10 @@ Usage::
     from pf_core.db.versioned_config import get_latest, append_version
 
     with transaction() as conn:
-        current = get_latest(conn, "section_config", {"section_id": 5})
+        current = get_latest(conn, "report_config", {"report_id": 5})
         new_version = append_version(
-            conn, "section_config", {"section_id": 5},
-            {"beat_query": "…"}, carry_forward=True,
+            conn, "report_config", {"report_id": 5},
+            {"query": "…"}, carry_forward=True,
         )
 """
 
@@ -129,8 +128,8 @@ def get_latest_with_fallback(
 ) -> dict[str, Any] | None:
     """``get_latest(scope)``; if no row, ``get_latest(fallback_scope)``.
 
-    Models the "specific config, else a shared default" lookup — e.g. an
-    essay-specific config falling back to the project default.
+    Models the "specific config, else a shared default" lookup — e.g. a
+    scope-specific config falling back to the default.
     """
     row = get_latest(conn, table, scope, version_col=version_col)
     if row is not None:

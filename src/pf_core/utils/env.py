@@ -5,12 +5,6 @@ explicit argument → environment variable → default. Malformed env
 values fall back to the default and emit a structured warning so
 operators don't silently lose their intended override.
 
-One consumer originally hand-rolled this pattern in three places
-(`_resolve_concurrency`, `_resolve_model`, `resolve_workers`) — each
-slightly different, each with its own warning shape. Promotion to
-pf-core gives the same behavior to every consumer that follows the
-config-driven rule.
-
 Usage::
 
     from pf_core.utils.env import resolve_int, resolve_str

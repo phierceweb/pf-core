@@ -21,8 +21,7 @@ File templates use `{stem}` as the only placeholder (the source input's
 filename stem). Other path components are literal — `images`, `sections`,
 `.extract-cache/`, etc.
 
-Generalized from production pipeline use; each consumer registers its
-own stage registry.
+Each caller registers its own stage registry.
 """
 
 from __future__ import annotations

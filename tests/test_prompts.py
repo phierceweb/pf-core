@@ -16,10 +16,10 @@ from pf_core.llm.prompts import (
 class TestLoadPrompts:
     def test_loads_yaml_file(self, tmp_path):
         f = tmp_path / "prompts.yaml"
-        f.write_text("grading:\n  system: Grade this.\n  user: |\n    Answer: {answer}\n")
+        f.write_text("summarizing:\n  system: Summarize this.\n  user: |\n    Answer: {answer}\n")
         result = load_prompts(f)
-        assert result["grading"]["system"] == "Grade this."
-        assert "Answer: {answer}" in result["grading"]["user"]
+        assert result["summarizing"]["system"] == "Summarize this."
+        assert "Answer: {answer}" in result["summarizing"]["user"]
 
     def test_file_not_found(self, tmp_path):
         with pytest.raises(ConfigurationError, match="not found"):
@@ -46,15 +46,15 @@ class TestLoadPrompts:
     def test_nested_structure(self, tmp_path):
         f = tmp_path / "prompts.yaml"
         f.write_text(
-            "grading:\n"
-            "  system: You are a grader.\n"
-            "  user: Grade this\n"
+            "summarizing:\n"
+            "  system: You are a summarizer.\n"
+            "  user: Summarize this\n"
             "feedback:\n"
             "  system: You write feedback.\n"
             "  user: Score this\n"
         )
         result = load_prompts(f)
-        assert "grading" in result
+        assert "summarizing" in result
         assert "feedback" in result
         assert result["feedback"]["system"] == "You write feedback."
 
@@ -114,8 +114,8 @@ class TestRenderToken:
         assert result == "same then same"
 
     def test_curly_braces_not_affected(self):
-        result = render('{"role": "@@ROLE@@"}', style="@@", ROLE="grader")
-        assert result == '{"role": "grader"}'
+        result = render('{"role": "@@ROLE@@"}', style="@@", ROLE="summarizer")
+        assert result == '{"role": "summarizer"}'
 
     def test_json_heavy_template(self):
         template = (

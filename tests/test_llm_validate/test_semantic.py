@@ -80,11 +80,11 @@ def test_url_sanity_severity_override_to_error():
 
 
 def test_tier1_ratio_meets_threshold():
-    register_tier1_domains(lambda: {"apnews.com"})
+    register_tier1_domains(lambda: {"trusted.example"})
     register(agent_type="t", shape=Doc, semantic=["tier1_ratio:0.6"])
     raw = payload(sources=[
-        "https://apnews.com/article/abc",
-        "https://apnews.com/article/def",
+        "https://trusted.example/article/abc",
+        "https://trusted.example/article/def",
         "https://example.com/story",
     ])
     res = parse_and_validate(raw, agent_type="t")
@@ -94,10 +94,10 @@ def test_tier1_ratio_meets_threshold():
 
 
 def test_tier1_ratio_below_threshold_fails():
-    register_tier1_domains(lambda: {"apnews.com"})
+    register_tier1_domains(lambda: {"trusted.example"})
     register(agent_type="t", shape=Doc, semantic=["tier1_ratio:0.6"])
     raw = payload(sources=[
-        "https://apnews.com/article/abc",
+        "https://trusted.example/article/abc",
         "https://example.com/a",
         "https://example.com/b",
     ])
@@ -111,7 +111,7 @@ def test_tier1_ratio_below_threshold_fails():
 def test_tier1_ratio_no_hook_returns_passing_info():
     register(agent_type="t", shape=Doc, semantic=["tier1_ratio:0.6"])
     res = parse_and_validate(
-        payload(sources=["https://apnews.com/article/abc"]), agent_type="t",
+        payload(sources=["https://trusted.example/article/abc"]), agent_type="t",
     )
     sig = next(s for s in res.signals if s.validator == "tier1_ratio")
     assert sig.passed is True

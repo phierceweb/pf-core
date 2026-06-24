@@ -1,7 +1,7 @@
 """
 Base service class for single-domain business logic.
 
-A service owns one slice of domain logic — grading rubrics, entry export,
+A service owns one slice of domain logic — user profiles, report generation,
 catalog scanning, etc.  It receives its dependencies (config, connection)
 via the constructor rather than reaching for globals.
 
@@ -9,9 +9,9 @@ Usage::
 
     from pf_core.services import Service
 
-    class RubricService(Service):
-        def active_rubrics(self) -> list[dict]:
-            repo = self._repo(RubricRepo)
+    class ReportService(Service):
+        def active_reports(self) -> list[dict]:
+            repo = self._repo(ReportRepo)
             return repo.list_active()
 
         def score(self, text: str) -> float:
@@ -19,11 +19,11 @@ Usage::
             ...
 
     # Standalone:
-    svc = RubricService(config=cfg)
+    svc = ReportService(config=cfg)
 
     # Inside an orchestrator (shared connection):
     with transaction() as conn:
-        svc = RubricService(config=cfg, conn=conn)
+        svc = ReportService(config=cfg, conn=conn)
 """
 
 from __future__ import annotations

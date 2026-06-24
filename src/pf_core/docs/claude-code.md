@@ -133,7 +133,7 @@ results = run_parallel(items, lambda x: client.chat(...))
 
 `preflight()` issues one `claude --print "ok"` against the configured binary and model, with a 30-second default timeout (override via `preflight(timeout=...)`). On any failure — auth, missing binary, timeout, non-zero exit — it raises `ClaudeCodeError` with an actionable message. On success it logs `claude_code_preflight_ok` and returns `None`.
 
-This catches the failure mode that originally prompted the helper: 1180 parallel `claude --print` calls all erroring with "Not logged in · Please run /login" after burning ~10 minutes of wall-clock. Preflight surfaces the same condition in ~2 seconds.
+This catches the failure mode where a whole batch of parallel `claude --print` calls all error with "Not logged in · Please run /login" — without preflight, only after burning minutes of wall-clock. Preflight surfaces the same condition in ~2 seconds.
 
 ## Singleton
 

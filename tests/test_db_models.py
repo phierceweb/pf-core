@@ -57,12 +57,11 @@ class TestClearCache:
 # ---------------------------------------------------------------------------
 # Dialect-correctness regression — no driver / server needed.
 #
-# resolve_model_id used to send raw ``INSERT IGNORE`` to *every* non-SQLite
-# dialect (the ``else`` branch), which is a hard syntax error on PostgreSQL —
-# a latent correctness bug for the Postgres consumers pf-core advertises. These
-# tests capture the exact statement the resolver sends and compile it against
-# each dialect, asserting it is the dialect's valid insert-or-ignore construct
-# and never raw ``INSERT IGNORE``.
+# Guards against ``resolve_model_id`` emitting raw ``INSERT IGNORE`` on a
+# non-SQLite dialect — a hard syntax error on PostgreSQL. These tests capture
+# the exact statement the resolver sends and compile it against each dialect,
+# asserting it is that dialect's valid insert-or-ignore construct and never raw
+# ``INSERT IGNORE``.
 # ---------------------------------------------------------------------------
 
 

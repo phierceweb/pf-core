@@ -44,8 +44,8 @@ with transaction() as conn:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `conn` | `Connection` | (required) | SQLAlchemy connection (inside a transaction) |
-| `table` | `str` | (required) | Table name to check for collisions |
-| `column` | `str` | `"id"` | Column name for the ID |
+| `table` | `str` | (required) | Table name to check for collisions. Interpolated into SQL, so it must be a plain identifier (`^[A-Za-z_][A-Za-z0-9_]*$`) — raises `InvalidInputError` otherwise |
+| `column` | `str` | `"id"` | Column name for the ID. Same plain-identifier requirement as `table` |
 | `preferred` | `str \| None` | `None` | Try this ID first before generating |
 | `size` | `int \| None` | `None` | Override default length |
 | `max_attempts` | `int` | `24` | Maximum retries before raising |

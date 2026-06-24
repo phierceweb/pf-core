@@ -28,13 +28,13 @@ This pulls in `trafilatura` (extraction) and `htmldate` (date fallback). Without
 ```python
 from pf_core.utils.article_fetch import fetch_article
 
-art = fetch_article("https://apnews.com/article/abc123")
+art = fetch_article("https://example.com/news/fusion-milestone")
 
 if art.fetch_status == "ok":
     print(art.title)              # "Scientists report fusion milestone..."
     print(art.date_published)     # date(2026, 4, 15)
     print(art.body[:500])         # extracted prose
-    print(art.outlet)             # "apnews.com"
+    print(art.outlet)             # "example.com"
 elif art.fetch_status == "paywalled":
     # Article exists but content is behind a paywall.
     # Wayback may have been tried already (check art.used_wayback).
@@ -86,7 +86,7 @@ class FetchedArticle:
     title: str                            # extracted title or ""
     date_published: date | None           # extracted publication date
     body: str                             # extracted body, trimmed to 8000 chars
-    outlet: str                           # domain of url (e.g. "apnews.com")
+    outlet: str                           # domain of url (e.g. "example.com")
     canonical_url: str                    # dedup-key form via canonical_url()
     raw_meta: dict                        # full extractor output for debugging
 ```
@@ -163,4 +163,3 @@ The "never raises" contract is load-bearing. Callers branch on `fetch_status`, n
 
 - `pf_core.utils.urls` — `fetch_url_content`, `wayback_exists_at`, `canonical_url`, `domain_of`, `extract_path_date` — the lower-level primitives this module composes
 - `pf_core.utils.relative_dates` — for resolving the date phrases that LLMs emit when describing events from articles
-- `pf_core/docs/anti-hallucination.md` — broader pattern of constraining LLM input rather than detecting bad LLM output (this module IS the constraint — real fetched content trumps LLM-summarized claims)

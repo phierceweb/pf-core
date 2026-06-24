@@ -118,4 +118,4 @@ run_parallel(items, summarize_one, workers=4, label="Summarized", failures=failu
 
 The summary level distinguishes the two cases so dashboards and log filters can alert on the warning case (any failure in the batch) without false positives from the all-succeeded case.
 
-The summary is opt-in — without `failures=`, no summary log is emitted (preserves pre-A3b behavior). Empty `items` lists also skip the summary.
+The summary is opt-in — without `failures=`, no summary log is emitted. Empty `items` lists also skip the summary.

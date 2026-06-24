@@ -110,15 +110,15 @@ def test_eval_config_metrics_gates():
 def test_eval_config_diff_fields_and_tolerances():
     cfg = EvalConfig({
         "agents": {
-            "grader": {
-                "diff_fields": ["grade", "category"],
-                "tolerances": {"grade": 3.0},
+            "reviewer": {
+                "diff_fields": ["score", "category"],
+                "tolerances": {"score": 3.0},
             }
         }
     })
-    grader_cfg = cfg.for_agent("grader")
-    assert grader_cfg.diff_fields == ["grade", "category"]
-    assert grader_cfg.tolerances == {"grade": 3.0}
+    reviewer_cfg = cfg.for_agent("reviewer")
+    assert reviewer_cfg.diff_fields == ["score", "category"]
+    assert reviewer_cfg.tolerances == {"score": 3.0}
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ Usage::
     from pf_core.clients.brave import get_client
 
     client = get_client()  # reads BRAVE_API_KEY from env
-    results, usage = client.search("mars rover latest findings", count=5)
+    results, usage = client.search("python async web frameworks", count=5)
     for r in results:
         print(r["url"], r["title"])
 
@@ -32,8 +32,8 @@ treat as a hard failure.
 
 Pricing model: Brave charges per call, not per token. The client logs
 each call at a fixed rate (default $0.005, configurable). Set the rate
-to your account's actual price; the default is the upper bound for the
-"Data for Search" tier as of 2026-05.
+to your account's actual price; the default is the documented free-tier
+upper bound.
 """
 
 from __future__ import annotations

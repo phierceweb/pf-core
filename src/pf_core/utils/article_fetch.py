@@ -21,7 +21,7 @@ Usage::
 
     from pf_core.utils.article_fetch import fetch_article
 
-    art = fetch_article("https://apnews.com/article/abc123")
+    art = fetch_article("https://example.com/news/some-story")
     if art.fetch_status == "ok":
         print(art.title, art.date_published)
         print(art.body[:500])
@@ -113,11 +113,6 @@ def _require_deps() -> None:
 # existing cached results. Consumers reading project-side cache rows
 # stamped with a different version should treat them as misses — a code
 # bump triggers refetch without a data migration.
-#
-# Version history:
-#   1 — pre-2026-04-22 (baseline; never used because we start at 2)
-#   2 — post precision/recall fallback (2026-04-22)
-#   3 — extracted to pf-core (2026-05-03)
 FETCHER_VERSION = 3
 
 # Minimum extracted body length (chars) that we trust as "full article."
@@ -175,7 +170,7 @@ class FetchedArticle:
         title: extracted article title (empty string if none found).
         date_published: extracted publication date or None.
         body: extracted article body, trimmed to ``_BODY_MAX_CHARS``.
-        outlet: domain extracted from the original URL (e.g. ``apnews.com``).
+        outlet: domain extracted from the original URL (e.g. ``example.com``).
         canonical_url: dedup-key form of the URL (tracking params stripped,
             scheme normalized) via :func:`pf_core.utils.urls.canonical_url`.
         raw_meta: the raw extractor output dict for debugging — author,

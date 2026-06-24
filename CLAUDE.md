@@ -6,7 +6,7 @@
 
 ## Consumer projects
 
-pf-core is consumed by several sibling projects — full-stack web apps (on MySQL, SQLite, and Postgres), batch document pipelines, and lightweight CLIs. When something proves useful in two consumers, it gets absorbed into pf-core. When something only makes sense in one, it stays out (see [`.ai/rules/scope.md`](.ai/rules/scope.md)).
+pf-core is designed to be consumed by multiple projects — web apps, batch pipelines, and CLIs. When something proves useful in two consumers, it gets absorbed into pf-core. When something only makes sense in one, it stays out (see [`.ai/rules/scope.md`](.ai/rules/scope.md)).
 
 ## Architecture
 

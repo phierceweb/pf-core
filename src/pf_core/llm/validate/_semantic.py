@@ -48,7 +48,7 @@ def register_tier1_domains(hook: Callable[[], set[str]]) -> None:
 
     The hook is called once per validation (cheap) so the set can be
     reloaded from config without restart. Domains should be bare hostnames
-    (e.g. ``"apnews.com"``), matched as suffixes.
+    (e.g. ``"example.com"``), matched as suffixes.
     """
     global _TIER1_HOOK
     _TIER1_HOOK = hook

@@ -1,7 +1,7 @@
 """
 Shared web-layer helpers for route handlers.
 
-Small utilities that both projects duplicate across every route file.
+Small utilities shared across route files.
 """
 
 from __future__ import annotations

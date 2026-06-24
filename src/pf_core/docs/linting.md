@@ -113,7 +113,7 @@ The recommended pattern: keep `exempt:` short and justified. Use `limits:` to en
 Files are sorted by most-over-limit first:
 
 ```
-OVER LIMIT: app/repo/submissions.py
+OVER LIMIT: app/repo/records.py
   610 lines (limit: 300, over by 310)
 
 Found 1 file(s) over their size limit.

@@ -11,10 +11,6 @@ path. ``os.replace`` is atomic when source and target are on the same
 filesystem — that's why the tempfile lives next to the target rather
 than in ``/tmp``.
 
-Generalized from production pipeline use, where the same pattern was
-duplicated across several caches, the pipeline manifest, and a
-normalizer's checkpoint files.
-
 Usage::
 
     from pf_core.utils.io import atomic_write_text, atomic_write_json

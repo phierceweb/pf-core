@@ -26,12 +26,12 @@ canonical_url("http://example.com/x?fbclid=abc#section-2")
 # "https://example.com/x"
 
 # Same article via three different share paths — all canonicalize the same:
-canonical_url("https://apnews.com/article/foo?utm_source=newsletter")
-canonical_url("https://www.apnews.com/article/foo/")
-# both → "https://apnews.com/article/foo"
+canonical_url("https://example.com/article/foo?utm_source=newsletter")
+canonical_url("https://www.example.com/article/foo/")
+# both → "https://example.com/article/foo"
 ```
 
-Produces a canonical form so URLs referencing the same resource via different link shapes compare equal — a newsletter link, a search result, and a Twitter share of the same AP article all produce the same canonical string.
+Produces a canonical form so URLs referencing the same resource via different link shapes compare equal — a newsletter link, a search result, and a Twitter share of the same article all produce the same canonical string.
 
 Normalization applied (in order):
 
@@ -99,6 +99,14 @@ status, category = check_url("https://down.invalid")          # (0, "error")
 
 HEAD request with GET fallback on 405 or transport error. Browser-like User-Agent. Follows redirects.
 
+### TLS verification
+
+Every outbound request in this module (`check_url`, `fetch_url_content`, `wayback_exists_at`, and the `url_liveness` GET fallback) **verifies TLS certificates by default**. Set `URL_CHECK_VERIFY_TLS=0` to disable verification — but only for deliberately probing hosts with known-broken certs. Disabling removes MITM protection, and since `fetch_url_content`'s body flows to downstream LLMs, a MITM could inject content. Resolved via `pf_core.utils.http_tls.verify_tls()` (reads the env var per call, default `True`).
+
+### SSRF protection
+
+`check_url` and `fetch_url_content` accept caller-influenced URLs, so they are guarded against server-side request forgery: the target — and every redirect hop — must use an http/https scheme and resolve to a **public** address. A URL that resolves to loopback, link-local (incl. `169.254.169.254` cloud metadata), private, reserved, or multicast space is refused, and the call returns its normal failure tuple (`(0, "error")` / `(0, "error", "")`) with an `ssrf_blocked` warning logged. Set `URL_FETCH_ALLOW_PRIVATE=1` to allow internal targets (service mesh, dev) — the http/https scheme requirement still applies. Implemented in `pf_core.utils.url_safety`.
+
 ### check_url
 
 | Parameter | Type | Default | Description |
@@ -110,13 +118,13 @@ Returns `(status_code, category)`. Categories: `ok`, `not_found`, `forbidden`, `
 
 ## Cached liveness check
 
-`pf_core.utils.url_liveness.check_url_cached` wraps `check_url` with a TTL'd cache, browser-UA GET fallback for 403/401, and a kill-switch boolean. Use it any time the same URL might be checked again — autoreview loops, periodic audits, batch dedup.
+`pf_core.utils.url_liveness.check_url_cached` wraps `check_url` with a TTL'd cache, browser-UA GET fallback for 403/401, and a kill-switch boolean. Use it any time the same URL might be checked again — periodic audits, batch dedup, revalidation loops.
 
 ```python
 from pf_core.utils.url_liveness import check_url_cached
 
 # No cache — same shape as check_url, plus the GET fallback:
-check_url_cached("https://nyt.com/article/x")  # (200, "ok") via GET-fallback even if HEAD 403s
+check_url_cached("https://example.com/article/x")  # (200, "ok") via GET-fallback even if HEAD 403s
 
 # With redis-py (or anything matching CacheBackend):
 import redis
@@ -135,7 +143,7 @@ check_url_cached(url, disabled=os.environ.get("URL_LIVENESS_DISABLED") == "1")
 
 ### What this adds over `check_url`
 
-- **403/401 fallback.** Many real sites (NYT, WaPo, AP, federal portals) return 403 to bare HEAD even though their content is real. `check_url_cached` re-issues the request as GET with a browser User-Agent and `follow_redirects=True`, so a 200 via GET correctly downgrades the verdict from "forbidden" to "ok". Distinguishes real bot-block from fabrication.
+- **403/401 fallback.** Many real sites return 403 to bare HEAD even though their content is real. `check_url_cached` re-issues the request as GET with a browser User-Agent and `follow_redirects=True`, so a 200 via GET correctly downgrades the verdict from "forbidden" to "ok". Distinguishes a real bot-block from a dead link.
 - **Caching.** Result cached at `cache_key_prefix + url` for `cache_ttl_seconds` (default 24h). Cache failures (corrupt value, backend exception) silently fall through to a fresh network check — never throws.
 - **Kill switch.** `disabled=True` returns `(0, "disabled")` with no network or cache activity. Useful during incidents.
 
@@ -178,7 +186,7 @@ Returns `(status_code, category)`. Categories include all of `check_url`'s plus 
 import datetime
 from pf_core.utils.urls import extract_path_date
 
-extract_path_date("https://www.nytimes.com/2025/03/15/us/politics/story.html")
+extract_path_date("https://www.example.com/2025/03/15/section/story.html")
 # datetime.date(2025, 3, 15)
 
 extract_path_date("https://example.com/article/abc")
@@ -256,16 +264,16 @@ Returns `(status_code, category, body)` where category matches `check_url` and b
 ```python
 from pf_core.utils.urls import extract_article_metadata
 
-html = "<html><head><title>Senate Confirms Nominee</title>..."
+html = "<html><head><title>Quarterly Results Announced</title>..."
 metadata = extract_article_metadata(html)
 # {
-#   "title": "Senate Confirms Nominee",
+#   "title": "Quarterly Results Announced",
 #   "description": "",
-#   "og_title": "Senate Confirms Nominee",
-#   "og_description": "The Senate voted 52-48 …",
+#   "og_title": "Quarterly Results Announced",
+#   "og_description": "The company reported record revenue …",
 #   "twitter_title": "",
 #   "twitter_description": "",
-#   "first_paragraph": "The Senate on Monday confirmed…"
+#   "first_paragraph": "The company on Monday announced…"
 # }
 ```
 
@@ -283,7 +291,6 @@ Returns `dict[str, str]` with keys `title`, `description`, `og_title`, `og_descr
 
 - [LLM URL Check](llm-validation.md) — uses these utilities to detect hallucinated URLs
 - [Article Fetch](article-fetch.md) — composes `fetch_url_content`, `wayback_exists_at`, `canonical_url`, `domain_of`, and `extract_path_date` into a fetch-and-extract pipeline with Wayback fallback
-- [Anti-Hallucination](anti-hallucination.md) — the architectural pattern these utilities support
 
 ## Migrating from consumer projects
 

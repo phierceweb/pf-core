@@ -151,4 +151,3 @@ Brave free tier is **1 query per second**. The client never auto-sleeps — call
 ## See also
 
 - `pf_core.utils.article_fetch` — the natural pairing: Brave gives you URLs, article_fetch turns them into structured content
-- `pf_core/docs/anti-hallucination.md` — broader pattern of constraining LLM input to known-real URLs rather than asking the LLM to produce them

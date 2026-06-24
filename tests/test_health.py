@@ -54,6 +54,16 @@ class TestHealthEndpoint:
         assert data["status"] == "degraded"
         assert "error" in data["checks"]["db"]
 
+    def test_check_db_does_not_leak_exception_detail(self):
+        from pf_core.web import health
+
+        secret_url = "postgresql://user:s3cr3t@db.internal/app"
+        with patch("pf_core.db.ping", side_effect=Exception(f"cannot connect: {secret_url}")):
+            result = health._check_db()
+        assert result == "error"
+        assert "s3cr3t" not in result
+        assert "postgresql://" not in result
+
     def test_redis_check_included(self):
         app = FastAPI()
         app.include_router(health_router(check_db=False, check_redis=True))

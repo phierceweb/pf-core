@@ -38,15 +38,17 @@ def make_admin_router(
     prefix: str = "/admin/llm",
     config_resolvers: dict[str, Callable[[int], str]] | None = None,
     templates: Jinja2Templates | None = None,
+    allow_unauthenticated: bool = False,
 ) -> APIRouter
 ```
 
 | Parameter | Purpose |
 |---|---|
-| `auth_dep` | FastAPI dependency that runs on every route. When `None`, the admin is public (dev only — never expose to the internet). |
+| `auth_dep` | FastAPI dependency that runs on every route. **Required** — the admin exposes prompts, raw responses, and a job-cancel POST. |
 | `prefix` | Mount path. Defaults to `/admin/llm`. |
 | `config_resolvers` | Per-`config_kind` callback mapping an integer config id to a human-readable label. Unregistered kinds render as `kind:id`. |
 | `templates` | Override the packaged Jinja2 templates (e.g. to inject your own `base.html` for skinning). When omitted, the packaged templates are used. |
+| `allow_unauthenticated` | Explicit opt-in to mount with no `auth_dep` (local dev only). Default `False`. |
 
 ## Pages
 
@@ -110,7 +112,7 @@ def require_admin(user=Depends(current_user)):
     return user
 ```
 
-If `auth_dep=None`, **every route is public**. Useful during local development; never expose in production.
+`auth_dep` is **required**: `make_admin_router()` raises `ConfigurationError` if called with neither `auth_dep` nor `allow_unauthenticated=True`, so an unauthenticated admin can never be mounted by accident. To run it open for local development, opt in explicitly with `allow_unauthenticated=True` — never in production.
 
 ## JSON API
 

@@ -10,11 +10,11 @@ Usage in a project's ``alembic/env.py``::
 
     run_migrations_online()
 
-With SQLite fallback (e.g., an essay-grading app on SQLite)::
+With SQLite fallback (e.g., a small app on SQLite)::
 
     from pf_core.alembic import run_migrations_online
 
-    run_migrations_online(fallback_sqlite="grading.db")
+    run_migrations_online(fallback_sqlite="app.db")
 
 With explicit metadata (for autogenerate)::
 

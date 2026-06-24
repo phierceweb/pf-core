@@ -243,7 +243,7 @@ class EntryRepo(Repository):
     def list_by_section(self, section_id: int) -> list[dict]:
         with self._tx() as conn:
             rows = conn.execute(
-                text("SELECT * FROM entries WHERE section_id = :sid ORDER BY date_of_action"),
+                text("SELECT * FROM entries WHERE section_id = :sid ORDER BY created_at"),
                 {"sid": section_id},
             ).mappings().fetchall()
             return [dict(r) for r in rows]

@@ -131,9 +131,7 @@ def get_engine(url: str | None = None) -> Engine:
             # ``CURRENT_TIMESTAMP`` is evaluated in whatever ``time_zone``
             # the MySQL server defaults to; callers that wrap the returned
             # naive value as ``tzinfo=timezone.utc`` then silently add the
-            # session offset — the root cause of the v0.7.0
-            # ``job_steps.duration_ms`` drift and the class of bug called
-            # out in BEYOND_STANDARDIZATION item #5.
+            # session offset, skewing every timestamp comparison.
             cur = dbapi_conn.cursor()
             cur.execute("SET time_zone = '+00:00'")
             cur.execute("SET foreign_key_checks = 1")

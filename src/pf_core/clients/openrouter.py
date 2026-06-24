@@ -1,8 +1,7 @@
 """
 OpenRouter API client.
 
-Thin wrapper around the OpenAI-compatible chat completions endpoint.
-Merges features from the original consumer-project clients:
+Thin wrapper around the OpenAI-compatible chat completions endpoint:
   - Configurable per-request timeout
   - Provider ignore list
   - Usage tracking (tokens + cost + duration)

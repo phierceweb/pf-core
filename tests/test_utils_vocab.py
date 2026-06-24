@@ -12,13 +12,13 @@ def basic_normalizer() -> SlugNormalizer:
     """A small normalizer covering the common shapes a real project would
     use: pass-through, synonym, and explicit-reject."""
     return SlugNormalizer(
-        canonical_slugs={"eo", "memo", "post", "court_ruling", "firing"},
+        canonical_slugs={"article", "memo", "post", "press_release", "firing"},
         synonyms={
-            "executive order": "eo",
-            "executive orders": "eo",
+            "blog article": "article",
+            "blog articles": "article",
             "social media post": "post",
-            "court order": "court_ruling",
-            "ruling": "court_ruling",
+            "press statement": "press_release",
+            "release": "press_release",
             "termination": "firing",
         },
         explicit_rejects={
@@ -33,18 +33,18 @@ class TestCanonicalPassThrough:
     """Inputs already in the canonical set return the slug unchanged."""
 
     def test_known_slug(self, basic_normalizer):
-        assert basic_normalizer.normalize("eo") == "eo"
+        assert basic_normalizer.normalize("article") == "article"
         assert basic_normalizer.normalize("memo") == "memo"
-        assert basic_normalizer.normalize("court_ruling") == "court_ruling"
+        assert basic_normalizer.normalize("press_release") == "press_release"
 
     def test_case_insensitive(self, basic_normalizer):
-        assert basic_normalizer.normalize("EO") == "eo"
+        assert basic_normalizer.normalize("ARTICLE") == "article"
         assert basic_normalizer.normalize("Memo") == "memo"
-        assert basic_normalizer.normalize("Court_Ruling") == "court_ruling"
+        assert basic_normalizer.normalize("Press_Release") == "press_release"
 
     def test_whitespace_tolerant(self, basic_normalizer):
-        assert basic_normalizer.normalize("  eo  ") == "eo"
-        assert basic_normalizer.normalize("eo\n") == "eo"
+        assert basic_normalizer.normalize("  article  ") == "article"
+        assert basic_normalizer.normalize("article\n") == "article"
         assert basic_normalizer.normalize("\tmemo\t") == "memo"
 
 
@@ -52,23 +52,23 @@ class TestSynonymLookup:
     """Free-text variants map to the canonical slug they're aliased to."""
 
     def test_basic_synonym(self, basic_normalizer):
-        assert basic_normalizer.normalize("executive order") == "eo"
+        assert basic_normalizer.normalize("blog article") == "article"
         assert basic_normalizer.normalize("social media post") == "post"
-        assert basic_normalizer.normalize("court order") == "court_ruling"
+        assert basic_normalizer.normalize("press statement") == "press_release"
         assert basic_normalizer.normalize("termination") == "firing"
 
     def test_synonym_case_insensitive(self, basic_normalizer):
-        assert basic_normalizer.normalize("Executive Order") == "eo"
-        assert basic_normalizer.normalize("EXECUTIVE ORDER") == "eo"
+        assert basic_normalizer.normalize("Blog Article") == "article"
+        assert basic_normalizer.normalize("BLOG ARTICLE") == "article"
         assert basic_normalizer.normalize("Social Media Post") == "post"
 
     def test_synonym_whitespace_tolerant(self, basic_normalizer):
-        assert basic_normalizer.normalize("  executive   order  ") == "eo"
-        assert basic_normalizer.normalize("court\torder") == "court_ruling"
+        assert basic_normalizer.normalize("  blog   article  ") == "article"
+        assert basic_normalizer.normalize("press\tstatement") == "press_release"
 
     def test_underscore_variant_of_canonical(self, basic_normalizer):
-        """``court ruling`` (with space) auto-converts to underscored slug."""
-        assert basic_normalizer.normalize("court ruling") == "court_ruling"
+        """``press release`` (with space) auto-converts to underscored slug."""
+        assert basic_normalizer.normalize("press release") == "press_release"
 
 
 class TestExplicitReject:
@@ -90,12 +90,12 @@ class TestExplicitReject:
         assert basic_normalizer.is_explicit_reject("  market reaction  ") is True
 
     def test_is_explicit_reject_false_for_canonical(self, basic_normalizer):
-        assert basic_normalizer.is_explicit_reject("eo") is False
-        assert basic_normalizer.is_explicit_reject("court_ruling") is False
+        assert basic_normalizer.is_explicit_reject("article") is False
+        assert basic_normalizer.is_explicit_reject("press_release") is False
 
     def test_is_explicit_reject_false_for_synonym(self, basic_normalizer):
         """Synonyms are NOT rejects — they map to a canonical slug."""
-        assert basic_normalizer.is_explicit_reject("executive order") is False
+        assert basic_normalizer.is_explicit_reject("blog article") is False
 
     def test_is_explicit_reject_false_for_unknown(self, basic_normalizer):
         """An unknown free-text string is not the same as a deliberate reject."""
@@ -108,7 +108,7 @@ class TestUnknownInput:
     def test_unknown_string(self, basic_normalizer):
         assert basic_normalizer.normalize("kerfuffle") is None
         assert basic_normalizer.normalize("twitter feud") is None
-        assert basic_normalizer.normalize("administrative action") is None
+        assert basic_normalizer.normalize("random category") is None
 
 
 class TestEmptyInput:

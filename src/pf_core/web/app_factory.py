@@ -22,6 +22,7 @@ Usage::
 from __future__ import annotations
 
 import time
+from html import escape as _html_escape
 from pathlib import Path
 from typing import Any
 
@@ -159,13 +160,14 @@ def _render_error(
         except Exception:
             pass  # Template missing or broken — fall through to built-in
 
-    # Built-in self-contained error page for HTML requests
+    # Built-in self-contained error page for HTML requests. Escape all
+    # interpolated text — message can carry request-reflected content.
     if "text/html" in accept:
         html = _ERROR_PAGE.format(
-            title=f"{code} — {heading}",
+            title=_html_escape(f"{code} — {heading}"),
             code=code,
-            heading=heading,
-            message=message,
+            heading=_html_escape(heading),
+            message=_html_escape(message),
         )
         return HTMLResponse(html, status_code=code)
 

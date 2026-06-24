@@ -3,15 +3,15 @@
 Maps free-text strings (typically from an LLM) to a project-specific
 controlled-vocabulary slug. Useful when a downstream column or filter
 requires a canonical value but the upstream producer emits descriptive
-free text ("executive order" / "Social Media Post" / "court order").
+free text ("blog article" / "Social Media Post" / "white paper").
 
 Three lookup paths in priority order:
 
   1. Pass-through — input already in the canonical slug set.
   2. Synonym lookup — input is a known free-text variant.
   3. Explicit reject — input is a category that should drop the row
-     entirely (e.g. "news report" / "market reaction" / "public
-     statement" in a catalog of *actions*). Returned as ``None``.
+     entirely (e.g. "advertisement" / "spam" / "boilerplate" in a
+     catalog of *content types*). Returned as ``None``.
 
 Anything else returns ``None``. The caller decides what ``None`` means
 in their domain (skip the row, raise a validation error, fall back to
@@ -26,22 +26,22 @@ Usage::
     from pf_core.utils.vocab import SlugNormalizer
 
     normalizer = SlugNormalizer(
-        canonical_slugs={"eo", "memo", "post", "court_ruling"},
+        canonical_slugs={"article", "report", "post", "press_release"},
         synonyms={
-            "executive order": "eo",
+            "blog article": "article",
             "social media post": "post",
-            "court order": "court_ruling",
+            "press release": "press_release",
         },
         explicit_rejects={
-            "public statement", "news report", "market reaction",
+            "advertisement", "spam", "boilerplate",
         },
     )
 
-    normalizer.normalize("Executive Order")     # "eo"
-    normalizer.normalize("court_ruling")        # "court_ruling"
-    normalizer.normalize("public statement")    # None  (explicit reject)
+    normalizer.normalize("Blog Article")        # "article"
+    normalizer.normalize("press_release")       # "press_release"
+    normalizer.normalize("advertisement")       # None  (explicit reject)
     normalizer.normalize("kerfuffle")           # None  (unknown)
-    normalizer.is_explicit_reject("news report")  # True
+    normalizer.is_explicit_reject("spam")         # True
     normalizer.is_explicit_reject("kerfuffle")    # False
 """
 
@@ -111,7 +111,7 @@ class SlugNormalizer:
         if key in self.canonical_slugs:
             return key
 
-        # Tolerate "court ruling" → "court_ruling" when the canonical
+        # Tolerate "press release" → "press_release" when the canonical
         # slug uses underscores.
         underscored = key.replace(" ", "_")
         if underscored in self.canonical_slugs:

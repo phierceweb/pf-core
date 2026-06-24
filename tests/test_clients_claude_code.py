@@ -584,11 +584,9 @@ class TestPreflight:
     """A2: ClaudeCodeClient.preflight() — fail-fast auth check before
     launching long batches. Issues a tiny ``claude --print "ok"`` and
     raises ClaudeCodeError with an actionable ``<binary> /login``
-    remediation message on any failure (auth, missing binary, timeout).
-    A consumer project originally caught this pattern: 1180 parallel
-    calls burning ~10 minutes of wall-clock before "Not logged in ·
-    Please run /login" became visible. With preflight, the same condition
-    surfaces in single-digit seconds with a clear remediation."""
+    remediation message on any failure (auth, missing binary, timeout) — so a
+    bad auth state surfaces in seconds instead of after a whole batch of
+    parallel calls errors on "Not logged in · Please run /login"."""
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")

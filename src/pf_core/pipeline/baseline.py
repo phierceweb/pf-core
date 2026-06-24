@@ -10,9 +10,8 @@ Two entry points:
 2. `auto_snapshot_on_version_change()` — implicit, intended to be called
    from a pipeline's dispatcher when version changes between runs.
 
-Generalized from production pipeline use. Configurable via
-`BaselineConfig` for filename / dir-name conventions; defaults match a
-generic pipeline tool.
+Configurable via `BaselineConfig` for filename / dir-name conventions;
+defaults match a generic pipeline tool.
 """
 
 from __future__ import annotations

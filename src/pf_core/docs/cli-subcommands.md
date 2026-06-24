@@ -2,7 +2,7 @@
 
 Typer subcommand factories that wrap `pf_core.pipeline.{baseline, baseline_diff, cache}` so consumers building a Typer CLI on top of those modules don't have to write the same boilerplate command bodies for every pipeline-style project.
 
-Generalized from production pipeline use. Project-specific bindings (filenames, dir names) are parameterized via [`BaselineConfig`](pipeline.md#baselineconfig) and the `run_record_filename` keyword on the invalidate factory.
+Project-specific bindings (filenames, dir names) are parameterized via [`BaselineConfig`](pipeline.md#baselineconfig) and the `run_record_filename` keyword on the invalidate factory.
 
 ## When to use
 

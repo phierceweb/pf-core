@@ -557,4 +557,3 @@ Exit code 1 blocks the PR merge automatically.
 
 - `docs/llm-tracking.md` — the tracking tables eval reads from and writes to
 - `docs/jobs.md` — the `eval_replay` job kind
-- `.ai/plans/EVAL_HARNESS.md` — design rationale

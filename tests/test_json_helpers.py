@@ -1,8 +1,4 @@
-"""Tests for pf_core.utils.json_recovery — JSON extraction and recovery.
-
-(Moved from pf_core.llm.json_helpers in 0.42.0; the back-compat shim was
-removed in 0.43.0.)
-"""
+"""Tests for pf_core.utils.json_recovery — JSON extraction and recovery."""
 
 from __future__ import annotations
 

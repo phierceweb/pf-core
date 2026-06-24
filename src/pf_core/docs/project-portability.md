@@ -70,7 +70,7 @@ def test_prompt_renders_subject_from_config():
     assert "{subject}" not in SUMMARIZER_SYSTEM
 ```
 
-Test fixture data — `actors`, `entities`, `URLs`, `names` — should use generic values (`"Acme Corp"`, `"Senator Smith"`, `"example.com"`) when the test is exercising mechanics rather than project-specific wiring. Reserve real project values for tests that *specifically* exercise project-config plumbing.
+Test fixture data — `entities`, `URLs`, `names` — should use generic values (`"Acme Corp"`, `"Jane Doe"`, `"example.com"`) when the test is exercising mechanics rather than project-specific wiring. Reserve real project values for tests that *specifically* exercise project-config plumbing.
 
 ### 4. One-off scripts may inline project values; long-running pipeline code may not
 
@@ -93,7 +93,7 @@ When you discover a project-specific value sitting in a prompt YAML or a service
 A change is suspect if it:
 
 - Edits a file under `config/prompts/` (or wherever the project keeps its prompt YAMLs) to add a proper noun, organization name, or domain-specific value that isn't already in the project config.
-- Adds a hardcoded list of domains, names, or actors to a Python module under the project's services / orchestrators / prompts packages outside the dedicated `_config.py`-style builders that read from the project config.
+- Adds a hardcoded list of domains, names, or entities to a Python module under the project's services / orchestrators / prompts packages outside the dedicated `_config.py`-style builders that read from the project config.
 - Adds a test asserting a literal proper-noun or domain string instead of asserting the placeholder is present or the config value is rendered.
 - Adds a hardcoded region- or platform-specific concept (a country's tax codes, a vendor's API quirks, etc.) to a service module meant for general use.
 
@@ -113,7 +113,7 @@ A content-aggregation consumer ships with `project.yaml` as its project config l
 | Prohibited source domains | `project.yaml:prohibited_sources` / `prohibited_domains` |
 | Curated source list | `project.yaml:curated_sources` |
 | Controlled-tag vocabulary | `project.yaml:tags` |
-| Action-type vocabulary | `project.yaml:action_types` |
+| Category vocabulary | `project.yaml:categories` |
 | Scope filter entity names | `project.yaml:scope_filters` |
 
 The consumer-side rule that codifies these bindings — and links to this doc as the source of the principle — lives at `.ai/rules/no-hardcoded-project-values.md` in the consumer's repo.

@@ -299,11 +299,11 @@ def test_start_and_finish_step(jobs_db, simple_kind):
 
     step_id = repo.start_step(job_id, name="grade_1", inputs={"submission_id": 1})
     time.sleep(0.01)
-    repo.finish_step(step_id, outputs={"grade": 28})
+    repo.finish_step(step_id, outputs={"result": 28})
 
     step = repo.find_step(job_id, name="grade_1")
     assert step["status"] == "succeeded"
-    assert step["outputs"] == {"grade": 28}
+    assert step["outputs"] == {"result": 28}
     # Tight upper bound catches TZ drift: a 10 ms sleep should land under
     # 60 s; anything larger means started_at and server-now were compared
     # across time-zone frames (see finish_step).
@@ -430,7 +430,7 @@ def test_finish_step_clamps_negative_duration(jobs_db, simple_kind):
             .values(started_at=future)
         )
 
-    repo.finish_step(step_id, outputs={"grade": 1})
+    repo.finish_step(step_id, outputs={"result": 1})
 
     step = repo.find_step(job_id, name="a")
     assert step["duration_ms"] == 0
@@ -465,7 +465,7 @@ def test_events_ordered_by_creation(jobs_db, simple_kind):
 def test_get_returns_aware_utc_datetimes(jobs_db, simple_kind):
     """Read datetimes are stamped with ``tzinfo=timezone.utc`` so callers
     can compare against ``datetime.now(timezone.utc)`` directly without
-    wrapping — the foot-gun called out in BEYOND_STANDARDIZATION item #5."""
+    wrapping — the naive-datetime comparison foot-gun."""
     repo = JobRepo()
     job_id = repo.create(kind="simple_pass")
 
@@ -482,7 +482,7 @@ def test_get_with_steps_coerces_all_nested_datetimes(jobs_db, simple_kind):
     job_id = repo.create(kind="simple_pass")
     repo.transition(job_id, "running")
     step_id = repo.start_step(job_id, name="s1")
-    repo.finish_step(step_id, outputs={"grade": 1})
+    repo.finish_step(step_id, outputs={"result": 1})
     repo.add_event(job_id, event_type="info", message="hi")
 
     bundle = repo.get_with_steps(job_id)

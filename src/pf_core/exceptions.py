@@ -61,7 +61,7 @@ class ActionNotAllowedError(FlowException):
     """Business rule forbids this action — mapped to 403 by the HTTP layer.
 
     The caller is authenticated but the domain says no.
-    Examples: user can't grade their own submission, section is locked,
+    Examples: user can't edit another user's record, item is locked,
     export not available until review is complete.
     """
 

@@ -160,11 +160,11 @@ def test_step_records_outputs_on_success(jobs_db, simple_kind):
         job.transition("running")
         with job.step("grade_1", inputs={"submission_id": 1}) as step:
             assert step.skipped is False
-            step.outputs = {"grade": 28}
+            step.outputs = {"result": 28}
 
     s = repo.find_step(job_id, name="grade_1")
     assert s["status"] == "succeeded"
-    assert s["outputs"] == {"grade": 28}
+    assert s["outputs"] == {"result": 28}
 
 
 def test_step_is_idempotent_when_prior_succeeded(jobs_db, simple_kind):
@@ -179,7 +179,7 @@ def test_step_is_idempotent_when_prior_succeeded(jobs_db, simple_kind):
         job.transition("running")
         with job.step("grade_1") as step:
             call_count["n"] += 1
-            step.outputs = {"grade": 28}
+            step.outputs = {"result": 28}
 
     # Simulate resume — second run should skip the step.
     with Job(job_id) as job:
@@ -241,7 +241,7 @@ def test_llm_runs_auto_attributed_to_active_job(jobs_db, simple_kind):
     job_id = repo.create(kind="simple_pass")
 
     with Job(job_id):
-        run_id = llm.record(agent_type="grader", model="gpt-4o-mini")
+        run_id = llm.record(agent_type="reviewer", model="gpt-4o-mini")
 
     run = llm.get(run_id)
     assert run["job_id"] == job_id
@@ -249,7 +249,7 @@ def test_llm_runs_auto_attributed_to_active_job(jobs_db, simple_kind):
 
 def test_llm_runs_outside_job_have_null_job_id(jobs_db, simple_kind):
     llm = LlmRunRepo()
-    run_id = llm.record(agent_type="grader", model="gpt-4o-mini")
+    run_id = llm.record(agent_type="reviewer", model="gpt-4o-mini")
     run = llm.get(run_id)
     assert run["job_id"] is None
 
@@ -264,7 +264,7 @@ def test_explicit_job_id_overrides_contextvar(jobs_db, simple_kind):
 
     with Job(outer):
         run_id = llm.record(
-            agent_type="grader", model="gpt-4o-mini", job_id=explicit
+            agent_type="reviewer", model="gpt-4o-mini", job_id=explicit
         )
 
     run = llm.get(run_id)
@@ -281,7 +281,7 @@ def test_llm_run_in_step_gets_job_id(jobs_db, simple_kind):
     with Job(job_id) as job:
         job.transition("running")
         with job.step("grade_1"):
-            run_id = llm.record(agent_type="grader", model="gpt-4o-mini")
+            run_id = llm.record(agent_type="reviewer", model="gpt-4o-mini")
 
     run = llm.get(run_id)
     assert run["job_id"] == job_id

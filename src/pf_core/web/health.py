@@ -38,8 +38,10 @@ def _check_db() -> str:
         ping()
         return "ok"
     except Exception as e:
+        # Log the detail server-side; never return it — DB connection errors
+        # embed the connection URL, which can carry credentials.
         logger.warning("health_check_db_failed", error=str(e))
-        return f"error: {e}"
+        return "error"
 
 
 def _check_redis() -> str:
@@ -55,8 +57,9 @@ def _check_redis() -> str:
         client.ping()
         return "ok"
     except Exception as e:
+        # Log detail server-side; never return it (may embed REDIS_URL creds).
         logger.warning("health_check_redis_failed", error=str(e))
-        return f"error: {e}"
+        return "error"
 
 
 def health_router(

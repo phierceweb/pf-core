@@ -16,9 +16,8 @@ The validity model is mtime-based plus optional run-record flag matching:
     record exists, parses as JSON, and its `resolved_flags` match the
     current run's values for every `flag_keys` entry.
 
-Generalized from production pipeline use. The helpers return
-`str | None` (raw snapshot content); consumers hydrate their own result
-types from that content.
+The helpers return `str | None` (raw snapshot content); callers hydrate
+their own result types from that content.
 """
 
 from __future__ import annotations

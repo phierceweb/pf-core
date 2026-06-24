@@ -9,13 +9,15 @@ A rule is any `Callable[[str], str | None]`. It receives a URL and returns a sho
 ```python
 from pf_core.llm.url_check import UrlHallucinationRule
 
-def flag_apnews_keyword_year(url: str) -> str | None:
+def flag_keyword_slug_year(url: str) -> str | None:
     import re
-    if re.search(r"apnews\.com/article/[a-z][a-z-]+-\d{4}$", url):
-        return "AP News keyword-year slug (real AP URLs use hex hashes)"
+    # A keyword-year slug is a common LLM fabrication when the real source
+    # uses opaque hash IDs.
+    if re.search(r"/article/[a-z][a-z-]+-\d{4}$", url):
+        return "keyword-year slug (this source uses hash-based article IDs)"
     return None
 
-rules: list[UrlHallucinationRule] = [flag_apnews_keyword_year]
+rules: list[UrlHallucinationRule] = [flag_keyword_slug_year]
 ```
 
 ## Checking a single URL
@@ -24,7 +26,7 @@ rules: list[UrlHallucinationRule] = [flag_apnews_keyword_year]
 from pf_core.llm.url_check import url_looks_hallucinated
 
 reason = url_looks_hallucinated(
-    "https://apnews.com/article/fake-story-2025",
+    "https://example.com/article/fake-story-2025",
     rules=rules,
 )
 if reason:
@@ -39,7 +41,7 @@ Returns the reason from the first matching rule, or `None` if every rule passes 
 from pf_core.llm.url_check import validate_urls
 
 results = validate_urls(
-    ["https://example.com/real-page", "https://apnews.com/article/fake-2025"],
+    ["https://example.com/real-page", "https://news.example/article/fake-2025"],
     rules=rules,
 )
 for url, looks_ok, reason in results:
@@ -57,7 +59,7 @@ The built-in `url_sanity` semantic validator (see `llm-schema-validation.md`) de
 from pf_core.llm.validate import register_url_hallucination_rules
 
 def _project_rules():
-    return [flag_apnews_keyword_year, ...]  # consumer rules
+    return [flag_keyword_slug_year, ...]  # consumer rules
 
 register_url_hallucination_rules(_project_rules)
 ```

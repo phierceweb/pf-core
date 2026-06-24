@@ -656,8 +656,8 @@ class JobRepo(Repository):
                 # SELECT's statement-start timestamp) are within the same
                 # microsecond bucket but the SELECT started slightly before
                 # MySQL's clock incremented past the INSERT's stamp. The
-                # column is `Integer` (signed but historically expected
-                # >=0) and writing a negative crashes the UPDATE on some
+                # column is `Integer` (signed, but expected >=0) and
+                # writing a negative crashes the UPDATE on some
                 # configurations. A clamped 0 is the honest report:
                 # "completed in <1 ms".
                 duration_ms = max(0, int((server_now - started).total_seconds() * 1000))

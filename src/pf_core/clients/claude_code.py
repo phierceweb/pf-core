@@ -10,7 +10,7 @@ backends is the job of the model router — :func:`pf_core.llm.router.resolve_ag
 
 Notes:
 
-- ``model`` IS honored as of v0.22 — passed verbatim as ``--model X`` to
+- ``model`` is passed verbatim as ``--model X`` to
   the CLI. Without it, ``claude --print`` runs against the user's active
   interactive session model, which can silently chew through Claude Max
   quota in batch consumers. Resolution: per-call ``chat(model=...)`` >
@@ -58,7 +58,7 @@ _log = get_logger(__name__)
 
 
 # Default wall-clock cap for a single ``claude --print`` invocation.
-# Long-form synthesis (cross-section cascades, multi-page summaries) can
+# Long-form synthesis (multi-step summaries) can
 # exceed a minute, but anything past 10 minutes is almost certainly a
 # hung subprocess. Per-instance override via ``ClaudeCodeClient(timeout=N)``.
 DEFAULT_TIMEOUT_SECONDS = 600
@@ -378,7 +378,7 @@ def _flatten_messages(messages: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 #
 # A consumer may legitimately want different models for different tasks in
-# the same process — e.g. a document pipeline using ``sonnet`` for markdown
+# the same process — e.g. a pipeline using ``sonnet`` for text
 # analysis and ``haiku`` for vision. Caching by ``model`` lets each task pin its
 # own client without stepping on the others' configuration. Calls with
 # the same ``model`` value share an instance; the first call with a given

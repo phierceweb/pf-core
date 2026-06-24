@@ -58,9 +58,9 @@ def test_cross_field_receives_validation_context():
     register(agent_type="cf", shape=Doc, cross_field=["xf_ctx"])
     parse_and_validate(
         payload(headline="x"), agent_type="cf",
-        validation_context={"essay_id": 42, "rubric": "abc"},
+        validation_context={"report_id": 42, "guideline": "abc"},
     )
-    assert seen == {"essay_id": 42, "rubric": "abc"}
+    assert seen == {"report_id": 42, "guideline": "abc"}
 
 
 def test_cross_field_re_register_overwrites():

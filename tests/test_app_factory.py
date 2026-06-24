@@ -15,6 +15,21 @@ from pf_core.exceptions import (
 from pf_core.web.app_factory import create_app
 
 
+def test_error_page_escapes_reflected_message():
+    """A reflected exception message must be HTML-escaped in the built-in page."""
+    app = create_app(title="Test", log_requests=False)
+
+    @app.get("/xss")
+    async def raise_xss():
+        raise InvalidInputError("<script>alert(1)</script>")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.get("/xss", headers={"accept": "text/html"})
+    assert r.status_code == 422
+    assert "<script>alert(1)</script>" not in r.text
+    assert "&lt;script&gt;" in r.text
+
+
 @pytest.fixture
 def client():
     app = create_app(title="Test", log_requests=False)

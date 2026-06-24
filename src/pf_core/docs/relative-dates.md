@@ -127,4 +127,3 @@ Phrases are lowercased and whitespace-collapsed before matching, so `"YESTERDAY"
 ## See also
 
 - `pf_core.utils.dates` — ISO parsing, month labels, date ranges (orthogonal)
-- `pf_core/docs/anti-hallucination.md` — broader pattern of constraining LLM input rather than detecting bad LLM output

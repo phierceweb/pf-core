@@ -86,9 +86,9 @@ Returns `bool`.
 
 **Choosing threshold:** The default `0.75` catches near-duplicates while allowing paraphrased content through. Use `0.9+` for stricter matching, `0.5` for loose similarity.
 
-## Migrating from consumer projects
+## Migration
 
-**Example consumer** — replace `app/utils/similarity.py`:
+Replace a hand-rolled `similarity` helper in your project:
 
 ```python
 # Before
@@ -99,4 +99,4 @@ def jaccard(a, b): ...
 from pf_core.utils.similarity import shingle, jaccard
 ```
 
-No downstream caller changes needed — `app/services/autoreview_rules.py` and `app/services/audit.py` both import from `app.utils.similarity`.
+No downstream caller changes needed if you keep re-exporting the same names — the service modules that import from your local `similarity` helper stay unchanged.

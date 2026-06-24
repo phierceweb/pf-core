@@ -1,10 +1,9 @@
 """Run a contiguous slice of an ordered, named pipeline.
 
-This is the *executor* the rest of :mod:`pf_core.pipeline` was missing.
 ``pipeline.cache`` owns stage ordering and cascade invalidation;
-``pipeline.resume`` owns snapshot freshness; nothing actually *ran* a
-named slice of stages. ``run_pipeline`` does exactly that and nothing
-else — it owns zero pipeline logic, only slice selection.
+``pipeline.resume`` owns snapshot freshness. ``run_pipeline`` runs a
+named slice of stages and nothing else — it owns zero pipeline logic,
+only slice selection.
 
 A :class:`Phase` is one stage: a ``name`` and a ``run(ctx)``. The
 ``ctx`` is opaque to the sequencer — it is threaded verbatim to each

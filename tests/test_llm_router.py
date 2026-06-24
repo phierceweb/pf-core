@@ -31,7 +31,7 @@ agents:
     model: claude-opus-4-7
     temperature: 0.3
     max_tokens: 4000
-  grader:
+  reviewer:
     model: claude-sonnet-4-6
     temperature: 0.0
 """
@@ -69,7 +69,7 @@ def test_list_agents_returns_sorted_slugs(tmp_path, monkeypatch):
     path = _write_yaml(tmp_path, VALID_YAML)
     _point_env_at(monkeypatch, path)
 
-    assert list_agents() == ["drafter", "grader"]
+    assert list_agents() == ["drafter", "reviewer"]
 
 
 def test_assert_agents_registered_passes_when_all_present(tmp_path, monkeypatch):
@@ -77,7 +77,7 @@ def test_assert_agents_registered_passes_when_all_present(tmp_path, monkeypatch)
     _point_env_at(monkeypatch, path)
 
     # Should not raise
-    assert_agents_registered(["drafter", "grader"])
+    assert_agents_registered(["drafter", "reviewer"])
 
 
 def test_assert_agents_registered_raises_and_names_missing(tmp_path, monkeypatch):
@@ -85,10 +85,10 @@ def test_assert_agents_registered_raises_and_names_missing(tmp_path, monkeypatch
     _point_env_at(monkeypatch, path)
 
     with pytest.raises(ConfigurationError) as exc_info:
-        assert_agents_registered(["drafter", "reviewer", "summarizer"])
+        assert_agents_registered(["drafter", "critic", "summarizer"])
 
     msg = str(exc_info.value)
-    assert "reviewer" in msg
+    assert "critic" in msg
     assert "summarizer" in msg
     # Present slugs should not be listed as missing
     assert "drafter" not in msg.split("missing from")[-1]
@@ -159,7 +159,7 @@ def test_missing_agents_section_raises(tmp_path, monkeypatch):
 
 
 def test_agents_not_a_mapping_raises(tmp_path, monkeypatch):
-    path = _write_yaml(tmp_path, "agents:\n  - drafter\n  - grader\n")
+    path = _write_yaml(tmp_path, "agents:\n  - drafter\n  - reviewer\n")
     _point_env_at(monkeypatch, path)
 
     with pytest.raises(ConfigurationError, match="'agents' must be a mapping"):
@@ -315,7 +315,7 @@ def test_reload_failure_falls_back_to_cached_config(tmp_path, monkeypatch, caplo
 
     second = get_agent_config("drafter")
     assert second["model"] == "claude-opus-4-7"  # cached fallback
-    assert list_agents() == ["drafter", "grader"]
+    assert list_agents() == ["drafter", "reviewer"]
 
 
 def test_reload_failure_with_no_prior_cache_raises(tmp_path, monkeypatch):

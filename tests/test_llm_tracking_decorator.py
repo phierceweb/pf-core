@@ -161,7 +161,7 @@ def test_decorator_stores_rendered_prompts_from_messages(tracking_db):
 def test_decorator_stores_model_name_on_new_row(tracking_db):
     fake = _FakeOpenRouterClient(content="x", usage={})
 
-    @track_run(agent_type="grader")
+    @track_run(agent_type="reviewer")
     def tracked_chat(*, model, messages):
         return fake.chat(model=model, messages=messages)
 

@@ -10,7 +10,7 @@ Two agent-block forms are valid:
 flat (single-backend shorthand)::
 
     agents:
-      grader:
+      summarizer:
         model: anthropic/claude-haiku-4-5
         temperature: 0.0
 

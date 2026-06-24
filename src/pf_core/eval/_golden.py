@@ -13,8 +13,8 @@ Example::
     repo.add(
         run_id=8891,
         version="golden_v2",
-        ground_truth={"expected_grade": 85.0},
-        notes="edge case: ambiguous rubric",
+        ground_truth={"expected_score": 85.0},
+        notes="edge case: ambiguous input",
     )
     members = repo.list(version="golden_v2", agent_type="drafter")
     repo.remove(run_id=1042, version="golden_v2")

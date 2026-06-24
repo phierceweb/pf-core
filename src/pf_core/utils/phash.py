@@ -15,9 +15,9 @@ The toolkit:
   cluster large enough to be a recurring page-decoration (header logo,
   watermark, footer mark).
 
-Generalized from production pipeline use. Generic image-dedup machinery —
-used for stripping repeated page-header refs across paginated documents.
-Available in any consumer via the optional ``[image-phash]`` extra.
+Generic image-dedup machinery — e.g. stripping repeated page-header
+images across paginated documents. Available via the optional
+``[image-phash]`` extra.
 
 Usage::
 

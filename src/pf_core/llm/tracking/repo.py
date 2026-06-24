@@ -89,7 +89,7 @@ def compute_input_hash(
         rendered_system: Pre-extracted system prompt text.
         rendered_user: Pre-extracted user prompt text.
         sampling: Sampling kwargs (temperature, top_p, max_tokens, ...).
-        configs: Project-config snapshot dict (e.g. ``{"rubric_id": 42}``).
+        configs: Project-config snapshot dict (e.g. ``{"report_config_id": 42}``).
 
     Returns:
         64-character lowercase hex SHA256 string.
@@ -159,8 +159,8 @@ class LlmRunRepo(Repository):
         project-specific columns to the ``llm_runs`` table via migration (and
         taught the SQLAlchemy ``llm_runs`` Table about them — see
         ``schema.llm_runs.append_column``). Its keys are merged into the row
-        ``INSERT`` after the framework-owned columns, so a subclass no longer
-        has to copy this whole method just to write one extra FK column. Each
+        ``INSERT`` after the framework-owned columns, so a subclass need not
+        copy this whole method just to write one extra FK column. Each
         key MUST name a column that exists on the ``llm_runs`` Table or the
         ``INSERT`` will fail to compile. Keys that collide with a
         framework-owned column override it (last-write-wins).

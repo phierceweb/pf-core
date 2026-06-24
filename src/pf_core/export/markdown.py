@@ -16,18 +16,17 @@ write:
   managed suffixes (``.md`` by default). A hand-placed ``notes.txt`` or a file
   in an unrelated directory is never touched.
 
-Generalized from a production markdown-export orchestrator (incremental write +
-per-directory prune) so any pf-core consumer can subclass it.
+Incremental write + per-directory prune; any project subclasses it.
 
 Usage::
 
-    class CanonExporter(MarkdownExporter):
+    class RecordExporter(MarkdownExporter):
         def __init__(self, rows): self._rows = rows
         def iter_artifacts(self):
             for r in self._rows:
-                yield f"artists/{r['slug']}.md", render(r)
+                yield f"records/{r['slug']}.md", render(r)
 
-    result = CanonExporter(rows).export("./export")
+    result = RecordExporter(rows).export("./export")
     print(result.written, result.unchanged, result.pruned)
 """
 

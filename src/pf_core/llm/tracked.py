@@ -43,7 +43,7 @@ Usage::
         agent_type="classifier",
         spec=spec,
         model="haiku",
-        render_kwargs={"rubric": rubric_text, "events": events_json},
+        render_kwargs={"context": context_text, "examples": examples_json},
         expect_json=True,
     )
 """

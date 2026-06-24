@@ -1,9 +1,8 @@
 """Tests for pf_core.eval._judge — config hard-fail behavior.
 
-The judge previously fell back to a hardcoded OpenRouter model when the
-judge agent wasn't in the router config. That silent default is gone: the
-judge routes via resolve_agent like any agent, and config problems raise
-ConfigurationError before anything is recorded.
+The judge routes via ``resolve_agent`` like any agent: a missing judge-agent
+config raises ``ConfigurationError`` before anything is recorded, with no
+silent fallback to a default model.
 """
 
 from __future__ import annotations

@@ -10,9 +10,8 @@ Rename detection is conservative: exact body sha256 match (similarity
 1.0) OR same-folder + Levenshtein basename ≤ 4 + body similarity ≥ 0.8.
 Bias is toward "added+removed" over false "renamed" claims.
 
-Generalized from production pipeline use. Configurable via
-`BaselineConfig` for filename / dir-name conventions; defaults match a
-generic pipeline tool.
+Configurable via `BaselineConfig` for filename / dir-name conventions;
+defaults match a generic pipeline tool.
 """
 
 from __future__ import annotations

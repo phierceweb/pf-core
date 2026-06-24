@@ -18,7 +18,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 # Exported name -> (submodule, attribute). Attribute differs from the export
-# name where the old eager block used an ``as`` alias.
+# name when the public export is an ``as`` alias of a differently-named symbol.
 _LAZY: dict[str, tuple[str, str]] = {
     # parse — [validate] (json-repair)
     "parse_llm_json": ("pf_core.llm.parse", "parse_llm_json"),

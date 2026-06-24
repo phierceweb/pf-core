@@ -21,14 +21,24 @@ Usage::
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from nanoid import generate
 
-from pf_core.exceptions import PreconditionError
+from pf_core.exceptions import InvalidInputError, PreconditionError
 
 # URL-safe alphabet: alphanumeric + underscore + hyphen
 _ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-"
+
+# SQL identifiers are interpolated (not bindable as params), so restrict them to
+# a plain-identifier shape — no quotes, whitespace, or SQL metacharacters.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _check_identifier(name: str, kind: str) -> None:
+    if not _IDENT_RE.match(name):
+        raise InvalidInputError(f"invalid SQL {kind}: {name!r}")
 
 _DEFAULT_SIZE = 12
 _MAX_ATTEMPTS = 24
@@ -80,6 +90,8 @@ def allocate_id(
     """
     from sqlalchemy import text
 
+    _check_identifier(table, "table")
+    _check_identifier(column, "column")
     check_sql = text(f"SELECT 1 FROM {table} WHERE {column} = :id LIMIT 1")
 
     if preferred and str(preferred).strip():

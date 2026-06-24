@@ -237,7 +237,7 @@ Returns the `llm_prompts.id`, or `None` when `content` is empty.
 
 ## Migrating a project
 
-**Replacing a hand-rolled loader** — swap a local `load_prompts()` in `app/services/_common.py`:
+**Replacing a hand-rolled loader** — swap a local `load_prompts()` in your services:
 
 ```python
 # Before
@@ -251,7 +251,7 @@ from pf_core.llm.prompts import load_prompts
 prompts = load_prompts("config/prompts.yaml")
 ```
 
-**Replacing a hand-rolled injector** — swap a `.replace()`-based `_inject_domain()` in `app/prompts/_config.py`:
+**Replacing a hand-rolled injector** — swap a `.replace()`-based prompt injector in your project:
 
 ```python
 # Before

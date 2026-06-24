@@ -5,11 +5,11 @@ needed in production but absent from the bare primitive:
 
 1. **Cached results.** Liveness is expensive and reasonably stable; consumers
    almost always want a TTL'd cache in front of it.
-2. **Browser-UA GET fallback on 403/401.** Major news sites (NYT, WaPo, AP)
-   and some federal portals return 403 to bare HEAD even when the content is
-   real, because they're aggressive about bot detection. The bare ``check_url``
+2. **Browser-UA GET fallback on 403/401.** Major sites return 403 to bare
+   HEAD even when the content is real, because they're aggressive about bot
+   detection. The bare ``check_url``
    already uses a browser-like UA but doesn't reissue as GET. This module
-   does — distinguishing real fabrication from bot-block.
+   does — distinguishing a dead link from a bot-block.
 3. **A kill switch.** Audit pipelines need a single boolean to bypass liveness
    during incidents (network outage, mass false positives) without code edits.
 
@@ -51,6 +51,8 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
     raise extra_import_error("http", "httpx", feature="pf_core.utils.url_liveness") from e
 
+from pf_core.utils.http_tls import verify_tls
+from pf_core.utils.url_safety import guarded_get
 from pf_core.utils.urls import check_url
 
 _BROWSER_UA = (
@@ -91,11 +93,11 @@ def _get_with_browser_ua(url: str, timeout: int = 10) -> tuple[int, str]:
     try:
         with httpx.Client(
             timeout=timeout,
-            follow_redirects=True,
-            verify=False,
+            follow_redirects=False,
+            verify=verify_tls(),
             headers=_BROWSER_HEADERS,
         ) as client:
-            resp = client.get(url)
+            resp = guarded_get(client, url)
             code = resp.status_code
             if 200 <= code < 300:
                 return code, "ok"

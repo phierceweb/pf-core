@@ -43,7 +43,6 @@ Mitigate the characteristic ways LLMs fail: hallucinated URLs, drifted output sh
 
 | Module | Concern |
 |---|---|
-| [Anti-hallucination pattern](anti-hallucination.md) | Architectural guidance: constrain LLM input from real data sources rather than try to detect fabrication after the fact. |
 | [LLM schema validation](llm-schema-validation.md) | Three-tier validation pipeline (shape, semantic, cross-field) for parsed LLM output, with a registry of pluggable validators. |
 | [LLM URL validation](llm-validation.md) | Pluggable URL hallucination dispatcher for catching invented citations. |
 | [LLM parse](llm-parse.md) | High-level pipeline that recovers structured data from imperfect LLM responses — markdown fences, trailing prose, truncation, malformed JSON (`[validate]`). Composes the generic [JSON recovery](json-recovery.md) utilities. |
@@ -69,7 +68,7 @@ Wrappers for the external services that LLM agents talk to. All clients integrat
 | [OpenRouter client](openrouter.md) | Primary chat client. Timeouts, provider routing, usage tracking, citation handling. |
 | [Claude Code client](claude-code.md) | Subprocess wrapper for Claude Max sessions. Drop-in alternative when you want to use a Claude Max plan instead of paying API credits. |
 | [Anthropic client](anthropic.md) | Direct wrapper around the official `anthropic` SDK. Multimodal-capable; reports cache + input/output tokens directly. |
-| [Brave search client](brave.md) | Web search for grounding LLM calls in real results (the backbone of the anti-hallucination pattern). |
+| [Brave search client](brave.md) | Web search for grounding LLM calls in real results. |
 | [Article fetch](article-fetch.md) | Title, body, and publish-date extraction with Wayback Machine fallback for paywalled or blocked URLs. |
 
 ## Evaluation

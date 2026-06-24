@@ -26,7 +26,7 @@ from pf_core.db.upsert import insert_ignore
 _cache: dict[str, int] = {}
 _lock = threading.Lock()
 
-# Minimal metadata mirroring the consumer-owned ``models`` table — an
+# Minimal metadata mirroring the application's ``models`` table — an
 # auto-increment ``id`` PK and a unique ``name``. Used only to compile a
 # dialect-correct INSERT via ``insert_ignore``; pf-core never emits DDL for it.
 _models_md = MetaData()

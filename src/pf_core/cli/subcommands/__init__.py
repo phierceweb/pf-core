@@ -14,7 +14,7 @@ Two factories:
     :func:`pf_core.pipeline.baseline.list_baselines`, and
     :func:`pf_core.pipeline.baseline_diff.diff_baseline` respectively.
 
-Generalized from production pipeline use. Project-specific bindings
+Project-specific bindings
 (filenames, dir names) are parameterized via
 :class:`pf_core.pipeline.baseline.BaselineConfig` and the
 `run_record_filename` keyword on the invalidate factory.

@@ -87,7 +87,7 @@ def all_job_ids(summary_pass_id: int) -> list[int]:
 ## Coordinating the lifecycle
 
 ```python
-# app/services/summarizer.py
+# myapp/services/summarizer.py
 from pf_core.jobs.runtime import Job
 from app.repo.job_refs import create_summary_job
 

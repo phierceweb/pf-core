@@ -11,10 +11,10 @@ from pf_core.db import insert_ignore, upsert, transaction
 
 with transaction() as conn:
     # INSERT, do nothing on conflict. Returns 1 if inserted, 0 if skipped.
-    n = insert_ignore(conn, artists, {"slug": "fugazi", "name": "Fugazi"}, conflict=["slug"])
+    n = insert_ignore(conn, users, {"slug": "acme", "name": "Acme"}, conflict=["slug"])
 
     # INSERT, overwrite the named columns on conflict (replaces INSERT OR REPLACE).
-    upsert(conn, sources, {"source": "itunes", "account": acct, "note": note},
+    upsert(conn, sources, {"source": "import", "account": acct, "note": note},
            conflict=["source"], update=["account", "note"])
 ```
 

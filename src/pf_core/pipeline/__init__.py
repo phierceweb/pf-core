@@ -8,8 +8,6 @@ Currently:
   - resume: snapshot validity check + read for downstream-phase resume.
   - sequencer: run a contiguous slice of an ordered, named pipeline.
 
-Generalized as a coherent group from production pipeline re-test
-ergonomics work. Pf-core's API parameterizes the project-specific
-filenames / dir names / stage names so any consumer with a multi-stage
-pipeline can use the same machinery.
+The API parameterizes the project-specific filenames / dir names /
+stage names so any multi-stage pipeline can use the same machinery.
 """

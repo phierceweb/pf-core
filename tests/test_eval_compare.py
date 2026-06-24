@@ -112,20 +112,20 @@ def test_structured_diff_partial_match():
 
 
 def test_structured_diff_specific_fields():
-    golden = {"grade": 85.0, "category": "analysis", "ignored": "foo"}
-    replay = {"grade": 85.0, "category": "wrong", "ignored": "bar"}
-    score = structured_diff(golden, replay, context={"diff_fields": ["grade"]})
+    golden = {"score": 85.0, "category": "analysis", "ignored": "foo"}
+    replay = {"score": 85.0, "category": "wrong", "ignored": "bar"}
+    score = structured_diff(golden, replay, context={"diff_fields": ["score"]})
     assert score == 1.0
 
 
 def test_structured_diff_with_tolerance():
-    golden = {"grade": 85.0}
-    replay = {"grade": 87.0}
-    score_exact = structured_diff(golden, replay, context={"diff_fields": ["grade"]})
+    golden = {"score": 85.0}
+    replay = {"score": 87.0}
+    score_exact = structured_diff(golden, replay, context={"diff_fields": ["score"]})
     assert score_exact == 0.0
 
     score_tolerant = structured_diff(
-        golden, replay, context={"diff_fields": ["grade"], "tolerances": {"grade": 3.0}}
+        golden, replay, context={"diff_fields": ["score"], "tolerances": {"score": 3.0}}
     )
     assert score_tolerant == 1.0
 

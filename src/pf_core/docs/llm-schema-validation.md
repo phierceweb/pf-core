@@ -68,7 +68,7 @@ register(
 ```
 
 ```python
-# app/services/summarizer.py
+# myapp/services/summarizer.py
 from pf_core.llm.validate import parse_and_validate
 
 def summarize_one(messages, *, run_id):
@@ -112,7 +112,7 @@ from pydantic import BaseModel, Field
 from pf_core.llm.validate import register
 
 class ClassifyOutput(BaseModel):
-    category: str = Field(pattern="^(news|opinion|analysis)$")
+    category: str = Field(pattern="^(guide|reference|tutorial)$")
     confidence: float = Field(ge=0.0, le=1.0)
     model_config = {"extra": "forbid"}
 
@@ -133,7 +133,7 @@ CLASSIFY_SCHEMA = {
     "required": ["category", "confidence"],
     "additionalProperties": False,
     "properties": {
-        "category": {"type": "string", "enum": ["news", "opinion", "analysis"]},
+        "category": {"type": "string", "enum": ["guide", "reference", "tutorial"]},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
     },
 }
@@ -175,10 +175,10 @@ register(agent_type="summarizer", shape=SummaryOutput, semantic=[
 ```python
 from pf_core.llm.validate import register_tier1_domains
 
-register_tier1_domains(lambda: {"apnews.com", "reuters.com", "npr.org"})
+register_tier1_domains(lambda: {"example.com", "example.org"})
 ```
 
-The hook is invoked once per validation, so the set can be reloaded from config without restart. Hostnames match by suffix (`apnews.com` matches `www.apnews.com`).
+The hook is invoked once per validation, so the set can be reloaded from config without restart. Hostnames match by suffix (`example.com` matches `www.example.com`).
 
 ### Configuring `url_sanity`
 
@@ -186,13 +186,13 @@ The hook is invoked once per validation, so the set can be reloaded from config 
 from pf_core.llm.validate import register_url_hallucination_rules
 from pf_core.llm.url_check import UrlHallucinationRule
 
-def _flag_apnews_keyword_year(url: str) -> str | None:
+def _flag_keyword_slug_year(url: str) -> str | None:
     import re
-    if re.search(r"apnews\.com/article/[a-z][a-z-]+-\d{4}$", url):
-        return "AP News keyword-year slug"
+    if re.search(r"/article/[a-z][a-z-]+-\d{4}$", url):
+        return "keyword-year slug (source uses hash-based IDs)"
     return None
 
-rules: list[UrlHallucinationRule] = [_flag_apnews_keyword_year]
+rules: list[UrlHallucinationRule] = [_flag_keyword_slug_year]
 register_url_hallucination_rules(lambda: rules)
 ```
 
@@ -301,7 +301,7 @@ Raised by `parse_and_validate` when `missing_pipeline="raise"` (the default) and
 
 ## DB integration
 
-When `run_id` is provided, the pipeline writes every signal — pass and fail — into `llm_run_validations` via `LlmRunValidationRepo.record`. Each `(run_id, validator)` write is delete-then-insert, so re-running the pipeline cleanly overwrites prior signals.
+When `run_id` is provided, the pipeline writes every signal — pass and fail — into `llm_run_validations` via `LlmRunValidationRepo.record`. Each `(run_id, validator)` write is a portable `upsert`, so re-running the pipeline cleanly overwrites prior signals.
 
 ```
 llm_run_id | validator           | severity | passed | details
@@ -312,7 +312,7 @@ llm_run_id | validator           | severity | passed | details
       1042 | within_max_words    | info     | 1      | NULL
 ```
 
-The pipeline also writes a `schema:<agent>_v<schema_version>` row into `llm_run_tags` (also delete-then-insert).
+The pipeline also writes a `schema:<agent>_v<schema_version>` row into `llm_run_tags` (an idempotent `insert_ignore`).
 
 DB writes are best-effort: validation row failures log `validation_record_failed`, tag failures log `validation_tag_write_failed`, and the pipeline continues. The pipeline never raises on DB issues — validation results always reach the service.
 

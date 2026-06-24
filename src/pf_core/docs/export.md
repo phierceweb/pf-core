@@ -12,7 +12,7 @@ Exporting a corpus to per-file markdown on every run is cheap to write but expen
 - **atomic** — each write goes through `atomic_write_text`, so a crash mid-export never leaves a torn file.
 - **prune** — files the exporter previously produced but no longer yields are deleted, scoped to the managed suffixes (`.md` by default) and only within the directories it writes into. Hand-placed files and unrelated directories are never touched.
 
-Generalized from a production markdown-export orchestrator so any consumer can subclass it.
+A markdown-export orchestrator base any project can subclass.
 
 ## Usage
 
@@ -22,24 +22,24 @@ Subclass and implement `iter_artifacts`, yielding `(relative_path, content)` pai
 from pf_core.export import MarkdownExporter, yaml_frontmatter
 
 
-class CanonExporter(MarkdownExporter):
-    def __init__(self, artists):
-        self._artists = artists
+class RecordExporter(MarkdownExporter):
+    def __init__(self, records):
+        self._records = records
 
     def iter_artifacts(self):
-        for a in self._artists:
+        for a in self._records:
             front = yaml_frontmatter({
                 "slug": a["slug"],
                 "tier": a["tier"],
-                "plays": a["plays"],
-                "loved": a["loved"],
-                "aliases": a["aliases"],   # list -> block sequence
+                "count": a["count"],
+                "active": a["active"],
+                "tags": a["tags"],   # list -> block sequence
             })
-            body = f"# {a['name']}\n\n{a['why']}\n"
-            yield f"artists/{a['slug']}.md", front + body
+            body = f"# {a['name']}\n\n{a['summary']}\n"
+            yield f"records/{a['slug']}.md", front + body
 
 
-result = CanonExporter(rows).export("./export")
+result = RecordExporter(rows).export("./export")
 print(result.written, result.unchanged, result.pruned)
 # e.g. 3 written, 184 unchanged, 1 pruned
 ```
@@ -70,14 +70,15 @@ Render a dict as a YAML frontmatter block delimited by `---` lines. A deliberate
 - string scalars are bare when unambiguous, and double-quoted (escaping `"` and `\`) when they contain YAML-significant characters, look numeric, or collide with a reserved word — so `"90210"` and `"- dash"` round-trip as strings.
 
 ```python
-yaml_frontmatter({"slug": "fugazi", "tier": "foundational", "plays": 289,
-                  "aliases": ["Fugazi"], "note": None})
+yaml_frontmatter({"slug": "widget-a", "name": "Widget A", "tier": "standard",
+                  "count": 289, "tags": ["hardware"], "note": None})
 # ---
-# slug: fugazi
-# tier: foundational
-# plays: 289
-# aliases:
-#   - Fugazi
+# slug: widget-a
+# name: Widget A
+# tier: standard
+# count: 289
+# tags:
+#   - hardware
 # ---
 ```
 

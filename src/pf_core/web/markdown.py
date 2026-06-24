@@ -39,6 +39,19 @@ _OL_ITEM = re.compile(r"^\s*\d+\.\s+(.+)$")
 _MD_HEADING = re.compile(r"^(#{1,4})\s+(.+)$")
 
 
+def _is_safe_href(href: str) -> bool:
+    """Reject dangerous URL schemes (``javascript:``, ``data:``, …) in links.
+
+    Allows http(s), mailto, and relative/anchor/protocol-relative hrefs. Anything
+    carrying an explicit scheme before the first ``/`` that isn't allow-listed is
+    rejected, so ``[x](javascript:alert(1))`` renders as inert text, not a link.
+    """
+    h = href.strip()
+    if h.startswith(("http://", "https://", "mailto:", "/", "#", "?", "//")):
+        return True
+    return ":" not in h.split("/", 1)[0]
+
+
 def _apply_links(text: str) -> str:
     """Convert [label](url) links, supporting nested parens in URLs."""
     out: list[str] = []
@@ -68,9 +81,13 @@ def _apply_links(text: str) -> str:
             continue
         label = text[i + 1 : close_bracket]
         href = text[close_bracket + 2 : j - 1]
-        out.append(
-            f'<a href="{href}" rel="nofollow noopener" target="_blank">{label}</a>'
-        )
+        if _is_safe_href(href):
+            out.append(
+                f'<a href="{href}" rel="nofollow noopener" target="_blank">{label}</a>'
+            )
+        else:
+            # Unsafe scheme — drop the link, keep the (already-escaped) label text.
+            out.append(label)
         i = j
     return "".join(out)
 

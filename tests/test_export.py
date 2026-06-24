@@ -127,12 +127,12 @@ class TestExportValidation:
 
 class TestYamlFrontmatter:
     def test_wraps_in_delimiters(self) -> None:
-        out = yaml_frontmatter({"slug": "fugazi"})
+        out = yaml_frontmatter({"slug": "acme"})
         assert out.startswith("---\n")
         assert out.endswith("---\n")
 
     def test_safe_string_is_bare(self) -> None:
-        assert "slug: fugazi" in yaml_frontmatter({"slug": "fugazi"})
+        assert "slug: acme" in yaml_frontmatter({"slug": "acme"})
 
     def test_colon_is_quoted(self) -> None:
         assert 'title: "a: b"' in yaml_frontmatter({"title": "a: b"})

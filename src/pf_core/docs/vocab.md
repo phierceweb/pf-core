@@ -82,12 +82,13 @@ These are tested explicitly so consumers can rely on the behavior.
 A consumer classifies ingested documents by *content type* (article, memo, post, report, etc.). The classifier LLM emits free-text labels like `"blog article"`, `"social media post"`, `"advertisement"`, but the entries table needs canonical slugs. `SlugNormalizer` centralizes the mapping:
 
 ```python
-# app/services/content_type_normalize.py
+# myapp/content_types.py
 from pf_core.utils.vocab import SlugNormalizer
-from app.config import DOMAIN
+
+_CONTENT_TYPES = {"article", "post", "report", "release", "newsletter", "guide"}
 
 _NORMALIZER = SlugNormalizer(
-    canonical_slugs={ct["slug"] for ct in DOMAIN.content_types},
+    canonical_slugs=_CONTENT_TYPES,
     synonyms={
         "blog article": "article",
         "social media post": "post",
@@ -107,10 +108,10 @@ normalize_content_type = _NORMALIZER.normalize
 is_explicit_non_content = _NORMALIZER.is_explicit_reject
 ```
 
-The autoreview rule then uses these:
+A content-check rule then uses these:
 
 ```python
-# app/services/autoreview_rules.py
+# myapp/content_rules.py
 def check_content_type(data: dict) -> tuple[str, str]:
     raw = data.get("content_type")
     canonical = normalize_content_type(raw)

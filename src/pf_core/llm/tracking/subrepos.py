@@ -4,14 +4,15 @@ After-the-fact writers for ``llm_runs`` sidecars.
 These repos record signals that arrive *after* the original LLM call:
 
 - :class:`LlmRunOutcomeRepo` — backfilled reviewer outcomes (draft accepted,
-  grade matched professor, etc).
+  result matched the reviewer, etc).
 - :class:`LlmRunValidationRepo` — async or post-hoc quality checks.
 - :class:`LlmRunLinkRepo` — run-to-run relations (retry, critic, refine,
   fallback, subroutine, meta_analysis).
 
-All three use a delete-then-insert pattern so a re-record (same composite key)
-overwrites cleanly across SQLite, MySQL, and PostgreSQL without needing
-dialect-specific UPSERT syntax.
+All three use pf-core's portable ``insert_ignore`` / ``upsert`` helpers so a
+re-record (same composite key) is idempotent across SQLite, MySQL, and
+PostgreSQL — without the secondary-index gap locks a delete-then-insert would
+take, which deadlock under concurrent writers on MySQL/InnoDB.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
     raise extra_import_error("tracking", "tenacity", feature="pf_core.llm.tracking") from e
 
 from pf_core.db.repository import Repository
+from pf_core.db.upsert import insert_ignore, upsert
 from pf_core.llm.tracking import schema as s
 from pf_core.log import get_logger
 
@@ -39,12 +41,12 @@ logger = get_logger(__name__)
 def _is_mysql_deadlock(exc: BaseException) -> bool:
     """Return True for the MySQL 1213 ``Deadlock found`` OperationalError.
 
-    Concurrent pipeline processes can race on the delete-then-insert path in
-    ``LlmRunValidationRepo.record``; InnoDB resolves the conflict by killing
-    one transaction with ``(1213, 'Deadlock found when trying to get lock;
-    try restarting transaction')``. The losing transaction is safe to retry
-    verbatim — the INSERT is idempotent (delete + insert keyed on
-    ``(llm_run_id, validator)``).
+    The ``_record_once`` upsert avoids the secondary-index gap locks that would
+    deadlock a delete-then-insert, but concurrent writers of the same
+    ``(llm_run_id, validator)`` key (or FK locks on ``llm_runs``) can still
+    occasionally make InnoDB kill one transaction with ``(1213, 'Deadlock found
+    when trying to get lock; try restarting transaction')``. The losing
+    transaction is safe to retry verbatim — the upsert is idempotent.
     """
     if not isinstance(exc, OperationalError):
         return False
@@ -63,21 +65,19 @@ class LlmRunOutcomeRepo(Repository):
         score: float | None = None,
         notes: str | None = None,
     ) -> None:
-        """Insert (or replace) the outcome row for ``(run_id, outcome_kind)``."""
+        """Insert or overwrite the outcome row for ``(run_id, outcome_kind)``."""
         with self._tx() as conn:
-            conn.execute(
-                s.llm_run_outcomes.delete().where(
-                    (s.llm_run_outcomes.c.llm_run_id == run_id)
-                    & (s.llm_run_outcomes.c.outcome_kind == outcome_kind)
-                )
-            )
-            conn.execute(
-                s.llm_run_outcomes.insert().values(
-                    llm_run_id=run_id,
-                    outcome_kind=outcome_kind,
-                    score=score,
-                    notes=notes,
-                )
+            upsert(
+                conn,
+                s.llm_run_outcomes,
+                {
+                    "llm_run_id": run_id,
+                    "outcome_kind": outcome_kind,
+                    "score": score,
+                    "notes": notes,
+                },
+                conflict=("llm_run_id", "outcome_kind"),
+                update=("score", "notes"),
             )
 
     def list_for_run(self, run_id: int) -> list[dict]:
@@ -103,16 +103,15 @@ class LlmRunValidationRepo(Repository):
         severity: str = "info",
         details: dict | None = None,
     ) -> None:
-        """Insert (or replace) the validation row for ``(run_id, validator)``.
+        """Insert or overwrite the validation row for ``(run_id, validator)``.
 
         ``severity`` is one of ``'info'``, ``'warn'``, ``'error'`` by convention
         but stored as VARCHAR to allow project-specific extensions.
 
-        Retries up to 3 times on MySQL deadlock (error 1213). Concurrent
-        pipeline processes (e.g. parallel ``content-ingest`` runs) can race
-        on the delete+insert transaction; InnoDB kills one transaction and
-        the caller can safely retry since the row key is
-        ``(llm_run_id, validator)``.
+        Retries up to 3 times on MySQL deadlock (error 1213) as defense in
+        depth: concurrent pipeline processes (e.g. parallel ``content-ingest``
+        runs) writing the same key can still rarely deadlock, and the upsert is
+        safe to replay since the row key is ``(llm_run_id, validator)``.
         """
         def _log_retry(retry_state) -> None:
             logger.warning(
@@ -148,22 +147,20 @@ class LlmRunValidationRepo(Repository):
         severity: str,
         details: dict | None,
     ) -> None:
-        """Single transactional delete+insert — the unit the retryer replays."""
+        """Single transactional upsert — the unit the retryer replays."""
         with self._tx() as conn:
-            conn.execute(
-                s.llm_run_validations.delete().where(
-                    (s.llm_run_validations.c.llm_run_id == run_id)
-                    & (s.llm_run_validations.c.validator == validator)
-                )
-            )
-            conn.execute(
-                s.llm_run_validations.insert().values(
-                    llm_run_id=run_id,
-                    validator=validator,
-                    passed=passed,
-                    severity=severity,
-                    details=details,
-                )
+            upsert(
+                conn,
+                s.llm_run_validations,
+                {
+                    "llm_run_id": run_id,
+                    "validator": validator,
+                    "passed": passed,
+                    "severity": severity,
+                    "details": details,
+                },
+                conflict=("llm_run_id", "validator"),
+                update=("passed", "severity", "details"),
             )
 
     def list_for_run(self, run_id: int) -> list[dict]:
@@ -192,19 +189,15 @@ class LlmRunLinkRepo(Repository):
         Idempotent: re-linking the same triple is a no-op rewrite.
         """
         with self._tx() as conn:
-            conn.execute(
-                s.llm_run_links.delete().where(
-                    (s.llm_run_links.c.parent_run_id == parent_id)
-                    & (s.llm_run_links.c.child_run_id == child_id)
-                    & (s.llm_run_links.c.relation == relation)
-                )
-            )
-            conn.execute(
-                s.llm_run_links.insert().values(
-                    parent_run_id=parent_id,
-                    child_run_id=child_id,
-                    relation=relation,
-                )
+            insert_ignore(
+                conn,
+                s.llm_run_links,
+                {
+                    "parent_run_id": parent_id,
+                    "child_run_id": child_id,
+                    "relation": relation,
+                },
+                conflict=("parent_run_id", "child_run_id", "relation"),
             )
 
     def children(self, parent_id: int, *, relation: str | None = None) -> list[dict]:

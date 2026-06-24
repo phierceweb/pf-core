@@ -44,6 +44,21 @@ class TestSafeMarkdown:
         result = safe_markdown("[wiki](https://en.wikipedia.org/wiki/Test_(thing))")
         assert "Test_(thing)" in result
 
+    def test_javascript_scheme_link_dropped(self):
+        result = safe_markdown("[click](javascript:alert(1))")
+        assert "javascript:" not in result
+        assert "<a " not in result  # link dropped
+        assert "click" in result    # label kept as inert text
+
+    def test_data_scheme_link_dropped(self):
+        result = safe_markdown("[x](data:text/html,hi)")
+        assert "data:" not in result
+        assert "<a " not in result
+
+    def test_relative_link_preserved(self):
+        result = safe_markdown("[home](/dashboard)")
+        assert 'href="/dashboard"' in result
+
     def test_unordered_list(self):
         result = safe_markdown("- item one\n- item two")
         assert "<ul>" in result

@@ -6,12 +6,10 @@ timestamps, and counts. Used to make re-run drift diagnosable: a
 one-line diff between two run-record files shows exactly what config
 differs between two outputs.
 
-Schema is consumer-facing — fields beyond `input`, `input_sha256`,
-`started_at`, `finished_at`, `version`, `preset`, and `resolved_flags`
-are optional. `section_count` / `image_count` are standard optional
-counts; consumer-specific metadata goes in `extra=`.
-
-Generalized from production pipeline use.
+Fields beyond `input`, `input_sha256`, `started_at`, `finished_at`,
+`version`, `preset`, and `resolved_flags` are optional. `section_count`
+/ `image_count` are standard optional counts; caller-specific metadata
+goes in `extra=`.
 """
 
 from __future__ import annotations

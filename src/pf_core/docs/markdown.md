@@ -87,9 +87,9 @@ The escape-first approach means:
 - Links get `rel="nofollow noopener" target="_blank"` automatically
 - No external sanitizer library is required
 
-## Migrating from consumer projects
+## Migration
 
-**Example consumer** — replace the hand-rolled `_md_links` / `_inline_md` in `app/api/_templates.py`:
+Replace a hand-rolled markdown filter in your templates module:
 
 ```python
 # Before
@@ -108,4 +108,4 @@ setup_markdown_filter(
 )
 ```
 
-The consumer-specific transforms (entry ID links, bare ID citations) stay in the consumer project as `extra_transforms`.
+Project-specific transforms (entry ID links, bare ID citations) stay in your project as `extra_transforms`.

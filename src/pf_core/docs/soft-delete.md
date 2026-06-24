@@ -79,7 +79,7 @@ For tables with frequent filtered queries, a composite index is better:
 
 ```sql
 CREATE INDEX idx_entries_active_section_date
-    ON entries(deleted_at, section_id, date_of_action, id);
+    ON entries(deleted_at, section_id, created_at, id);
 ```
 
 ## Migrating from consumer projects

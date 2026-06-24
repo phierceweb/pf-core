@@ -12,9 +12,6 @@ the LLM the plain text for record extraction and the link list with
 context so the model can identify which record a candidate source
 URL backs.
 
-Lifted to pf-core after multiple content parsers converged on the same
-byte-identical implementation.
-
 Public API::
 
     from pf_core.parsers.html import (

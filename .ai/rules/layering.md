@@ -73,9 +73,9 @@ Entry points:
 ```python
 from pf_core.services import Service
 
-class RubricService(Service):
-    def active_rubrics(self) -> list[dict]:
-        repo = self._repo(RubricRepo)
+class ReportService(Service):
+    def active_reports(self) -> list[dict]:
+        repo = self._repo(ReportRepo)
         return repo.list_active()
 ```
 

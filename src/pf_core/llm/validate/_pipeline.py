@@ -84,6 +84,7 @@ def _write_signals_to_db(
     from pf_core.llm.tracking.subrepos import LlmRunValidationRepo
     from pf_core.llm.tracking import schema as s
     from pf_core.db import transaction
+    from pf_core.db.upsert import insert_ignore
 
     repo = LlmRunValidationRepo()
     for sig in signals:
@@ -104,14 +105,14 @@ def _write_signals_to_db(
     tag = f"schema:{agent_type}_v{schema_version}"
     try:
         with transaction() as conn:
-            conn.execute(
-                s.llm_run_tags.delete().where(
-                    (s.llm_run_tags.c.llm_run_id == run_id)
-                    & (s.llm_run_tags.c.tag == tag)
-                )
-            )
-            conn.execute(
-                s.llm_run_tags.insert().values(llm_run_id=run_id, tag=tag)
+            # Idempotent insert (PK = llm_run_id, tag). Avoids the gap locks on
+            # idx_llm_run_tags_tag that a delete+insert takes — those deadlock
+            # under concurrent writers (same tag value, different run_ids).
+            insert_ignore(
+                conn,
+                s.llm_run_tags,
+                {"llm_run_id": run_id, "tag": tag},
+                conflict=("llm_run_id", "tag"),
             )
     except Exception:  # noqa: BLE001
         logger.exception("validation_tag_write_failed", run_id=run_id, tag=tag)
@@ -140,7 +141,7 @@ def parse_and_validate(
             and offline replay).
         validation_context: Passed to cross-field validators via their
             ``context=`` kwarg. Services typically pass domain objects the
-            validator needs (e.g. ``{"essay_config": ec}``).
+            validator needs (e.g. ``{"report_config": rc}``).
         stages: Which pipeline stages to run. Default runs all three.
             Useful during migration to skip semantic/cross-field with
             ``stages=("shape",)``.

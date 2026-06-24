@@ -24,8 +24,8 @@ Usage::
 
     from pf_core.db import insert_ignore, upsert
 
-    insert_ignore(conn, artists, {"slug": "fugazi", "name": "Fugazi"}, conflict=["slug"])
-    upsert(conn, sources, {"source": "itunes", "note": n},
+    insert_ignore(conn, users, {"slug": "acme", "name": "Acme"}, conflict=["slug"])
+    upsert(conn, sources, {"source": "import", "note": n},
            conflict=["source"], update=["note"])
 """
 

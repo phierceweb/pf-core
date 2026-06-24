@@ -1,21 +1,21 @@
 """
 Parallel execution helper for batch operations.
 
-Used by service layers to grade/analyze/process items in parallel with
+Used by service layers to analyze/process items in parallel with
 progress tracking and error resilience.
 
 Usage::
 
     from pf_core.parallel import run_parallel
 
-    def grade_one(item):
+    def process_one(item):
         ...
 
     run_parallel(
-        items=submissions,
-        fn=grade_one,
+        items=records,
+        fn=process_one,
         workers=4,
-        label="Graded",
+        label="Processed",
     )
 """
 
@@ -52,7 +52,7 @@ def run_parallel(
         items: List of work items to process.
         fn: Callable that takes one item and processes it.
         workers: Number of parallel workers (1 = sequential).
-        label: Progress label (e.g. "Graded", "Analyzed").
+        label: Progress label (e.g. "Processed", "Analyzed").
         progress_callback: Optional (done, total) callback for job tracking.
         reporter: Optional Reporter for progress output. When provided,
             replaces the default ``print()`` progress line.
@@ -63,7 +63,7 @@ def run_parallel(
             WARNING level if any failures were recorded
             (``batch_complete_with_failures`` with ``succeeded`` /
             ``failed`` / ``failure_rate`` fields). Defaults to ``None``
-            (no summary log — preserves pre-A3b behavior).
+            (no summary log).
     """
     total = len(items)
     if total == 0:
@@ -188,11 +188,11 @@ def resilient(
             "✗ {item}: {reason}" lines. ``None`` (the default) silences
             per-failure output — failures still land in ``failures``.
         log_label: Prefix for ``log_exception``'s message. Defaults to
-            ``"worker failed"``; pass e.g. ``"grader failed"`` so log
+            ``"worker failed"``; pass e.g. ``"processor failed"`` so log
             grepping is per-service.
         catch: Exception types to absorb. Defaults to ``Exception``;
             narrow this if a specific subset of failures should propagate
-            (e.g. ``catch=GradingError`` would let ``KeyboardInterrupt``
+            (e.g. ``catch=DomainError`` would let ``KeyboardInterrupt``
             and unrelated bugs still surface).
 
     Example::
@@ -202,17 +202,17 @@ def resilient(
         failures: list[tuple[str, str]] = []
 
         @resilient(failures, label_fn=lambda i: i[0], reporter=reporter,
-                   log_label="grader failed")
-        def grade_one(item):
-            stem, answer = item
-            with job.step(f"grade_{stem}") as step:
+                   log_label="processor failed")
+        def process_one(item):
+            stem, payload = item
+            with job.step(f"process_{stem}") as step:
                 if step.skipped:
                     return stem
                 # ... raise on errors; pf-core marks the step failed via
                 # the step context manager's own except path ...
             return stem
 
-        run_parallel(items, grade_one, workers=4, label="Graded")
+        run_parallel(items, process_one, workers=4, label="Processed")
         written = len(items) - len(failures)
     """
     lock = threading.Lock()

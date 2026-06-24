@@ -7,8 +7,24 @@ import re
 import pytest
 from sqlalchemy import text
 
-from pf_core.exceptions import PreconditionError
+from pf_core.exceptions import InvalidInputError, PreconditionError
 from pf_core.utils.ids import allocate_id, generate_id
+
+
+class TestAllocateIdIdentifierValidation:
+    """table/column are interpolated into SQL, so they must be plain identifiers."""
+
+    def test_rejects_bad_table(self):
+        with pytest.raises(InvalidInputError):
+            allocate_id(None, table="users; DROP TABLE x")
+
+    def test_rejects_bad_column(self):
+        with pytest.raises(InvalidInputError):
+            allocate_id(None, table="widgets", column="id) OR 1=1--")
+
+    def test_rejects_empty_table(self):
+        with pytest.raises(InvalidInputError):
+            allocate_id(None, table="")
 
 
 class TestGenerateId:

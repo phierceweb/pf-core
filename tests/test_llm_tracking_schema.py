@@ -225,7 +225,7 @@ def test_full_attachments_roundtrip(engine):
             llm_models.insert().values(name="claude-opus-4-7")
         ).inserted_primary_key[0]
         agent_id = conn.execute(
-            llm_agent_types.insert().values(slug="grader")
+            llm_agent_types.insert().values(slug="reviewer")
         ).inserted_primary_key[0]
         sys_id = conn.execute(
             llm_prompts.insert().values(
@@ -266,7 +266,7 @@ def test_full_attachments_roundtrip(engine):
         )
         conn.execute(
             llm_run_configs.insert().values(
-                llm_run_id=run_id, config_kind="essay_config", config_id=42
+                llm_run_id=run_id, config_kind="report_config", config_id=42
             )
         )
         conn.execute(
@@ -280,7 +280,7 @@ def test_full_attachments_roundtrip(engine):
         )
         conn.execute(
             llm_run_outcomes.insert().values(
-                llm_run_id=run_id, outcome_kind="grade_matches_professor", score=0.92
+                llm_run_id=run_id, outcome_kind="result_matches_reviewer", score=0.92
             )
         )
         conn.execute(

@@ -31,16 +31,16 @@ Projects subclass these for domain-specific errors:
 ```python
 from pf_core.exceptions import ClientError
 
-class SearchError(ClientError):
-    """LLM web search call failed."""
+class ExportError(ClientError):
+    """External export API call failed."""
 ```
 
 **Constructor:** `AppError(message, context=None, *, cause=None)`
 
 ```python
-raise SearchError(
-    "OpenRouter timed out",
-    context={"task_id": task_id, "model": model},
+raise ExportError(
+    "export API timed out",
+    context={"task_id": task_id, "endpoint": endpoint},
     cause=original_exc,
 )
 ```
@@ -54,10 +54,10 @@ from pf_core.log import log_exception
 
 log_exception(
     exc,
-    message_prepend="search failed",
+    message_prepend="export failed",
     additional_context={"section": "intro"},
     log_level="warning",
-    event_prefix="COMP",  # default "APP"
+    event_prefix="EXP",  # default "APP"
 )
 ```
 
@@ -74,14 +74,14 @@ The CLI/API boundary handles it. No catch required.
 ```python
 except Exception as e:
     log_exception(
-        SearchError("unexpected failure", context={"task_id": tid}, cause=e),
-        message_prepend="search step failed",
+        ExportError("unexpected failure", context={"task_id": tid}, cause=e),
+        message_prepend="export step failed",
     )
 ```
 
 ### Pattern 3 — Log with context and re-raise
 ```python
-except SearchError as e:
+except ExportError as e:
     log_exception(e, additional_context={"task_id": tid})
     raise
 ```

@@ -27,6 +27,9 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
     raise extra_import_error("http", "httpx", feature="pf_core.utils.urls") from e
 
+from pf_core.utils.http_tls import verify_tls
+from pf_core.utils.url_safety import guarded_get, guarded_head
+
 # Matches /YYYY/MM/DD/ segments embedded in a URL path. Requires slash
 # boundaries so "/2025-03-15" or "part-2025-03-15" do not match.
 _PATH_DATE_RE = re.compile(r"/(?P<year>(?:19|20)\d{2})/(?P<month>\d{1,2})/(?P<day>\d{1,2})(?:/|$)")
@@ -45,10 +48,8 @@ def domain_of(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
-# Query parameters that are pure tracking / attribution — safe to drop when
-# deduplicating URLs. The same news article reached via a newsletter (with
-# ``?utm_source=newsletter``), a bare search result, and a Twitter share
-# (``?s=21``) should produce one canonical URL, not three.
+# Pure tracking / attribution query params — dropped when deduplicating URLs so
+# the same article reached via different shares collapses to one canonical URL.
 _TRACKING_PARAM_PREFIXES: tuple[str, ...] = ("utm_", "__hs", "pk_", "vero_")
 _TRACKING_PARAMS: frozenset[str] = frozenset({
     "fbclid",                 # Facebook click ID
@@ -81,7 +82,7 @@ def canonical_url(url: str) -> str:
     """Normalize a URL for deduplication comparison.
 
     Produces a canonical form so URLs that reference the same resource via
-    different link shapes compare equal — one AP article accessed via a newsletter's
+    different link shapes compare equal — one article accessed via a newsletter's
     ``?utm_source=newsletter`` link, a bare URL from a search result, and a
     Twitter share with ``?s=21`` all produce the same canonical string.
 
@@ -216,16 +217,16 @@ def check_url(url: str, *, timeout: int | None = None) -> tuple[int, str]:
     try:
         with httpx.Client(
             timeout=timeout,
-            follow_redirects=True,
-            verify=False,
+            follow_redirects=False,
+            verify=verify_tls(),
             headers=headers,
         ) as client:
             try:
-                resp = client.head(url)
+                resp = guarded_head(client, url)
                 if resp.status_code == 405:
-                    resp = client.get(url)
+                    resp = guarded_get(client, url)
             except httpx.HTTPError:
-                resp = client.get(url)
+                resp = guarded_get(client, url)
 
             code = resp.status_code
             category = _STATUS_CATEGORIES.get(code, f"http_{code}")
@@ -237,8 +238,7 @@ def check_url(url: str, *, timeout: int | None = None) -> tuple[int, str]:
         return 0, "error"
 
 
-# Maximum HTML body we keep when reading a page — paywalls and ad-heavy pages
-# can run into megabytes; downstream LLMs only need the head + first few paras.
+# Cap the retained body — pages can run to megabytes; downstream only needs the head.
 _CONTENT_BODY_MAX_BYTES = 512 * 1024  # 512 KB
 
 
@@ -277,11 +277,11 @@ def fetch_url_content(
     try:
         with httpx.Client(
             timeout=timeout,
-            follow_redirects=True,
-            verify=False,
+            follow_redirects=False,
+            verify=verify_tls(),
             headers=headers,
         ) as client:
-            resp = client.get(url)
+            resp = guarded_get(client, url)
             code = resp.status_code
             category = _STATUS_CATEGORIES.get(code, f"http_{code}")
             if 200 <= code < 300:
@@ -486,7 +486,7 @@ def wayback_exists_at(
         with httpx.Client(
             timeout=timeout,
             follow_redirects=True,
-            verify=False,
+            verify=verify_tls(),
             headers=headers,
         ) as client:
             resp = client.get(

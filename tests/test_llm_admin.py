@@ -121,8 +121,27 @@ def _seed(with_jobs: bool = True, with_budgets: bool = True, with_cache: bool = 
 
 def _make_client(admin_db, **kwargs):
     app = FastAPI()
+    # These route tests exercise the admin open; opt into that explicitly
+    # (make_admin_router now refuses to mount unauthenticated by default).
+    kwargs.setdefault("allow_unauthenticated", True)
     app.include_router(make_admin_router(**kwargs))
     return TestClient(app, raise_server_exceptions=True)
+
+
+def test_refuses_unauthenticated_by_default():
+    from pf_core.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError):
+        make_admin_router()
+
+
+def test_auth_dep_satisfies_requirement():
+    # Passing an auth dependency mounts without needing the opt-in flag.
+    make_admin_router(auth_dep=lambda: None)
+
+
+def test_allow_unauthenticated_opt_in():
+    make_admin_router(allow_unauthenticated=True)
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +428,7 @@ def test_empty_state_renders_friendly_message(admin_db):
 def test_custom_prefix(admin_db):
     _seed()
     app = FastAPI()
-    app.include_router(make_admin_router(prefix="/ops/llm"))
+    app.include_router(make_admin_router(prefix="/ops/llm", allow_unauthenticated=True))
     client = TestClient(app, raise_server_exceptions=True)
     r = client.get("/ops/llm/")
     assert r.status_code == 200
@@ -427,15 +446,15 @@ def test_config_resolver_renders_readable_label(admin_db):
     run_id = run_repo.record(
         agent_type="drafter",
         model="claude-opus-4-7",
-        configs={"essay_config": 42},
+        configs={"report_config": 42},
     )
 
-    resolvers = {"essay_config": lambda cid: f"Essay #{cid} · English 101"}
+    resolvers = {"report_config": lambda cid: f"Report #{cid}"}
     client = _make_client(admin_db, config_resolvers=resolvers)
 
     r = client.get(f"/admin/llm/run/{run_id}")
     assert r.status_code == 200
-    assert "English 101" in r.text
+    assert "Report #42" in r.text
 
 
 def test_unresolved_config_falls_back_to_kind_colon_id(admin_db):

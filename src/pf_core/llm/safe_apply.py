@@ -13,8 +13,7 @@ saw alongside its plan, apply re-extracts the current targets and
 compares. If counts or texts drifted, the apply skips with a structured
 warning rather than mis-applying.
 
-Generalized from a production gather/apply pair so any LLM-driven
-transform pipeline can use the same safety pattern.
+Any LLM-driven transform pipeline can use the same gather/apply safety pattern.
 
 Usage::
 

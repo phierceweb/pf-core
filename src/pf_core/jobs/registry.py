@@ -9,8 +9,8 @@ Usage::
     from pf_core.jobs import register_kind
 
     register_kind(
-        kind="grading_pass",
-        description="Grade N submissions with current essay config",
+        kind="export_pass",
+        description="Process N records with the current config",
         states=["pending", "running", "succeeded", "failed", "partial", "canceled"],
         transitions={
             "pending":   ["running", "canceled"],
@@ -18,8 +18,8 @@ Usage::
             "failed":    ["pending"],       # manual retry
             "partial":   ["running"],       # resume
         },
-        inputs_schema=GradingPassInputs,    # Pydantic model (optional)
-        outputs_schema=GradingPassOutputs,
+        inputs_schema=ExportPassInputs,    # Pydantic model (optional)
+        outputs_schema=ExportPassOutputs,
         default_priority=60,
     )
 
