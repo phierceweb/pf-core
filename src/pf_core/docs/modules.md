@@ -117,6 +117,7 @@ Make architecture violations and bloated files fail the build, not a code review
 
 | Module | Concern |
 |---|---|
+| [Doctor](doctor.md) | `pf-doctor` — runtime ground-truth attestation: loaded copy/version, extras, env resolution (redacted), router-config validity, dependency versions; `--db` adds a read-only connectivity + migration check. |
 | [Linting](linting.md) | Layer import linter (enforces the call direction in the repo's `layering` rule) and file-size linter (per-layer line budgets with project overrides). |
 | [CLI](cli.md) | Typer scaffold with consistent verbose flag and exception-to-exit-code mapping. |
 | [Testing](testing.md) | Pytest fixtures auto-registered as a plugin: isolated per-test SQLite database (file-backed, concurrency-safe), savepoint-per-test, FastAPI test client. |
