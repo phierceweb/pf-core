@@ -82,7 +82,7 @@ content, usage = client.chat(
 ```
 
 - Caches tools+system as the stable prefix — the right shape for batch runs (shared system prompt, varying user content). Cache reads bill ~0.1x the input rate; writes ~1.25x (`5m`) / 2x (`1h`).
-- Verify via the returned usage dict: `cache_write_tokens` on the first call, `cache_read_tokens` on later calls inside the TTL. `usage["cost_usd"]` includes cache read/write costs only when the model's registered rates define `cache_read`/`cache_write`; the built-in Anthropic table leaves them unset — call `pf_core.pricing.register_rates()` with cache rates to enable it.
+- Verify via the returned usage dict: `cache_write_tokens` on the first call, `cache_read_tokens` on later calls inside the TTL. `usage["cost_usd"]` includes cache read/write costs — the built-in Anthropic rates carry cache pricing (read 0.1x input; write 1.25x input for `5m`, 2x for `1h`), and the call's `cache_ttl` selects the write rate. Override per model with `pf_core.pricing.register_rates()`.
 - Silently no-ops below the model-dependent minimum prefix (1024–4096 tokens). Any byte change before the breakpoint invalidates the cache.
 - `cache_system=True` with no system message is a no-op — safe to set per-agent in router config across agents with and without system prompts.
 
@@ -143,7 +143,7 @@ Returns `(content, usage)`. `content` is the concatenation of all text blocks in
 
 `reasoning_tokens` is populated from `response.usage.thinking_tokens` for reasoning models (Opus 4.7+); older SDK responses lack the field and it falls back to `0`. These tokens are billed at the output rate and the SDK already counts them inside `output_tokens`, so the cost estimate does not add them a second time.
 
-`cost_usd` is a best-effort estimate from [`pf_core.pricing`](pricing.md): the model id is matched against a prefix pricing table (`claude-opus-4`, `claude-sonnet-4`, `claude-haiku-4`, plus legacy 3.x families) using input + output rates per 1M tokens. Cache-read/write discounts are modeled only via registered cache rates — see the [prompt-caching section](#system-messages-and-prompt-caching); batch pricing is not modeled. A model id matching no prefix yields `cost_usd == 0.0` and a one-shot `pricing_unknown_model` WARNING — callers can treat `0.0` as "unpriced". Add or correct rates with `pf_core.pricing.register_rates(...)`, no framework edit needed.
+`cost_usd` is a best-effort estimate from [`pf_core.pricing`](pricing.md): the model id is matched against a prefix pricing table (`claude-opus-4`, `claude-sonnet-4`, `claude-haiku-4`, plus legacy 3.x families) using input + output rates per 1M tokens. Cache-read/write costs are modeled TTL-aware via the built-in cache rates — see the [prompt-caching section](#system-messages-and-prompt-caching); batch pricing is not modeled. A model id matching no prefix yields `cost_usd == 0.0` and a one-shot `pricing_unknown_model` WARNING — callers can treat `0.0` as "unpriced". Add or correct rates with `pf_core.pricing.register_rates(...)`, no framework edit needed.
 
 `response_format` maps onto Anthropic-native features — see [Structured output](#structured-output-response_format) below.
 

@@ -207,9 +207,10 @@ class TestAnthropicClientChat:
             assert usage["cache_read_tokens"] == 80
             assert usage["cache_write_tokens"] == 20
             assert usage["reasoning_tokens"] == 0
-            # claude-haiku-4-5 → claude-haiku-4 prefix: $0.80/1M in, $4.0/1M out.
-            # 100 * 0.80/1e6 + 50 * 4.0/1e6 = 0.00028
-            assert usage["cost_usd"] == pytest.approx(0.00028)
+            # claude-haiku-4-5 → claude-haiku-4 prefix: $0.80/1M in, $4.0/1M out,
+            # cache read $0.08/1M, 5m cache write $1.0/1M.
+            # 100*0.80/1e6 + 50*4.0/1e6 + 80*0.08/1e6 + 20*1.0/1e6 = 0.0003064
+            assert usage["cost_usd"] == pytest.approx(0.0003064)
             assert usage["system_fingerprint"] is None
 
     def test_chat_thinking_tokens_carried_to_reasoning_tokens(self):

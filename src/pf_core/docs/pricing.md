@@ -13,14 +13,14 @@ cost = estimate_cost(
 )
 ```
 
-`estimate_cost(provider, model, *, prompt_tokens=0, completion_tokens=0, cache_read_tokens=0, cache_write_tokens=0) -> float` returns USD. Rates are per 1,000,000 tokens.
+`estimate_cost(provider, model, *, prompt_tokens=0, completion_tokens=0, cache_read_tokens=0, cache_write_tokens=0, cache_ttl="5m") -> float` returns USD. Rates are per 1,000,000 tokens.
 
 ## Resolution
 
 - **Prefix match.** The model id is matched against the provider's table by prefix; the first match (insertion order) wins. So `claude-opus-4-7`, `claude-opus-4-20250101`, and `claude-opus-4.1` all resolve to the `claude-opus-4` entry.
 - **Namespaced ids.** An OpenRouter-style `anthropic/claude-opus-4-7` is split on `/` and priced against the underlying provider's table — so `estimate_cost("openrouter", "anthropic/claude-...")` works.
 - **Unknown model → `0.0`**, with a one-shot `pricing_unknown_model` log warning per `provider:model` per process. Treat `0.0` as "unpriced", not "free".
-- **Cache tokens** are added only when the model's `ModelRates` defines `cache_read` / `cache_write`; the built-in entries leave them unset, so cached tokens add nothing (a conservative input+output estimate).
+- **Cache tokens** are added only when the model's `ModelRates` defines `cache_read` / `cache_write`. The built-in Anthropic entries carry them at the provider's published multipliers of the input rate (read 0.1x; write 1.25x for the 5-minute TTL, 2x for 1-hour). `cache_ttl="1h"` selects `cache_write_1h` when defined, falling back to `cache_write`; any other value uses `cache_write`.
 
 ## Built-in rates
 
@@ -36,7 +36,7 @@ from pf_core.pricing import ModelRates, register_rates
 register_rates("openai", "gpt-4o-mini", ModelRates(input=0.15, output=0.60))
 ```
 
-Registered rates override a built-in with the same prefix. `ModelRates(input, output, cache_read=None, cache_write=None)` — rates per 1M tokens. `get_rates(provider, model)` returns the resolved `ModelRates` (or `None`) for inspection.
+Registered rates override a built-in with the same prefix. `ModelRates(input, output, cache_read=None, cache_write=None, cache_write_1h=None)` — rates per 1M tokens; `cache_write` is the 5-minute-TTL write rate, `cache_write_1h` the 1-hour one. `get_rates(provider, model)` returns the resolved `ModelRates` (or `None`) for inspection.
 
 ## Client integration
 

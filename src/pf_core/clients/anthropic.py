@@ -186,7 +186,7 @@ class AnthropicClient:
         model: str = "",
         temperature: float | None = 0.2,
         max_tokens: int = DEFAULT_MAX_TOKENS,
-        top_p: float | None = 1.0,
+        top_p: float | None = None,
         response_format: dict | None = None,
         timeout: int | None = None,
         cache_system: bool = False,
@@ -239,12 +239,12 @@ class AnthropicClient:
         # Per-call timeout via SDK's with_options derived-client pattern.
         sdk = self._client if timeout is None else self._client.with_options(timeout=timeout)
 
-        # Build the kwargs sent to messages.create. Conditionally include
-        # `temperature` and `top_p` so reasoning models (Opus 4.7+, future
-        # thinking models) that reject these params don't get them sent.
-        # Callers opt out by passing `temperature=None` / `top_p=None`.
-        # Per-model knobs belong in the caller's config (e.g. the consumer's
-        # model_router.yaml) — they should never be hardcoded here.
+        # Build the kwargs sent to messages.create. Sampling params are
+        # conditional: `temperature` is sent by default (opt out with
+        # `temperature=None`); `top_p` is opt-in — Claude 4+ models reject
+        # requests that set both, and reasoning models (Opus 4.7+) reject
+        # either. Per-model knobs belong in the caller's config (e.g. the
+        # consumer's model_router.yaml) — they should never be hardcoded here.
         system, chat_messages = _split_system(messages)
         call_kwargs: dict[str, Any] = {
             "model": resolved_model,
@@ -336,6 +336,7 @@ class AnthropicClient:
                 completion_tokens=completion_tokens,
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
+                cache_ttl=cache_ttl,
             ),
             "duration_ms": elapsed_ms,
             "system_fingerprint": None,

@@ -79,12 +79,16 @@ def estimate_cost(
     completion_tokens: int = 0,
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
+    cache_ttl: str = "5m",
 ) -> float:
     """Estimate the USD cost of one call.
 
     Returns ``0.0`` for an unpriced model, logging ``pricing_unknown_model``
     once per ``provider:model`` per process. Cache token costs are added
     only when the model's :class:`ModelRates` defines cache rates.
+    ``cache_ttl="1h"`` prices cache writes at the model's ``cache_write_1h``
+    rate when defined (falling back to ``cache_write``); any other value
+    uses ``cache_write``.
     """
     rates = get_rates(provider, model)
     if rates is None:
@@ -107,6 +111,9 @@ def estimate_cost(
     )
     if rates.cache_read is not None:
         cost += cache_read_tokens * rates.cache_read / 1_000_000
-    if rates.cache_write is not None:
-        cost += cache_write_tokens * rates.cache_write / 1_000_000
+    cache_write_rate = rates.cache_write
+    if cache_ttl == "1h" and rates.cache_write_1h is not None:
+        cache_write_rate = rates.cache_write_1h
+    if cache_write_rate is not None:
+        cost += cache_write_tokens * cache_write_rate / 1_000_000
     return cost

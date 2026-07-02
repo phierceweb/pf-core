@@ -60,7 +60,7 @@ class TestSystemExtraction:
             client = AnthropicClient(api_key="k", model="m")
             client.chat(messages=[{"role": "user", "content": "Hi"}])
             kw = _chat_kwargs(mock_sdk)
-            assert set(kw) == {"model", "max_tokens", "messages", "temperature", "top_p"}
+            assert set(kw) == {"model", "max_tokens", "messages", "temperature"}
             assert kw["messages"] == [{"role": "user", "content": "Hi"}]
 
     def test_leading_system_extracted_to_param(self):
@@ -330,5 +330,17 @@ class TestCacheAwareCost:
                 completion_tokens=50,
                 cache_read_tokens=800,
                 cache_write_tokens=200,
+                cache_ttl="5m",
             )
             assert usage["cost_usd"] == 0.5
+
+    def test_cache_ttl_passed_to_estimate_cost(self):
+        from pf_core.clients import anthropic as anthropic_mod
+
+        with patch("anthropic.Anthropic") as mock_sdk, patch.object(
+            anthropic_mod, "estimate_cost", return_value=0.5
+        ) as mock_cost:
+            mock_sdk.return_value.messages.create.return_value = _mock_sdk_response()
+            client = AnthropicClient(api_key="k", model="m")
+            client.chat(messages=list(_SYS), cache_system=True, cache_ttl="1h")
+            assert mock_cost.call_args.kwargs["cache_ttl"] == "1h"
