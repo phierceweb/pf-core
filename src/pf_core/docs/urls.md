@@ -1,6 +1,11 @@
 # URL Utilities
 
-General-purpose URL parsing and inspection helpers.
+General-purpose URL parsing and inspection helpers. Import everything from
+`pf_core.utils.urls` (requires the `[http]` extra). The pure halves also
+import directly with **no extra at all**: `pf_core.utils.url_parse`
+(`domain_of`, `canonical_url`, `archive_timestamp_is_round`,
+`extract_path_date`) and `pf_core.utils.url_html`
+(`extract_article_metadata`).
 
 ## Domain extraction
 

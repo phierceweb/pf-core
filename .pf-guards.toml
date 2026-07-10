@@ -1,0 +1,8 @@
+# pf-core's own structural-gate config (pre-commit + CI run
+# `python -m pf_core.guards --config .pf-guards.toml`). Lives here, not in
+# pyproject.toml: this is internal repo state, not framework metadata.
+# Consumers put [tool.pf_guards] in their own pyproject instead.
+[tool.pf_guards]
+root = "src/pf_core"
+
+# No baseline: pf-core passes its own gate with zero exceptions.

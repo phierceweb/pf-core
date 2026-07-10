@@ -49,5 +49,28 @@ for tool in .claude .cursor; do
   done
 done
 
+# Link pf-core's module docs where assistants look. Re-resolves every run, so
+# venv rebuilds and editable-vs-wheel installs both stay correct.
+PF_DOCS="$(.venv/bin/python -c 'import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent / "docs")' 2>/dev/null || true)"
+if [[ -n "$PF_DOCS" && -d "$PF_DOCS" ]]; then
+  mkdir -p docs
+  ln -sfn "$PF_DOCS" docs/pf-core
+  ok "docs/pf-core -> $PF_DOCS"
+fi
+
+# Ensure the structural-gate config exists (stamped by the scaffold; self-heals).
+if ! grep -q '^\[tool\.pf_guards\]' pyproject.toml 2>/dev/null; then
+  printf '\n[tool.pf_guards]\nroot = "app"\n' >> pyproject.toml
+  ok "added [tool.pf_guards] to pyproject.toml"
+fi
+
+# Install the commit gates (structural gate + ruff) when this is a git repo.
+if [[ -d .git && -x .venv/bin/pre-commit ]]; then
+  .venv/bin/pre-commit install >/dev/null
+  ok "pre-commit hooks installed (gate runs on every commit)"
+else
+  info "not a git repo yet — run 'git init && .venv/bin/pre-commit install' to enable the commit gates"
+fi
+
 echo
 echo "Setup complete. Try: bin/web   (then open http://127.0.0.1:8000/)"

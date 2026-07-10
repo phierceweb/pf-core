@@ -24,7 +24,10 @@ Project rules live in `.ai/rules/` (copied from pf-core; `bin/setup` symlinks
 
 ## pf-core
 
-Declared in `pyproject.toml` as `pf-core[__EXTRAS__]`. Import from `pf_core.*`;
-see pf-core's `docs/` (start with `docs/modules.md` and `docs/web.md`). Use the
+Declared in `pyproject.toml` as `pf-core[__EXTRAS__]`. Import from `pf_core.*`.
+**Module reference: [docs/pf-core/modules.md](docs/pf-core/modules.md)** (and
+`web.md` there) — `bin/setup` symlinks the installed pf-core's docs into the
+project docs dir. If the link is missing:
+`bin/run python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent / 'docs')"`. Use the
 framework's logging, config, exceptions, db, and web layers rather than
 re-implementing them.

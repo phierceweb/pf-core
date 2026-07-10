@@ -90,4 +90,4 @@ Orchestrators **must not**:
 - Import or instantiate repositories directly — use `_service()` to get services
 - Call `transaction()` — services own data access
 - Contain domain logic — delegate to services
-- Grow beyond the orchestrator line budget (400 lines; see `project-structure.md`) — split into smaller orchestrators
+- Grow beyond the orchestrator line budget (enforced by the `pf_core.guards` gate; the limit lives in `pf_core/guards/config.py`) — split into smaller orchestrators

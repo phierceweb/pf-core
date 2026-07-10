@@ -5,7 +5,7 @@ pf-core projects come in two shapes — pick by what the project *is*:
 - **Full-stack web app** — the `app/` layout below: FastAPI + DB + web layers, for a project that serves HTTP and owns a database.
 - **Library / tool** — the `src/<pkg>/` layout further down: a CLI, batch pipeline, or importable library with no web/DB layers.
 
-Both share the same conventions and the same file-size gate (`python -m pf_core.guards --root <code-root>`, where `<code-root>` is `app` or `src/<pkg>`).
+Both share the same conventions and the same structural gate (`python -m pf_core.guards`, reading `[tool.pf_guards]` from `pyproject.toml` — set `root` to `app` or `src/<pkg>`).
 
 ## Full-stack web app layout (`app/`)
 
@@ -90,16 +90,16 @@ No `api/`, `repo/`, `clients/`, `templates/`, or `alembic/` — a library doesn'
 
 ## File size limits
 
-These apply to either layout — by layer-directory name, whether under `app/` or `src/<pkg>/` — enforced by the build gate (`python -m pf_core.guards`). The hard ceiling for any file is 500 lines.
+File-size budgets are by layer-directory name. Under an `app/` tree the build gate (`python -m pf_core.guards`) enforces a per-layer hard limit, warning at a fixed fraction of it; `src/<pkg>/` library layouts get the flat soft/hard gate (a library has no `app` layers). **The canonical limit values are code, not this doc:** `LAYER_DEFAULTS`, `UTIL_LIMIT`, and `SOFT_FRACTION` in `pf_core/guards/config.py` (flat defaults on `GuardsConfig`).
 
-| Layer | Hard limit | Action when exceeded |
-|-------|-----------|---------------------|
-| Service (`app/services/`) | 300 lines | Split by concern: `{domain}_{concern}.py` (e.g. `synthesis_summaries.py`, `synthesis_cascade.py`) |
-| Repo (`app/repo/`) | 300 lines | Split by entity or operation type |
-| Orchestrator (`app/orchestrators/`) | 400 lines | Extract logic into services; orchestrator keeps coordination only |
-| API route (`app/api/`) | 300 lines | Split by resource or page group |
-| CLI (`app/cli/`) | 100 lines per command file | One command per file, thin wrapper over service/orchestrator |
-| `_util.py` files | 150 lines | Split by subdomain into `_catalog.py`, `_resolvers.py`, etc. |
+| Layer | Action when over its limit |
+|-------|---------------------------|
+| Service (`app/services/`) | Split by concern: `{domain}_{concern}.py` (e.g. `synthesis_summaries.py`, `synthesis_cascade.py`) |
+| Repo (`app/repo/`) | Split by entity or operation type |
+| Orchestrator (`app/orchestrators/`) | Extract logic into services; orchestrator keeps coordination only |
+| API route (`app/api/`) | Split by resource or page group |
+| CLI (`app/cli/`) | One command per file, thin wrapper over service/orchestrator |
+| `_util.py` files | Split by subdomain into `_catalog.py`, `_resolvers.py`, etc. |
 
 When splitting a file:
 - Name the new files `{domain}_{concern}.py` — not `{domain}_2.py` or `{domain}_helpers.py`

@@ -1,0 +1,18 @@
+# Build gates: structural gate + ruff on every commit. Run `pre-commit install`
+# once per clone (bin/setup does it when this is a git repo). CI
+# (.github/workflows/guards.yml) is the unskippable backstop.
+repos:
+  - repo: local
+    hooks:
+      - id: pf-guards
+        name: pf-core structural gate
+        entry: .venv/bin/python -m pf_core.guards
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: ruff
+        entry: .venv/bin/python -m ruff check app tests
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -57,6 +57,12 @@ def test_scaffold_structure(tmp_path, layout, extras_token):
     assert meta["project"]["name"] == "demo-proj"
     assert any(extras_token in d for d in meta["project"]["dependencies"])
 
+    # Enforcement is stamped, not optional: gate config + pre-commit + CI backstop.
+    expected_root = "app" if layout == "app" else "src/demo_proj"
+    assert meta["tool"]["pf_guards"]["root"] == expected_root
+    assert (proj / ".pre-commit-config.yaml").is_file()
+    assert (proj / ".github" / "workflows" / "guards.yml").is_file()
+
     _no_unsubstituted_tokens(proj)
 
 

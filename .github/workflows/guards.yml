@@ -10,6 +10,6 @@ jobs:
           python-version: "3.11"
       - run: pip install -e .
       - name: file-size gate
-        run: python -m pf_core.guards --root src/pf_core --baseline .ai/guards/file_size_baseline.json
+        run: python -m pf_core.guards --config .pf-guards.toml
       - name: ruff
         run: pip install ruff && ruff check src tests

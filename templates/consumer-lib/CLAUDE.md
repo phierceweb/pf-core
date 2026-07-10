@@ -22,7 +22,10 @@ style, error handling, config-driven design, and structure conventions.
 
 ## pf-core
 
-Declared in `pyproject.toml` as `pf-core[__EXTRAS__]`. Import from `pf_core.*`;
-see pf-core's `docs/` for the module reference (start with `docs/modules.md`).
+Declared in `pyproject.toml` as `pf-core[__EXTRAS__]`. Import from `pf_core.*`.
+**Module reference: [docs/pf-core/modules.md](docs/pf-core/modules.md)** —
+`bin/setup` symlinks the installed pf-core's docs into the project docs dir.
+If the link is missing, resolve directly:
+`bin/run python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent / 'docs')"`.
 Never reach for a third-party library when pf-core already provides it
 (logging, config, exceptions, parallel, LLM clients, etc.).

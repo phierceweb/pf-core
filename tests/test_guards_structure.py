@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pf_core.guards.config import GuardsConfig
 from pf_core.guards.structure import FileSizeViolation, filter_baselined, scan_file_sizes
 
 
@@ -56,3 +57,33 @@ class TestBaseline:
     def test_soft_violations_never_baselined(self) -> None:
         v = [FileSizeViolation("med.py", 400, 300, "soft")]
         assert filter_baselined(v, baseline={"med.py": 400}) == v
+
+
+def _write_at(p: Path, n_lines: int) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    _write(p, n_lines)
+
+
+class TestScanFileSizesLayerAware:
+    def test_app_layer_hard_limit_applies(self, tmp_path: Path) -> None:
+        _write_at(tmp_path / "app" / "cli" / "run.py", 120)  # cli hard = 100
+        (v,) = scan_file_sizes(tmp_path, config=GuardsConfig())
+        assert (v.severity, v.limit, v.lines) == ("hard", 100, 120)
+
+    def test_app_layer_soft_is_08_of_hard(self, tmp_path: Path) -> None:
+        _write_at(tmp_path / "app" / "orchestrators" / "flow.py", 330)  # 320 < 330 <= 400
+        (v,) = scan_file_sizes(tmp_path, config=GuardsConfig())
+        assert (v.severity, v.limit) == ("soft", 320)
+
+    def test_non_app_files_keep_flat_limits_with_config(self, tmp_path: Path) -> None:
+        _write_at(tmp_path / "pkg" / "big.py", 400)  # soft under flat 300/500
+        (v,) = scan_file_sizes(tmp_path, config=GuardsConfig())
+        assert (v.severity, v.limit) == ("soft", 300)
+
+    def test_soft_fraction_override_widens_warn_band(self, tmp_path: Path) -> None:
+        _write_at(tmp_path / "app" / "orchestrators" / "flow.py", 330)  # soft under 1.0×400
+        assert scan_file_sizes(tmp_path, config=GuardsConfig(soft_fraction=1.0)) == []
+
+    def test_no_config_behavior_unchanged(self, tmp_path: Path) -> None:
+        _write_at(tmp_path / "app" / "cli" / "run.py", 120)  # would fail per-layer
+        assert scan_file_sizes(tmp_path) == []  # flat 300/500: clean

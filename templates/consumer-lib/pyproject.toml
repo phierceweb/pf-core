@@ -9,18 +9,24 @@ description = "A pf-core library / tool."
 requires-python = ">=3.11"
 dependencies = [
     # pf-core foundation + the extras this project uses, pinned to a compatible
-    # PyPI release (picks up patch/minor within the line; bump for 0.3+).
-    "pf-core[__EXTRAS__]~=0.2.0",
+    # PyPI release (picks up patch/minor within the line). 0.4+ carries the
+    # config-driven structural gate ([tool.pf_guards] below).
+    "pf-core[__EXTRAS__]~=0.4.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "ruff>=0.6", "pre-commit>=3.0"]
 
 [project.scripts]
 __NAME__ = "__PKG__.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Structural gate (bin/lint runs `python -m pf_core.guards`); flat library
+# limits for a src layout. See pf-core docs/guards.md.
+[tool.pf_guards]
+root = "src/__PKG__"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

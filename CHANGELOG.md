@@ -2,6 +2,27 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.4.0 — 2026-07-09
+
+### Added
+- `pf_core.guards` is the single structural gate, configured via `[tool.pf_guards]` in `pyproject.toml`: `root` (string, or list for multi-tree scans with per-root path prefixes), `hard`, `soft`, `util`, `soft_fraction`, `layers`, `limits` (path-prefix budgets, longest prefix wins), `baseline`, `allowed_imports`, `layering_allowlist`. Bare `python -m pf_core.guards` reads it; CLI flags override.
+- Per-layer file-size limits for `app/` trees, soft warn at `soft_fraction × hard`; default values live in `pf_core.guards.config`.
+- The layering checker runs in the same gate: explicit per-layer allow-sets (`allowed_imports` overrides per key; a new key declares a new checked layer), `app/db/` as the checked bottom layer, relative imports resolved, file:line + hint output, `# lint-layers: skip` honored, `tests/`/`conftest.py` skipped.
+- Stale-checked exceptions: a `baseline` or `layering_allowlist` entry that no longer matches a real violation fails the gate until removed.
+- `--emit-baseline` / `--emit-allowlist` print paste-ready exception blocks for adopting the gate on a tree with existing violations.
+- Misconfiguration exits `2`: malformed TOML, non-positive limits, `soft_fraction` outside `(0, 1]`, missing scan root.
+- Consumer templates stamp the gate wiring: `[tool.pf_guards]`, config-driven `bin/lint`, `.pre-commit-config.yaml`, `guards.yml` CI workflow. `bin/setup` self-heals the config, installs pre-commit hooks, and symlinks the installed pf-core docs at `docs/pf-core` (gitignored). `setup-common` gains `pf_ensure_guards_config` and `pf_ensure_docs_link`.
+
+### Changed
+- pf-core passes its own gate with no baseline; the four over-limit modules were split by concern, public import paths unchanged. Pure URL parsing (`pf_core.utils.url_parse`) and HTML metadata extraction (`pf_core.utils.url_html`) now import without the `[http]` extra.
+- pf-core's own gate config lives in repo-root `.pf-guards.toml` (via `--config`), not `pyproject.toml`. The baseline is a `[tool.pf_guards.baseline]` table; `--baseline file.json` remains as a CLI override.
+
+### Fixed
+- `docs/recipes/*.md` now ship in the wheel.
+
+### Removed
+- `bin/lint-size`, `bin/lint-layers`, and `.lint-size.yaml` support — superseded by the gate.
+
 ## v0.3.1 — 2026-07-09
 
 ### Added

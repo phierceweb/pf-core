@@ -1,23 +1,17 @@
 #!/usr/bin/env bash
 # bin/setup-common — Shared setup functions for pf-core consumer projects.
+# Source from your project's bin/setup after cd-ing to the project root
+# (`source "$PF_ROOT/bin/setup-common"`); it never runs anything on its own.
 #
-# Source this file from your project's bin/setup, then call the functions you
-# need.  It never runs anything on its own — the consumer script controls flow.
-#
-# Usage (in your project's bin/setup):
-#   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-#   ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-#   cd "$ROOT"
-#   PF_ROOT="$(cd "$ROOT/../pf-core" && pwd)"
-#   source "$PF_ROOT/bin/setup-common"
-#
-# Available functions:
+# Functions:
 #   pf_info, pf_ok, pf_warn, pf_header   — output helpers
 #   pf_pick_python [ENV_VAR_NAME]         — find Python 3.11+ interpreter
 #   pf_ensure_venv                        — create or validate .venv
 #   pf_install_deps                       — pip install from requirements.txt
 #   pf_sync_env                           — copy/sync .env from .env.example
 #   pf_ensure_symlinks                    — wire .claude/ and .cursor/ to .ai/
+#   pf_ensure_guards_config               — add [tool.pf_guards] to pyproject if missing
+#   pf_ensure_docs_link                   — link installed pf-core docs at docs/pf-core
 
 set -euo pipefail
 
@@ -120,6 +114,50 @@ pf_sync_env() {
       bash bin/sync-env .env.example .env
     fi
   fi
+}
+
+# ── Guards config ─────────────────────────────────────────────────────────────
+# Appends a [tool.pf_guards] block to pyproject.toml when missing, detecting the
+# scan root (app/ layout vs src/<pkg>). Call from a consumer's bin/setup so the
+# structural gate is configured from day one.
+pf_ensure_guards_config() {
+  if [[ ! -f pyproject.toml ]]; then
+    pf_warn "no pyproject.toml — skipping [tool.pf_guards] setup"
+    return 0
+  fi
+  if grep -q '^\[tool\.pf_guards\]' pyproject.toml; then
+    pf_ok "[tool.pf_guards] present"
+    return 0
+  fi
+  local root=""
+  if [[ -d app ]]; then
+    root="app"
+  else
+    root="$(find src -mindepth 1 -maxdepth 1 -type d ! -name '*.egg-info' 2>/dev/null | head -1)"
+  fi
+  if [[ -z "$root" ]]; then
+    pf_warn "no app/ or src/<pkg> found — add [tool.pf_guards] to pyproject.toml manually"
+    return 0
+  fi
+  printf '\n# Structural gate (python -m pf_core.guards). See pf-core docs/guards.md.\n[tool.pf_guards]\nroot = "%s"\n' "$root" >> pyproject.toml
+  pf_ok "added [tool.pf_guards] (root = \"$root\") to pyproject.toml"
+}
+
+# ── Docs link ─────────────────────────────────────────────────────────────────
+# Symlinks the installed pf-core's module docs (shipped in the wheel; the source
+# tree when editable) to docs/pf-core — the project's docs dir, where humans and
+# AI assistants both look. Gitignored (machine-specific target). Re-run after
+# venv rebuilds — it re-resolves.
+pf_ensure_docs_link() {
+  local docs
+  docs="$(.venv/bin/python -c 'import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent / "docs")' 2>/dev/null || true)"
+  if [[ -z "$docs" || ! -d "$docs" ]]; then
+    pf_warn "pf-core docs not resolvable (is pf-core installed?) — skipping docs link"
+    return 0
+  fi
+  mkdir -p docs
+  ln -sfn "$docs" docs/pf-core
+  pf_ok "docs/pf-core -> $docs"
 }
 
 # ── Symlinks ──────────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ repos:
     hooks:
       - id: pf-guards-file-size
         name: pf-core file-size gate
-        entry: .venv/bin/python -m pf_core.guards --root src/pf_core --baseline .ai/guards/file_size_baseline.json
+        entry: .venv/bin/python -m pf_core.guards --config .pf-guards.toml
         language: system
         pass_filenames: false
         always_run: true

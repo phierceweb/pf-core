@@ -25,7 +25,7 @@ def run_export():
 
 ## No god-module `_util.py` files
 
-`_util.py` is for thin shared helpers (under 150 lines). If it grows past that, business logic has leaked in. Split by subdomain.
+`_util.py` is for thin shared helpers with a deliberately low size budget (`UTIL_LIMIT`, enforced by the `pf_core.guards` gate). If it grows past that, business logic has leaked in. Split by subdomain.
 
 ```
 # WRONG — a 480-line _util.py: request parsing, data queries, and domain

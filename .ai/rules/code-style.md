@@ -9,7 +9,7 @@
 
 ## File size
 
-Under 300 lines/file (soft WARN), 500 hard FAIL — split past 300 by concern. Enforced by the `pf_core.guards` build gate (pre-commit + CI). Per-layer limits: `project-structure.md`. Gate + baseline mechanics: `docs/guards.md`.
+File-size budgets — flat soft-WARN/hard-FAIL for library code, per-layer under `app/` — are enforced by the `pf_core.guards` build gate (pre-commit + CI); the canonical limit values live in `pf_core/guards/config.py`, not in prose. Split past the soft target by concern. Per-layer guidance: `project-structure.md`. Gate + baseline mechanics: `docs/guards.md`.
 
 ## Naming
 

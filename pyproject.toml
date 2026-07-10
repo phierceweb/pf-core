@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pf-core"
-version = "0.3.1"
+version = "0.4.0"
 description = "Dependency-light Python foundation (logging, exceptions, config, utils) with LLM clients, anti-slop guards, cost tracking, and an opinionated FastAPI+SQLAlchemy framework available as opt-in extras"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -218,6 +218,7 @@ test-containers = [
 ]
 
 [project.urls]
+Documentation = "https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/modules.md"
 Repository = "https://github.com/phierceweb/pf-core"
 Changelog = "https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md"
 Issues = "https://github.com/phierceweb/pf-core/issues"
@@ -233,7 +234,7 @@ pf_core = "pf_core.testing.fixtures"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pf_core" = ["docs/*.md", "py.typed"]
+"pf_core" = ["docs/*.md", "docs/recipes/*.md", "py.typed"]
 "pf_core.web.llm_admin" = ["templates/*.html"]
 
 [tool.pytest.ini_options]

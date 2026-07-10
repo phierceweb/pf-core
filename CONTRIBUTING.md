@@ -39,7 +39,7 @@ These three checks run in CI and as pre-commit hooks — run them locally first:
 ```bash
 pytest                                  # full suite, must be green
 ruff check src tests                    # lint
-python -m pf_core.guards --root src/pf_core --baseline .ai/guards/file_size_baseline.json
+python -m pf_core.guards --config .pf-guards.toml   # structural gate
 ```
 
 And hold the change to these standards:
@@ -49,7 +49,8 @@ And hold the change to these standards:
 - **Docs travel with code.** A change to a module's public API is incomplete
   without the matching `docs/*.md` update — see
   [`.ai/rules/docs-sync.md`](.ai/rules/docs-sync.md).
-- **File-size gate.** Python files over 500 lines fail the build; over 300 warn.
+- **File-size gate.** Python files over the hard limit fail the build; over the
+  soft target they warn (canonical values in `pf_core/guards/config.py`).
   Split by concern instead of growing a monolith — see
   [`.ai/rules/code-style.md`](.ai/rules/code-style.md).
 - **Layering.** Respect the layered architecture (repository → service →

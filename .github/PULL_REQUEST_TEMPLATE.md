@@ -8,7 +8,7 @@
 
 - [ ] Tests added/updated and the full suite passes (`pytest`)
 - [ ] `ruff check src tests` is clean
-- [ ] File-size gate passes (`python -m pf_core.guards --root src/pf_core --baseline .ai/guards/file_size_baseline.json`)
+- [ ] Structural gate passes (`python -m pf_core.guards --config .pf-guards.toml`)
 - [ ] Docs updated if public API changed (see `.ai/rules/docs-sync.md`)
 - [ ] Change stays within pf-core's scope — infrastructure only, no project-specific business logic (see `CONTRIBUTING.md`)
 - [ ] CHANGELOG entry added

@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
+docs/pf-core
 *.pyc
 *.egg-info/
 .env

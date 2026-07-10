@@ -22,12 +22,13 @@ bin/run hello       # the day-1 slice
 
 ## What it generates
 
-- `pyproject.toml` — the pf-core pin + chosen extras, a shared ruff config, build-system, and (lib) a console-script entry.
+- `pyproject.toml` — the pf-core pin + chosen extras, a shared ruff config, `[tool.pf_guards]` (correct scan root per layout), build-system, and (lib) a console-script entry.
 - `bin/{setup,run,lint,test}` (plus `bin/web` for `app`) — **self-contained** wrappers that work whether pf-core is pip-installed or a sibling checkout.
+- **Enforcement wired, not just documented**: `.pre-commit-config.yaml` (structural gate + ruff on every commit; `bin/setup` installs the hooks when the project is a git repo) and a `.github/workflows/guards.yml` CI backstop.
 - The layout skeleton + a **day-1 vertical slice** that runs immediately: `bin/run hello` (lib) or a `GET /` route (app).
-- `.ai/rules/` copied from pf-core, with `.claude/` and `.cursor/` symlinks wired by `bin/setup`.
-- `tests/` with a smoke test, plus `.env.example`, `.gitignore`, and a `CLAUDE.md` skeleton.
+- `.ai/rules/` copied from pf-core, with `.claude/` and `.cursor/` symlinks wired by `bin/setup` — which also links the installed pf-core's module docs at `docs/pf-core`.
+- `tests/` with a smoke test, plus `.env.example`, `.gitignore`, and a `CLAUDE.md` skeleton pointing at the docs link.
 
 ## Conventions baked in
 
-The generated project follows the `project-structure` rule (in the repo's `.ai/rules/`) for its layout, is linted by `pf_core.guards` via `bin/lint` (`--root src/<pkg>` for lib, `--root app` for app — the layout-agnostic file-size + layering gate), and pins pf-core from PyPI (`pf-core[...]~=0.2.0`).
+The generated project follows the `project-structure` rule (in the repo's `.ai/rules/`) for its layout, is linted by `pf_core.guards` via `bin/lint` (reading the stamped `[tool.pf_guards]` — `root = "src/<pkg>"` for lib, `root = "app"` for app), and pins pf-core from PyPI at the current compatible line (see the template `pyproject.toml`).
