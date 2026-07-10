@@ -4,7 +4,7 @@ A dependency-light Python foundation for building LLM applications — and one b
 
 ## Built for AI-assisted development
 
-The conventions that keep a codebase legible to an AI agent are enforced, not suggested. A build gate fails CI when a file grows past its line budget — small files stay within a model's working context and edit cleanly — and a companion checker flags imports that cross the layered architecture the wrong way. Logging, errors, config, and data access each have one obvious way to do them, documented one-module-per-file for retrieval, so generated code lands in the same shapes as hand-written code instead of drifting. The result is a substrate where an agent can do real work and the guardrails hold.
+The conventions that keep a codebase legible to an AI agent are enforced, not suggested. A build gate fails CI when a file grows past its line budget — small files stay within a model's working context and edit cleanly — and a companion checker flags imports that cross a consumer app's layered architecture the wrong way. Logging, errors, config, and data access each have one obvious way to do them, documented one-module-per-file for retrieval, so generated code lands in the same shapes as hand-written code instead of drifting. The result is a substrate where an agent can do real work and the guardrails hold.
 
 ## One interface over every LLM backend — including Claude Code
 

@@ -7,8 +7,9 @@ and key dependency versions. ``--db`` adds a read-only database attestation
 (URL, connectivity, alembic revision vs script head).
 
 Invariants: doctor never writes, never touches the network except the opt-in
-``--db`` connect, and never imports consumer application code. Exit code is
-``0`` when no check FAILs (WARNs don't flip it), ``1`` otherwise.
+``--db`` connect (``--release`` runs read-only local git commands), and never
+imports consumer application code. Exit code is ``0`` when no check FAILs
+(WARNs don't flip it), ``1`` otherwise.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import importlib.metadata
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -311,18 +313,121 @@ def _migration_result(current_rev: str | None) -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# --release group — opt-in; read-only git introspection of the cwd project.
+# ---------------------------------------------------------------------------
+
+
+def _git(*args: str) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(
+            ["git", *args], capture_output=True, text=True, cwd=Path.cwd()
+        )
+    except FileNotFoundError:
+        return 127, ""
+    return proc.returncode, proc.stdout.strip()
+
+
+def _changelog_version() -> str | None:
+    changelog = Path.cwd() / "CHANGELOG.md"
+    if not changelog.is_file():
+        return None
+    match = re.search(r"^## v(\S+)", changelog.read_text(), re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _cwd_pyproject_version() -> str | None:
+    pyproject = Path.cwd() / "pyproject.toml"
+    if not pyproject.is_file():
+        return None
+    try:
+        with pyproject.open("rb") as fh:
+            return tomllib.load(fh)["project"]["version"]
+    except Exception:
+        return None
+
+
+def release_checks() -> list[CheckResult]:
+    rc, _ = _git("rev-parse", "--git-dir")
+    if rc != 0:
+        return [CheckResult("release", "repo", "SKIP", "not a git repo (or git absent)")]
+
+    results: list[CheckResult] = []
+    pkg_version = _cwd_pyproject_version()
+    cl_version = _changelog_version()
+    if pkg_version is None:
+        results.append(
+            CheckResult("release", "versions", "SKIP", "no pyproject.toml version in cwd")
+        )
+    elif cl_version is None:
+        results.append(
+            CheckResult(
+                "release", "versions", "WARN",
+                f"pyproject {pkg_version}; no v-heading found in CHANGELOG.md",
+            )
+        )
+    elif pkg_version == cl_version:
+        results.append(
+            CheckResult(
+                "release", "versions", "PASS",
+                f"pyproject {pkg_version} == CHANGELOG v{cl_version}",
+            )
+        )
+    else:
+        results.append(
+            CheckResult(
+                "release", "versions", "FAIL",
+                f"pyproject {pkg_version} != CHANGELOG v{cl_version} — sync before tagging",
+            )
+        )
+
+    _, tags_out = _git("tag", "--points-at", "HEAD", "--list", "v*")
+    tags = [t for t in tags_out.splitlines() if t]
+    if not tags:
+        results.append(
+            CheckResult("release", "tag", "SKIP", "no v-tag at HEAD (nothing tagged yet)")
+        )
+    elif pkg_version is not None and f"v{pkg_version}" in tags:
+        results.append(
+            CheckResult("release", "tag", "PASS", f"HEAD tagged {', '.join(tags)}")
+        )
+    else:
+        results.append(
+            CheckResult(
+                "release", "tag", "FAIL",
+                f"HEAD tagged {', '.join(tags)} but pyproject says {pkg_version} — "
+                "a build of this tag will not match",
+            )
+        )
+
+    _, status_out = _git("status", "--porcelain")
+    changes = [line for line in status_out.splitlines() if line]
+    if changes:
+        results.append(
+            CheckResult(
+                "release", "tree", "WARN",
+                f"{len(changes)} uncommitted change(s) — NOT part of any build of HEAD",
+            )
+        )
+    else:
+        results.append(CheckResult("release", "tree", "PASS", "working tree clean"))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Runner + CLI
 # ---------------------------------------------------------------------------
 
 _CORE_CHECKS = (check_copy, check_python, check_extras, check_env, check_router, check_deps)
 
 
-def run_checks(*, db: bool = False) -> list[CheckResult]:
+def run_checks(*, db: bool = False, release: bool = False) -> list[CheckResult]:
     results: list[CheckResult] = []
     for fn in _CORE_CHECKS:
         results.extend(fn())
     if db:
         results.extend(db_checks())
+    if release:
+        results.extend(release_checks())
     return results
 
 
@@ -334,12 +439,16 @@ def run_cli(argv: list[str] | None = None) -> int:
         "--db", action="store_true",
         help="include read-only database checks (connect + migration state)",
     )
+    parser.add_argument(
+        "--release", action="store_true",
+        help="include release-state checks (tag vs pyproject vs CHANGELOG, dirty tree)",
+    )
     args = parser.parse_args(argv)
 
     from rich.console import Console
     from rich.table import Table
 
-    results = run_checks(db=args.db)
+    results = run_checks(db=args.db, release=args.release)
     table = Table(title="pf-doctor", show_lines=False)
     table.add_column("status", no_wrap=True)
     table.add_column("check", no_wrap=True)

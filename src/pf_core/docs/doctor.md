@@ -10,6 +10,7 @@ humans stop acting on stale assumptions.
 - [Running it](#running-it)
 - [Core checks (always on)](#core-checks-always-on)
 - [`--db` (opt-in)](#--db-opt-in)
+- [`--release` (opt-in)](#--release-opt-in)
 - [Invariants](#invariants)
 - [Adding a new check](#adding-a-new-check)
 
@@ -18,8 +19,9 @@ humans stop acting on stale assumptions.
 Run it from any consumer project:
 
 ```bash
-bin/run pf-doctor          # core checks: local, read-only, no network
-bin/run pf-doctor --db     # + read-only database attestation
+bin/run pf-doctor            # core checks: local, read-only, no network
+bin/run pf-doctor --db       # + read-only database attestation
+bin/run pf-doctor --release  # + release-state checks (tag / version / CHANGELOG / tree)
 ```
 
 The console script lands with the install; on an editable checkout that
@@ -49,10 +51,25 @@ connecting — connecting would create the file, and doctor never writes.
 
 SKIPs with an install hint when the `[db]` extra isn't installed.
 
+## `--release` (opt-in)
+
+Read-only git introspection of the working-directory project — a local preflight
+before you tag a release. Mirrors the CI tag-vs-version guard in `publish.yml`, so a
+mismatch surfaces at your desk instead of when the upload 400s.
+
+| Check | Attests |
+|---|---|
+| `release.versions` | `pyproject.toml` `version` vs the top `## v…` heading in `CHANGELOG.md`. FAIL on mismatch ("sync before tagging"); WARN when the CHANGELOG has no v-heading; SKIP without a pyproject version. |
+| `release.tag` | Whether `v<pyproject-version>` is among the git tags pointing at HEAD. FAIL when HEAD is tagged a different version (a build of that tag won't match the package); SKIP when nothing is tagged at HEAD. |
+| `release.tree` | `git status --porcelain`. WARN on uncommitted changes — they're not part of any build of HEAD. |
+
+SKIPs the whole group when the working directory isn't a git repo (or `git` is absent).
+
 ## Invariants
 
 Doctor never writes, never touches the network except the opt-in `--db`
-connect, and never imports consumer application code. It is safe to run at
+connect (`--release` runs read-only local git commands), and never imports
+consumer application code. It is safe to run at
 any time, in any state, including mid-incident.
 
 ## Adding a new check

@@ -1,12 +1,13 @@
 """Tests for pf_core.doctor — runtime ground-truth attestation.
 
 All checks are exercised against controlled state (monkeypatched env,
-tmp files, tmp sqlite); nothing here touches the network.
+tmp files, tmp sqlite, tmp git repos); nothing here touches the network.
 """
 
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 import sys
 
 import pytest
@@ -22,6 +23,7 @@ from pf_core.doctor import (
     check_router,
     db_checks,
     redact_value,
+    release_checks,
     run_checks,
     run_cli,
 )
@@ -206,6 +208,85 @@ class TestDbChecks:
 # ---------------------------------------------------------------------------
 
 
+def _git(cwd, *args):
+    return subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
+        cwd=cwd, capture_output=True, text=True,
+    )
+
+
+def _git_repo_with_release(tmp_path, *, version="1.0.0", changelog="1.0.0", tag=None):
+    (tmp_path / "pyproject.toml").write_text(
+        f'[project]\nname = "x"\nversion = "{version}"\n'
+    )
+    if changelog is not None:
+        (tmp_path / "CHANGELOG.md").write_text(f"# Changelog\n\n## v{changelog} — 2026-07-02\n")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "release")
+    if tag:
+        _git(tmp_path, "tag", tag)
+    return tmp_path
+
+
+class TestReleaseChecks:
+    def test_skip_when_not_a_git_repo(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (res,) = release_checks()
+        assert res.status == "SKIP"
+
+    def test_versions_match_passes(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["versions"].status == "PASS"
+
+    def test_versions_mismatch_fails(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path, version="1.0.0", changelog="0.9.0")
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["versions"].status == "FAIL"
+        assert "1.0.0" in by_name["versions"].detail
+        assert "0.9.0" in by_name["versions"].detail
+
+    def test_missing_changelog_warns(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path, changelog=None)
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["versions"].status == "WARN"
+
+    def test_tag_matching_pyproject_passes(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path, tag="v1.0.0")
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["tag"].status == "PASS"
+
+    def test_tag_mismatch_fails(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path, tag="v2.0.0")
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["tag"].status == "FAIL"
+
+    def test_no_tag_at_head_skips(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["tag"].status == "SKIP"
+
+    def test_dirty_tree_warns(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path)
+        (tmp_path / "extra.txt").write_text("uncommitted")
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["tree"].status == "WARN"
+
+    def test_clean_tree_passes(self, tmp_path, monkeypatch):
+        _git_repo_with_release(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        by_name = {r.name: r for r in release_checks()}
+        assert by_name["tree"].status == "PASS"
+
+
 class TestRunner:
     def test_run_checks_core_only_by_default(self):
         results = run_checks(db=False)
@@ -234,7 +315,7 @@ class TestRunCli:
         monkeypatch.setattr(
             doctor,
             "run_checks",
-            lambda db=False: [CheckResult("env", "forced", "FAIL", "boom")],
+            lambda **kw: [CheckResult("env", "forced", "FAIL", "boom")],
         )
         code = run_cli([])
         assert code == 1
@@ -243,7 +324,7 @@ class TestRunCli:
         monkeypatch.setattr(
             doctor,
             "run_checks",
-            lambda db=False: [CheckResult("copy", "forced", "WARN", "meh")],
+            lambda **kw: [CheckResult("copy", "forced", "WARN", "meh")],
         )
         assert run_cli([]) == 0
 
@@ -256,3 +337,11 @@ class TestRunCli:
         out = capsys.readouterr().out
         assert code == 0
         assert "connect" in out
+
+    def test_release_flag_parsed(self, tmp_path, monkeypatch, capsys):
+        _git_repo_with_release(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        code = run_cli(["--release"])
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "versions" in out
