@@ -30,6 +30,9 @@ from pf_core.guards.layering import (
 )
 
 
+_DEFAULT_CONFIG = ".pf-guards.toml"
+
+
 @dataclass(frozen=True)
 class FileSizeViolation:
     path: str          # POSIX, relative to scan root
@@ -150,12 +153,14 @@ def _config_problems(*, hard: int, soft: int, cfg: GuardsConfig) -> list[str]:
 def run_cli(argv: list[str] | None = None) -> int:
     """Run the structural gate. Returns the process exit code (0 ok, 1 fail).
 
-    Reads [tool.pf_guards] from --config (default ./pyproject.toml); explicit
-    flags override config values. Runs the file-size gate and the layering
-    checker; a hard size violation or any layering violation fails the gate.
+    Reads [tool.pf_guards] from --config (default ./.pf-guards.toml); explicit
+    flags override config values. A missing config file exits 2 — except the
+    default path with --root given, which is an ad-hoc, flag-specified run
+    (gate adoption). Runs the file-size gate and the layering checker; a hard
+    size violation or any layering violation fails the gate.
     """
     parser = argparse.ArgumentParser(prog="pf-guards", description="pf-core structural gate")
-    parser.add_argument("--config", default="pyproject.toml")
+    parser.add_argument("--config", default=_DEFAULT_CONFIG)
     parser.add_argument("--root", default=None)
     parser.add_argument("--hard", type=int, default=None)
     parser.add_argument("--soft", type=int, default=None)
@@ -172,10 +177,21 @@ def run_cli(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    try:
-        cfg = load_guards_config(args.config)
-    except (tomllib.TOMLDecodeError, ValueError) as e:
-        print(f"pf-guards: malformed config {args.config}: {e}")
+    if Path(args.config).is_file():
+        try:
+            cfg = load_guards_config(args.config)
+        except (tomllib.TOMLDecodeError, ValueError) as e:
+            print(f"pf-guards: malformed config {args.config}: {e}")
+            return 2
+    elif args.config == _DEFAULT_CONFIG and args.root is not None:
+        cfg = GuardsConfig()   # ad-hoc run, fully flag-specified (gate adoption)
+    else:
+        hint = (
+            " — create it with a [tool.pf_guards] table (root = ...), or pass --root for an ad-hoc run"
+            if args.config == _DEFAULT_CONFIG
+            else ""
+        )
+        print(f"pf-guards: config not found: {args.config}{hint}")
         return 2
     roots = args.root if args.root is not None else cfg.root
     roots = [roots] if isinstance(roots, str) else list(roots)

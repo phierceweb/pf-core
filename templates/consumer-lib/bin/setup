@@ -60,9 +60,9 @@ if [[ -n "$PF_DOCS" && -d "$PF_DOCS" ]]; then
 fi
 
 # Ensure the structural-gate config exists (stamped by the scaffold; self-heals).
-if ! grep -q '^\[tool\.pf_guards\]' pyproject.toml 2>/dev/null; then
-  printf '\n[tool.pf_guards]\nroot = "src/__PKG__"\n' >> pyproject.toml
-  ok "added [tool.pf_guards] to pyproject.toml"
+if [[ ! -f .pf-guards.toml ]]; then
+  printf '[tool.pf_guards]\nroot = "src/__PKG__"\n' > .pf-guards.toml
+  ok "created .pf-guards.toml"
 fi
 
 # Install the commit gates (structural gate + ruff) when this is a git repo.

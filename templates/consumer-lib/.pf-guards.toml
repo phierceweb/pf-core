@@ -1,0 +1,5 @@
+# Structural gate config — read by default by `python -m pf_core.guards`
+# (bin/lint, pre-commit, CI); flat library limits for a src layout.
+# See docs/pf-core/guards.md.
+[tool.pf_guards]
+root = "src/__PKG__"

@@ -59,7 +59,9 @@ def test_scaffold_structure(tmp_path, layout, extras_token):
 
     # Enforcement is stamped, not optional: gate config + pre-commit + CI backstop.
     expected_root = "app" if layout == "app" else "src/demo_proj"
-    assert meta["tool"]["pf_guards"]["root"] == expected_root
+    guards_cfg = tomllib.loads((proj / ".pf-guards.toml").read_text())
+    assert guards_cfg["tool"]["pf_guards"]["root"] == expected_root
+    assert "pf_guards" not in meta.get("tool", {}), "gate config must not be in pyproject.toml"
     assert (proj / ".pre-commit-config.yaml").is_file()
     assert (proj / ".github" / "workflows" / "guards.yml").is_file()
 

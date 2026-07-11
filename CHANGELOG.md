@@ -2,6 +2,12 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.4.1 — 2026-07-11
+
+### Changed
+- The gate reads `.pf-guards.toml` at the repo root; `--config` overrides the path. `[tool.pf_guards]` in `pyproject.toml` is no longer read. A missing config file exits `2` — except the default path with `--root` given, which runs flag-specified (gate adoption / ad-hoc).
+- Consumer templates, `bin/setup` self-heal, and `setup-common`'s `pf_ensure_guards_config` stamp/target `.pf-guards.toml`; all wiring (`bin/lint`, pre-commit, CI) runs the bare `python -m pf_core.guards`.
+
 ## v0.4.0 — 2026-07-09
 
 ### Added

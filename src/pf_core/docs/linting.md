@@ -3,10 +3,10 @@
 Two layers of lint:
 
 1. **`ruff`** — code-quality lints (unused imports, ambiguous names, common bugs) for both pf-core itself and any consumer that adopts the same config. Configured in `pyproject.toml` under `[tool.ruff]`.
-2. **`pf_core.guards`** — the structural gate: file-size budgets (flat for library code, per-layer for consumer `app/` trees) and layered-import discipline, configured under `[tool.pf_guards]` and wired into pre-commit + CI. See [guards.md](guards.md).
+2. **`pf_core.guards`** — the structural gate: file-size budgets (flat for library code, per-layer for consumer `app/` trees) and layered-import discipline, configured in `.pf-guards.toml` and wired into pre-commit + CI. See [guards.md](guards.md).
 
 ```bash
-python -m pf_core.guards    # structural gate — sizes + layering
+python -m pf_core.guards    # structural gate — sizes + layering; reads .pf-guards.toml
 ```
 
 *(The former standalone `bin/lint-size` / `bin/lint-layers` scripts and their `.lint-size.yaml` config are retired — the gate replaced them: `[tool.pf_guards.limits]` covers per-path budgets, and the baseline ratchet covers exemptions.)*

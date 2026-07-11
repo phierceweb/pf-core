@@ -39,7 +39,7 @@ These three checks run in CI and as pre-commit hooks — run them locally first:
 ```bash
 pytest                                  # full suite, must be green
 ruff check src tests                    # lint
-python -m pf_core.guards --config .pf-guards.toml   # structural gate
+python -m pf_core.guards                # structural gate (reads .pf-guards.toml)
 ```
 
 And hold the change to these standards:

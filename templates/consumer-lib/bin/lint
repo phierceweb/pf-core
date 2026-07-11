@@ -4,4 +4,4 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 .venv/bin/python -m ruff check src tests
-.venv/bin/python -m pf_core.guards   # reads [tool.pf_guards] from pyproject.toml
+.venv/bin/python -m pf_core.guards   # reads .pf-guards.toml

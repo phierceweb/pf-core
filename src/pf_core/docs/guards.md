@@ -5,14 +5,14 @@
 One command runs both checks — the **file-size gate** (flat limits for library code, per-layer limits for consumer `app/` trees) and the **layering checker**:
 
 ```bash
-python -m pf_core.guards          # reads [tool.pf_guards] from ./pyproject.toml
+python -m pf_core.guards          # reads .pf-guards.toml at the repo root
 ```
 
-Exit `1` on any hard size violation, any layering violation, or any **stale** baseline/allowlist entry (an exception that's no longer real must be removed — the ratchet's other half); soft violations WARN without failing; exit `2` on a misconfigured gate — missing scan root, malformed TOML, or nonsense limit values (zero/negative limits, `soft_fraction` outside `(0, 1]`) — so misconfiguration fails loudly instead of silently passing. Installed as the `pf-guards` console script.
+Exit `1` on any hard size violation, any layering violation, or any **stale** baseline/allowlist entry (an exception that's no longer real must be removed — the ratchet's other half); soft violations WARN without failing; exit `2` on a misconfigured gate — missing config file, missing scan root, malformed TOML, or nonsense limit values (zero/negative limits, `soft_fraction` outside `(0, 1]`) — so misconfiguration fails loudly instead of silently passing. Installed as the `pf-guards` console script.
 
 ## Configuration — `[tool.pf_guards]`
 
-A consumer's gate config lives in its own `pyproject.toml` — one file, discoverable, tracked, and identical for humans, agents, and CI. Explicit CLI flags (`--config`, `--root`, `--hard`, `--soft`, `--baseline`) override config values. (pf-core itself keeps its own gate config in `.pf-guards.toml` via `--config` — the framework's package metadata is not the place for its internal repo state, like the baseline burn-down list.)
+Gate config lives in a dedicated `.pf-guards.toml` at the repo root — pf-core and every consumer alike. It's repo state (scan root, baseline burn-down, allowlisted edges), not package metadata; `pyproject.toml` is never read. The gate reads `.pf-guards.toml` by default; `--config` overrides the path. A missing config file exits `2` — except the default path with `--root` given, which runs flag-specified (adoption / ad-hoc runs). Explicit CLI flags (`--config`, `--root`, `--hard`, `--soft`, `--baseline`) override config values.
 
 ```toml
 [tool.pf_guards]
@@ -58,7 +58,7 @@ Precedence per file: `[tool.pf_guards.limits]` prefix override (longest wins) > 
 
 ## Baseline (adopting the gate on a dirty tree)
 
-A gate that requires a green tree on day one can't be adopted by a repo that already has violations. The **baseline** grandfathers known offenders — a `[tool.pf_guards.baseline]` table of `path → recorded line count` in `pyproject.toml` (generate it with `--emit-baseline`). The `--baseline file.json` CLI flag accepts the same map as a JSON file for ad-hoc runs.
+A gate that requires a green tree on day one can't be adopted by a repo that already has violations. The **baseline** grandfathers known offenders — a `[tool.pf_guards.baseline]` table of `path → recorded line count` in `.pf-guards.toml` (generate it with `--emit-baseline`). The `--baseline file.json` CLI flag accepts the same map as a JSON file for ad-hoc runs.
 
 - A baselined file at or **below** its recorded count → suppressed (no failure).
 - A baselined file **grown beyond** its recorded count → reported as a hard FAIL. The ratchet only tightens.
@@ -93,7 +93,7 @@ Violations report the file, **line number**, and a hint (`LAYER app/api/_util.py
 
 The rules are policy a consumer owns, not code it must fork: `[tool.pf_guards.allowed_imports]` replaces the allow-set for any layer it names (defaults stay for the rest; a new key declares a new checked layer), and `[tool.pf_guards.layering_allowlist]` permits named `(app-relative path → exact imported module)` edges — deliberate exceptions, visible in config. **The allowlist is stale-checked:** an entry that no longer matches a real violation is reported as `STALE allowlist entry` and fails the gate until deleted, so the list only ever shrinks — it cannot rot into a legacy pile. Prefer it over `# lint-layers: skip` (which silences a whole file). Allowlist keys are always app-relative (`app/…`), regardless of the scan root shape.
 
-**Adopting the gate on a tree with existing violations:** run `python -m pf_core.guards --emit-baseline --emit-allowlist` — it prints paste-ready `[tool.pf_guards.baseline]` and `[tool.pf_guards.layering_allowlist]` blocks for the current violations. Paste them into `pyproject.toml`, re-run, and the gate is green with every exception named; fix a file or an edge and the stale check forces its entry out.
+**Adopting the gate on a tree with existing violations:** run `python -m pf_core.guards --root app --emit-baseline --emit-allowlist` (`--root` lets the run work before `.pf-guards.toml` exists) — it prints paste-ready `[tool.pf_guards.baseline]` and `[tool.pf_guards.layering_allowlist]` blocks for the current violations. Paste them into `.pf-guards.toml`, re-run, and the gate is green with every exception named; fix a file or an edge and the stale check forces its entry out.
 
 ## How it's wired
 
@@ -102,4 +102,4 @@ The rules are policy a consumer owns, not code it must fork: `[tool.pf_guards.al
 
 ## Consumer adoption
 
-A consumer adds a `[tool.pf_guards]` section (typically `root = "app"`), optionally a size baseline and a `layering_allowlist` for pre-existing violations (`--emit-allowlist` generates it), and the same pre-commit/CI entries. The per-layer limits and the layering checker then apply to its `app/` tree automatically. Projects generated by `bin/new-consumer` get all of this stamped (`bin/lint`, `.pre-commit-config.yaml`, `guards.yml`, `[tool.pf_guards]` — `bin/setup` self-heals the block if absent); existing consumers call `pf_ensure_guards_config` from pf-core's `bin/setup-common` in their own `bin/setup`, or adopt via the gates rollout (`pf-core-rollout`).
+A consumer adds a `.pf-guards.toml` (typically `root = "app"`), optionally a size baseline and a `layering_allowlist` for pre-existing violations (`--emit-allowlist` generates it), and the same pre-commit/CI entries. The per-layer limits and the layering checker then apply to its `app/` tree automatically. Projects generated by `bin/new-consumer` get all of this stamped (`bin/lint`, `.pre-commit-config.yaml`, `guards.yml`, `.pf-guards.toml` — `bin/setup` self-heals the file if absent); existing consumers call `pf_ensure_guards_config` from pf-core's `bin/setup-common` in their own `bin/setup`.

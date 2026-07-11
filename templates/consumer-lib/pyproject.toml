@@ -10,8 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     # pf-core foundation + the extras this project uses, pinned to a compatible
     # PyPI release (picks up patch/minor within the line). 0.4+ carries the
-    # config-driven structural gate ([tool.pf_guards] below).
-    "pf-core[__EXTRAS__]~=0.4.0",
+    # config-driven structural gate (config in .pf-guards.toml).
+    "pf-core[__EXTRAS__]~=0.4.1",
 ]
 
 [project.optional-dependencies]
@@ -22,11 +22,6 @@ __NAME__ = "__PKG__.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-# Structural gate (bin/lint runs `python -m pf_core.guards`); flat library
-# limits for a src layout. See pf-core docs/guards.md.
-[tool.pf_guards]
-root = "src/__PKG__"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -11,8 +11,8 @@ dependencies = [
     # pf-core with the whole framework surface. Add a DB driver extra
     # ([postgres] or [mysql]) for non-SQLite backends. Pinned to a compatible
     # PyPI release (picks up patch/minor within the line). 0.4+ carries the
-    # config-driven structural gate ([tool.pf_guards] below).
-    "pf-core[__EXTRAS__]~=0.4.0",
+    # config-driven structural gate (config in .pf-guards.toml).
+    "pf-core[__EXTRAS__]~=0.4.1",
 ]
 
 [project.optional-dependencies]
@@ -21,11 +21,6 @@ dev = ["pytest>=8.0", "ruff>=0.6", "pre-commit>=3.0"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
-
-# Structural gate (bin/lint, pre-commit, CI all run `python -m pf_core.guards`).
-# Per-layer limits + layering apply to the app/ tree; see pf-core docs/guards.md.
-[tool.pf_guards]
-root = "app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

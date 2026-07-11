@@ -1,7 +1,7 @@
 """[tool.pf_guards] configuration + per-layer limit resolution for the gate.
 
-Stdlib-only. The gate's machine-read surface lives in pyproject.toml (config)
-and a repo-root baseline JSON — not under .ai/.
+Stdlib-only. The gate's machine-read surface is a repo-root .pf-guards.toml —
+not pyproject.toml, not files under .ai/.
 """
 from __future__ import annotations
 
@@ -35,9 +35,13 @@ class GuardsConfig:
     layering_allowlist: dict[str, list[str]] = field(default_factory=dict)
 
 
-def load_guards_config(pyproject: str | Path = "pyproject.toml") -> GuardsConfig:
-    """Read [tool.pf_guards]; absent file or section -> all defaults."""
-    p = Path(pyproject)
+def load_guards_config(path: str | Path = ".pf-guards.toml") -> GuardsConfig:
+    """Read [tool.pf_guards] from ``path``; absent file or section -> all defaults.
+
+    The CLI refuses to run on a missing config (exit 2) — the silent-defaults
+    path here is for programmatic callers only.
+    """
+    p = Path(path)
     if not p.is_file():
         return GuardsConfig()
     tool = tomllib.loads(p.read_text(encoding="utf-8")).get("tool", {}).get("pf_guards", {})

@@ -8,17 +8,17 @@ from pf_core.guards.config import GuardsConfig, app_rel, hard_limit_for, load_gu
 
 class TestLoadGuardsConfig:
     def test_missing_file_returns_defaults(self, tmp_path: Path) -> None:
-        cfg = load_guards_config(tmp_path / "pyproject.toml")
+        cfg = load_guards_config(tmp_path / ".pf-guards.toml")
         assert cfg == GuardsConfig()
         assert (cfg.root, cfg.hard, cfg.soft, cfg.baseline) == ("src", 500, 300, {})
 
     def test_missing_section_returns_defaults(self, tmp_path: Path) -> None:
-        p = tmp_path / "pyproject.toml"
-        p.write_text('[project]\nname = "x"\nversion = "0.0.1"\n', encoding="utf-8")
+        p = tmp_path / ".pf-guards.toml"
+        p.write_text('[tool.other]\nname = "x"\n', encoding="utf-8")
         assert load_guards_config(p) == GuardsConfig()
 
     def test_full_section_parsed(self, tmp_path: Path) -> None:
-        p = tmp_path / "pyproject.toml"
+        p = tmp_path / ".pf-guards.toml"
         p.write_text(
             "[tool.pf_guards]\n"
             'root = "src/pf_core"\n'
@@ -40,7 +40,7 @@ class TestLoadGuardsConfig:
         assert cfg.limits == {"app/api/admin": 600}
 
     def test_string_baseline_rejected(self, tmp_path: Path) -> None:
-        p = tmp_path / "pyproject.toml"
+        p = tmp_path / ".pf-guards.toml"
         p.write_text(
             '[tool.pf_guards]\nbaseline = "some-file.json"\n', encoding="utf-8"
         )
@@ -50,7 +50,7 @@ class TestLoadGuardsConfig:
             load_guards_config(p)
 
     def test_util_and_soft_fraction_parsed(self, tmp_path: Path) -> None:
-        p = tmp_path / "pyproject.toml"
+        p = tmp_path / ".pf-guards.toml"
         p.write_text(
             "[tool.pf_guards]\nutil = 200\nsoft_fraction = 0.9\n", encoding="utf-8"
         )
@@ -58,17 +58,17 @@ class TestLoadGuardsConfig:
         assert (cfg.util, cfg.soft_fraction) == (200, 0.9)
 
     def test_layering_config_parsed(self, tmp_path: Path) -> None:
-        p = tmp_path / "pyproject.toml"
+        p = tmp_path / ".pf-guards.toml"
         p.write_text(
             "[tool.pf_guards.allowed_imports]\n"
             'api = ["services", "orchestrators", "repo", "db"]\n'
             "[tool.pf_guards.layering_allowlist]\n"
-            '"app/db/cache.py" = ["app.services.parsers.substack"]\n',
+            '"app/db/cache.py" = ["app.services.parsers.rss"]\n',
             encoding="utf-8",
         )
         cfg = load_guards_config(p)
         assert cfg.allowed_imports == {"api": ["services", "orchestrators", "repo", "db"]}
-        assert cfg.layering_allowlist == {"app/db/cache.py": ["app.services.parsers.substack"]}
+        assert cfg.layering_allowlist == {"app/db/cache.py": ["app.services.parsers.rss"]}
 
 
 class TestAppRel:

@@ -5,7 +5,7 @@ pf-core projects come in two shapes — pick by what the project *is*:
 - **Full-stack web app** — the `app/` layout below: FastAPI + DB + web layers, for a project that serves HTTP and owns a database.
 - **Library / tool** — the `src/<pkg>/` layout further down: a CLI, batch pipeline, or importable library with no web/DB layers.
 
-Both share the same conventions and the same structural gate (`python -m pf_core.guards`, reading `[tool.pf_guards]` from `pyproject.toml` — set `root` to `app` or `src/<pkg>`).
+Both share the same conventions and the same structural gate (`python -m pf_core.guards`, reading `.pf-guards.toml` — set `root` to `app` or `src/<pkg>` in that file).
 
 ## Full-stack web app layout (`app/`)
 

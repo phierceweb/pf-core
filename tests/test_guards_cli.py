@@ -11,7 +11,8 @@ def _write(p: Path, n: int) -> None:
 
 
 class TestRunCli:
-    # chdir into the tmp tree so the repo's own pyproject/baseline can't leak in.
+    # chdir into the tmp tree so the repo's own config/baseline can't leak in.
+    # No .pf-guards.toml + --root = the ad-hoc, flag-specified run.
     def test_clean_tree_exits_zero(self, tmp_path: Path, monkeypatch) -> None:
         _write(tmp_path / "ok.py", 100)
         monkeypatch.chdir(tmp_path)
@@ -40,8 +41,8 @@ class TestRunCli:
 
 
 class TestRunCliConfig:
-    def test_bare_run_reads_pyproject(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+    def test_bare_run_reads_pf_guards_toml(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nroot = "src"\n', encoding="utf-8"
         )
         big = tmp_path / "src" / "big.py"
@@ -52,7 +53,7 @@ class TestRunCliConfig:
         assert "FAIL" in capsys.readouterr().out
 
     def test_config_hard_applies_without_flags(self, tmp_path: Path, monkeypatch) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             "[tool.pf_guards]\nhard = 100\nsoft = 80\n", encoding="utf-8"
         )
         f = tmp_path / "src" / "mid.py"
@@ -62,7 +63,7 @@ class TestRunCliConfig:
         assert run_cli([]) == 1  # config's hard=100 applies; old hardcoded 500 would pass
 
     def test_flag_overrides_config(self, tmp_path: Path, monkeypatch) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             "[tool.pf_guards]\nhard = 100\n", encoding="utf-8"
         )
         f = tmp_path / "src" / "mid.py"
@@ -71,20 +72,57 @@ class TestRunCliConfig:
         monkeypatch.chdir(tmp_path)
         assert run_cli(["--hard", "500", "--soft", "400"]) == 0  # flags beat config's 100
 
-    def test_missing_root_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        monkeypatch.chdir(tmp_path)  # no pyproject, no src/ — default root doesn't exist
+    def test_missing_config_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        monkeypatch.chdir(tmp_path)  # no .pf-guards.toml, no --root
         assert run_cli([]) == 2
-        assert "not found" in capsys.readouterr().out
+        assert "config not found" in capsys.readouterr().out
 
-    def test_malformed_pyproject_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        (tmp_path / "pyproject.toml").write_text("[tool.pf_guards\nbroken", encoding="utf-8")
+    def test_explicit_config_missing_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        (tmp_path / "src").mkdir()
+        monkeypatch.chdir(tmp_path)
+        # An explicitly named config must exist — --root does not excuse it.
+        assert run_cli(["--config", "nope.toml", "--root", "src"]) == 2
+        assert "config not found: nope.toml" in capsys.readouterr().out
+
+    def test_no_pyproject_fallback(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.pf_guards]\nroot = "src"\n', encoding="utf-8"
+        )
+        (tmp_path / "src").mkdir()
+        monkeypatch.chdir(tmp_path)
+        assert run_cli([]) == 2  # pyproject alone is not a config source
+        assert "config not found" in capsys.readouterr().out
+
+    def test_pyproject_tool_section_is_ignored(self, tmp_path: Path, monkeypatch) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            "[tool.pf_guards]\nhard = 100\nsoft = 80\n", encoding="utf-8"
+        )
+        (tmp_path / ".pf-guards.toml").write_text(
+            '[tool.pf_guards]\nroot = "src"\n', encoding="utf-8"
+        )
+        f = tmp_path / "src" / "mid.py"
+        f.parent.mkdir(parents=True)
+        _write(f, 150)
+        monkeypatch.chdir(tmp_path)
+        assert run_cli([]) == 0  # pyproject's hard=100 must not apply
+
+    def test_missing_root_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        (tmp_path / ".pf-guards.toml").write_text(
+            '[tool.pf_guards]\nroot = "nope"\n', encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        assert run_cli([]) == 2
+        assert "scan root not found" in capsys.readouterr().out
+
+    def test_malformed_config_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        (tmp_path / ".pf-guards.toml").write_text("[tool.pf_guards\nbroken", encoding="utf-8")
         (tmp_path / "src").mkdir()
         monkeypatch.chdir(tmp_path)
         assert run_cli([]) == 2
         assert "malformed" in capsys.readouterr().out
 
     def test_nonsense_limits_exit_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             "[tool.pf_guards]\nhard = 0\n", encoding="utf-8"
         )
         (tmp_path / "src").mkdir()
@@ -93,7 +131,7 @@ class TestRunCliConfig:
         assert "hard" in capsys.readouterr().out
 
     def test_nonsense_soft_fraction_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             "[tool.pf_guards]\nsoft_fraction = 5.0\n", encoding="utf-8"
         )
         (tmp_path / "src").mkdir()
@@ -120,7 +158,7 @@ class TestRunCliConfig:
         assert "STALE" in out and "small.py" in out
 
     def test_stale_allowlist_entry_fails_gate(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nroot = "src"\n'
             "[tool.pf_guards.layering_allowlist]\n"
             '"app/api/x.py" = ["app.repo.q"]\n',
@@ -137,7 +175,7 @@ class TestRunCliConfig:
     def test_multi_root_scans_both_with_prefix_budgets(
         self, tmp_path: Path, monkeypatch, capsys
     ) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nroot = ["app", "tests"]\n'
             "[tool.pf_guards.limits]\ntests = 600\n",
             encoding="utf-8",
@@ -155,7 +193,7 @@ class TestRunCliConfig:
         assert "tests/test_big.py" in out and "600" in out
 
     def test_multi_root_missing_one_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nroot = ["app", "nope"]\n', encoding="utf-8"
         )
         (tmp_path / "app").mkdir()
@@ -166,7 +204,7 @@ class TestRunCliConfig:
     def test_inline_baseline_suppresses_and_stale_checks(
         self, tmp_path: Path, monkeypatch, capsys
     ) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nroot = "src"\n'
             "[tool.pf_guards.baseline]\n"
             '"big.py" = 600\n"gone.py" = 700\n',
@@ -183,7 +221,7 @@ class TestRunCliConfig:
     def test_string_baseline_in_config_exits_two(
         self, tmp_path: Path, monkeypatch, capsys
     ) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+        (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nbaseline = "x.json"\n', encoding="utf-8"
         )
         (tmp_path / "src").mkdir()
@@ -213,8 +251,8 @@ class TestRunCliConfig:
         assert "[tool.pf_guards.layering_allowlist]" in out
         assert '"app/orchestrators/flow.py" = ["app.clients.c", "app.repo.q"]' in out
 
-    def test_layering_allowlist_plumbed_from_pyproject(self, tmp_path: Path, monkeypatch) -> None:
-        (tmp_path / "pyproject.toml").write_text(
+    def test_layering_allowlist_plumbed_from_config(self, tmp_path: Path, monkeypatch) -> None:
+        (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nroot = "src"\n'
             "[tool.pf_guards.layering_allowlist]\n"
             '"app/orchestrators/flow.py" = ["app.repo.q"]\n',
