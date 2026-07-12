@@ -2,6 +2,17 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.5.0 — 2026-07-11
+
+### Added
+- Consumer test bootstrap in `pf_core.testing`: `framework_ddl()` emits DDL for every pf-core-owned table (tracking, jobs, cache, budget) and `metadata_ddl()` for any SQLAlchemy metadata, for splicing into the `pf_schema` fixture. Both accept `only={...}` to restrict to named tables (for projects whose migrations extend framework tables). `pf_engine` honors `PF_TEST_DATABASE_URL` (run the same suite against a disposable Postgres/MySQL database) and gains an overridable `pf_engine_teardown` hook run before `engine.dispose()`. New `pf_budget_disabled` fixture in the auto-loaded plugin. New `pf_core.testing.env` import-time conftest helpers: `hermetic_test_env()` (no-external-services env block) and `stub_model_router()` (temp router YAML + `MODEL_ROUTER_CONFIG`).
+- `CACHE_CONFIG` accepts `off` / `disabled` / `none` / `0` — disables exact and semantic caching with no config file needed.
+- `pf_core.llm.prompts.load_prompt(slug, ...)` — slug-based per-agent spec loading: maps `slug` → `<slug>.yaml` (fixed `dir=`, or override chain `env_dir_var` → CWD `config/prompts/` → `bundled_dir`), enforces `expected_agent=slug`, caches per process (`clear_prompt_cache()` resets; `cache=False` re-reads).
+
+### Changed
+- `pf_engine` clears the tracking resolver caches at setup.
+- `BUDGET_ENFORCEMENT_DISABLED` now also short-circuits `project_cost()` to `0.0` before any DB access (previously only `check_budget()` honored it).
+
 ## v0.4.1 — 2026-07-11
 
 ### Changed

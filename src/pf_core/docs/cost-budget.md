@@ -157,7 +157,7 @@ check_budget(
 
 ## Emergency kill-switch
 
-Set `BUDGET_ENFORCEMENT_DISABLED=true` in the environment. `check_budget()` short-circuits to always-pass — turns it into warn-only without touching config. Useful during incident response when false positives are blocking real work.
+Set `BUDGET_ENFORCEMENT_DISABLED=true` in the environment. `check_budget()` short-circuits to always-pass and `project_cost()` returns `0.0` without touching the DB — the whole guard pair goes inert without config changes. Useful during incident response when false positives are blocking real work, and in test suites (the `pf_budget_disabled` fixture sets it — see [testing.md](testing.md)).
 
 ## Soft-threshold alerts
 
@@ -207,7 +207,7 @@ Sequential, defensively:
 |---|---|---|
 | `BUDGET_CONFIG` | `config/budgets.yaml` | YAML config path |
 | `BUDGET_CONFIG_RELOAD_SECONDS` | `300` | In-process reload TTL |
-| `BUDGET_ENFORCEMENT_DISABLED` | unset | When `true`, all `check_budget()` calls pass |
+| `BUDGET_ENFORCEMENT_DISABLED` | unset | When `true`, `check_budget()` always passes and `project_cost()` returns `0.0` (no DB access) |
 
 ## Caveats
 

@@ -296,3 +296,84 @@ class TestRenderSpec:
         text, version = render_spec(spec, today="2026-04-21")
         assert text == "Today is 2026-04-21."
         assert version == 7
+
+
+class TestLoadPrompt:
+    """Slug-based per-agent spec loading (load_prompt)."""
+
+    @staticmethod
+    def _write(dir_, slug="alpha", version=1, agent=None):
+        dir_.mkdir(parents=True, exist_ok=True)
+        p = dir_ / f"{slug}.yaml"
+        p.write_text(
+            f"agent: {agent or slug}\nversion: {version}\nsystem: Be helpful.\n",
+            encoding="utf-8",
+        )
+        return p
+
+    def test_loads_from_fixed_dir(self, tmp_path):
+        from pf_core.llm.prompts import clear_prompt_cache, load_prompt
+
+        self._write(tmp_path)
+        spec = load_prompt("alpha", dir=tmp_path)
+        assert spec["agent"] == "alpha"
+        assert spec["version"] == 1
+        clear_prompt_cache()
+
+    def test_enforces_slug_as_expected_agent(self, tmp_path):
+        from pf_core.llm.prompts import load_prompt
+
+        self._write(tmp_path, slug="alpha", agent="beta")  # drifted content
+        with pytest.raises(ConfigurationError, match="does not match"):
+            load_prompt("alpha", dir=tmp_path)
+
+    def test_caches_until_cleared(self, tmp_path):
+        from pf_core.llm.prompts import clear_prompt_cache, load_prompt
+
+        self._write(tmp_path, version=1)
+        assert load_prompt("alpha", dir=tmp_path)["version"] == 1
+        self._write(tmp_path, version=2)
+        assert load_prompt("alpha", dir=tmp_path)["version"] == 1
+        clear_prompt_cache()
+        assert load_prompt("alpha", dir=tmp_path)["version"] == 2
+
+    def test_cache_false_rereads_every_call(self, tmp_path):
+        from pf_core.llm.prompts import load_prompt
+
+        self._write(tmp_path, version=1)
+        assert load_prompt("alpha", dir=tmp_path, cache=False)["version"] == 1
+        self._write(tmp_path, version=2)
+        assert load_prompt("alpha", dir=tmp_path, cache=False)["version"] == 2
+
+    def test_default_resolution_is_cwd_config_prompts(self, tmp_path, monkeypatch):
+        from pf_core.llm.prompts import load_prompt
+
+        monkeypatch.chdir(tmp_path)
+        self._write(tmp_path / "config" / "prompts")
+        assert load_prompt("alpha", cache=False)["version"] == 1
+
+    def test_env_dir_overrides_cwd(self, tmp_path, monkeypatch):
+        from pf_core.llm.prompts import load_prompt
+
+        monkeypatch.chdir(tmp_path)
+        self._write(tmp_path / "config" / "prompts", version=1)
+        override = tmp_path / "override"
+        self._write(override, version=9)
+        monkeypatch.setenv("PROMPTS_TEST_DIR", str(override))
+        spec = load_prompt("alpha", env_dir_var="PROMPTS_TEST_DIR", cache=False)
+        assert spec["version"] == 9
+
+    def test_bundled_dir_is_the_floor(self, tmp_path, monkeypatch):
+        from pf_core.llm.prompts import load_prompt
+
+        monkeypatch.chdir(tmp_path)  # empty CWD — chain falls to bundled
+        bundled = tmp_path / "pkg"
+        self._write(bundled, version=3)
+        spec = load_prompt("alpha", bundled_dir=bundled, cache=False)
+        assert spec["version"] == 3
+
+    def test_dir_and_bundled_dir_mutually_exclusive(self, tmp_path):
+        from pf_core.llm.prompts import load_prompt
+
+        with pytest.raises(InvalidInputError, match="mutually exclusive"):
+            load_prompt("alpha", dir=tmp_path, bundled_dir=tmp_path)

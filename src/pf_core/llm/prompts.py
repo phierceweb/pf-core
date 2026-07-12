@@ -26,6 +26,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from typing import Any
 import yaml
 
 from pf_core.exceptions import ConfigurationError, InvalidInputError
+from pf_core.utils.config_path import resolve_config_path
 
 
 def load_prompts(path: str | Path) -> dict[str, Any]:
@@ -235,3 +237,70 @@ def render_spec(
     rendered = render(template, style=style, **variables) if variables else template
     version = int(spec.get("version", 1))
     return rendered, version
+
+
+# ---------------------------------------------------------------------------
+# Slug-based loading (one YAML per agent under a prompts directory)
+# ---------------------------------------------------------------------------
+
+_PROMPT_CACHE: dict[tuple[str, str], dict[str, Any]] = {}
+
+
+def load_prompt(
+    slug: str,
+    *,
+    dir: str | Path | None = None,
+    env_dir_var: str | None = None,
+    bundled_dir: str | Path | None = None,
+    cwd_subdir: str = "config/prompts",
+    cache: bool = True,
+) -> dict[str, Any]:
+    """Load + validate the per-agent spec for *slug* (``<slug>.yaml``).
+
+    The slug convenience over :func:`load_prompt_spec`: maps ``slug`` to
+    ``<slug>.yaml``, enforces ``expected_agent=slug`` (filename/content
+    drift fails loud), and caches the parsed spec per process —
+    :func:`clear_prompt_cache` resets; ``cache=False`` re-reads every call.
+
+    Resolution: ``dir`` names the directory holding the file directly.
+    Otherwise the override chain applies — ``$env_dir_var`` directory →
+    CWD ``cwd_subdir`` → ``bundled_dir`` when given (via
+    :func:`pf_core.utils.config_path.resolve_config_path`).
+
+    Raises:
+        ConfigurationError: file missing/malformed, or agent mismatch.
+        InvalidInputError: ``dir`` and ``bundled_dir`` both given.
+    """
+    if dir is not None and bundled_dir is not None:
+        raise InvalidInputError("dir and bundled_dir are mutually exclusive")
+
+    filename = f"{slug}.yaml"
+    if dir is not None:
+        path = Path(dir) / filename
+    elif bundled_dir is not None:
+        path = resolve_config_path(
+            filename,
+            env_dir_var=env_dir_var,
+            bundled_dir=Path(bundled_dir),
+            cwd_subdir=cwd_subdir,
+        )
+    else:
+        path = Path(cwd_subdir) / filename
+        if env_dir_var:
+            env_dir = os.environ.get(env_dir_var)
+            if env_dir and (Path(env_dir) / filename).exists():
+                path = Path(env_dir) / filename
+    path = Path(path).resolve()
+
+    key = (slug, str(path))
+    if cache and key in _PROMPT_CACHE:
+        return _PROMPT_CACHE[key]
+    spec = load_prompt_spec(path, expected_agent=slug)
+    if cache:
+        _PROMPT_CACHE[key] = spec
+    return spec
+
+
+def clear_prompt_cache() -> None:
+    """Reset the in-process :func:`load_prompt` cache."""
+    _PROMPT_CACHE.clear()

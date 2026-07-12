@@ -94,6 +94,15 @@ class _ScopeSummary:
     budget_id: int
 
 
+def _enforcement_disabled() -> bool:
+    """BUDGET_ENFORCEMENT_DISABLED kill switch — disables the guard pair."""
+    return os.environ.get("BUDGET_ENFORCEMENT_DISABLED", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 def project_cost(
     *,
     agent_type: str,
@@ -104,8 +113,12 @@ def project_cost(
     """Project the USD cost of a planned call using ``llm_cost_rates``.
 
     Falls back to a 24h rolling mean of ``llm_runs.cost_usd`` for the
-    (agent_type, model) pair when no cost-rate row exists.
+    (agent_type, model) pair when no cost-rate row exists. Returns ``0.0``
+    without touching the DB when ``BUDGET_ENFORCEMENT_DISABLED`` is set.
     """
+    if _enforcement_disabled():
+        return 0.0
+
     from pf_core.budget.repo import CostRateRepo
 
     rate = CostRateRepo().get_effective(model=model)
@@ -320,7 +333,7 @@ def check_budget(
         )
         return
 
-    if os.environ.get("BUDGET_ENFORCEMENT_DISABLED", "").lower() in ("1", "true", "yes"):
+    if _enforcement_disabled():
         logger.debug("budget_enforcement_disabled")
         return
 

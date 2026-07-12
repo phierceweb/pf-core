@@ -174,6 +174,24 @@ db.log_agent_run(
 )
 ```
 
+### Slug-based loading — `load_prompt()`
+
+When each agent's spec lives at `config/prompts/<slug>.yaml` (the standard layout), skip the path plumbing — `load_prompt(slug)` maps the slug to the filename, enforces `expected_agent=slug` (filename/content drift fails loud), and caches the parsed spec per process:
+
+```python
+from pf_core.llm.prompts import clear_prompt_cache, load_prompt
+
+spec = load_prompt("summarizer")                      # ./config/prompts/summarizer.yaml
+spec = load_prompt("summarizer", dir=PROMPTS_DIR)     # fixed project directory
+spec = load_prompt(                                   # packaged tool with overrides:
+    "summarizer",
+    env_dir_var="MYAPP_PROMPTS_DIR",                  #   operator override dir →
+    bundled_dir=Path(__file__).parent,                #   CWD config/prompts/ → bundled floor
+)
+```
+
+`dir=` and `bundled_dir=` are mutually exclusive (fixed directory vs. override chain — the chain composes [`resolve_config_path`](config-path.md)). Pass `cache=False` to re-read on every call; `clear_prompt_cache()` resets the cache (tests that edit YAML in place).
+
 ### Registering in the DB
 
 Use `resolve_prompt_id()` to upsert the prompt into `llm_prompts` so every `(agent, part, version)` triple has a canonical DB row:

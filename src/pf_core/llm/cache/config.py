@@ -58,6 +58,10 @@ _DEFAULTS = AgentCacheConfig()
 _loaded_at: float = 0.0
 _raw_config: dict[str, Any] = {}
 
+# CACHE_CONFIG values meaning "no cache, no file needed" (test suites,
+# cache-less deploys).
+_DISABLED_SENTINELS = frozenset({"off", "disabled", "none", "0"})
+
 
 def _reload_if_stale() -> None:
     global _loaded_at, _raw_config
@@ -68,6 +72,11 @@ def _reload_if_stale() -> None:
         return
 
     config_path = os.environ.get("CACHE_CONFIG", "config/cache.yaml")
+    if config_path.strip().lower() in _DISABLED_SENTINELS:
+        _raw_config = {"defaults": {"exact": False, "semantic": False}}
+        _loaded_at = now
+        return
+
     path = Path(config_path)
     if not path.is_absolute():
         path = Path.cwd() / path

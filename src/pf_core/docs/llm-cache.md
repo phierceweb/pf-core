@@ -54,6 +54,8 @@ def classify(*, text: str) -> dict:
 
 Per-agent policy. Place in `config/cache.yaml` (or set `CACHE_CONFIG` env var).
 
+To disable caching entirely with no config file, set `CACHE_CONFIG` to `off` (also accepted: `disabled`, `none`, `0`) — exact and semantic caching turn off for every agent. This is what test suites should use (`hermetic_test_env()` sets it — see [testing.md](testing.md)); a missing file, by contrast, means framework defaults, which have `exact: true`.
+
 ```yaml
 # config/cache.yaml
 
