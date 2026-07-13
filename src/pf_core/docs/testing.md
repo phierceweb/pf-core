@@ -58,7 +58,7 @@ def pf_schema():
 
 `framework_ddl(dialect="sqlite", if_not_exists=True)` emits every pf-core-owned table (tracking, jobs, cache, budget) in dependency order, then indexes. `metadata_ddl(metadata, ...)` does the same for any SQLAlchemy `MetaData` — use it for a project's own declarative metadata, or with `pf_core.jobs._schema.metadata` in a jobs-only consumer that doesn't install the `[tracking]` closure.
 
-Both take `only={"table", ...}` to restrict output to named tables. Use it when your project's migrations **extend** some framework tables (extra columns) — splice the subset you share verbatim and let your own fixtures create the extended shapes:
+Both take `only={"table", ...}` to restrict output to named tables. Use it when your project's migrations **extend** some framework tables (extra columns) — splice the subset you share verbatim and let your own fixtures create the extended shapes (define the extensions with [`pf_core.db.types`](database.md) so the column types match the framework's on every dialect):
 
 ```python
 return framework_ddl(only={"llm_models", "jobs", "job_steps", "job_events"}) + PROJECT_DDL

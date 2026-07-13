@@ -2,10 +2,10 @@
 
 `pf_core.llm.cache` — response cache for LLM calls. Answers "did we already ask the LLM something equivalent to this?" before making an expensive call.
 
-Two layers (v0.9.0 ships exact cache; v0.9.1 adds semantic):
+Two layers (exact cache is shipped; semantic is planned):
 
 1. **Exact cache** — keyed by `input_hash` (SHA256 of model + rendered prompts + sampling + configs). Reuses identical calls without a round-trip.
-2. **Semantic cache** — keyed by embedding similarity. For queries that differ only in whitespace, phrasing, or order-irrelevant details. Opt-in per agent type. *(v0.9.1 — not yet shipped)*
+2. **Semantic cache** — keyed by embedding similarity. For queries that differ only in whitespace, phrasing, or order-irrelevant details. Opt-in per agent type. *(planned — not yet shipped; the schema ships today, the lookup doesn't)*
 
 **Not** to be confused with `pf_core.cache.redis` (Redis KV cache for API response memoization). This module caches LLM call responses in the database.
 
@@ -69,7 +69,7 @@ defaults:
 agents:
   classifier:
     exact: true
-    semantic: false           # semantic disabled until v0.9.1
+    semantic: false           # semantic layer not yet shipped
     ttl_seconds: 604800       # 7 days — classifications are stable
 
   extractor:
@@ -90,11 +90,11 @@ agents:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `exact` | `true` | Check exact-hash cache |
-| `semantic` | `false` | Check semantic-similarity cache (v0.9.1) |
+| `semantic` | `false` | Check semantic-similarity cache (planned) |
 | `ttl_seconds` | `86400` | Entry expiration; `0` = never |
 | `semantic_threshold` | `0.93` | Cosine similarity threshold for a semantic hit |
-| `semantic_embedding_model` | `""` | Model used for embeddings (v0.9.1) |
-| `canonicalize.*` | all `false` | Pre-embedding normalizations (v0.9.1) |
+| `semantic_embedding_model` | `""` | Model used for embeddings (planned) |
+| `canonicalize.*` | all `false` | Pre-embedding normalizations (planned) |
 | `max_entries_per_agent` | `10000` | LRU eviction trigger |
 | `on_miss` | `proceed` | `warn_log` emits a WARNING on miss (useful during rollout) |
 
@@ -124,7 +124,7 @@ from pf_core.llm.cache import cache_lookup, CacheHit
 hit: CacheHit | None = cache_lookup(
     agent_type="classifier",
     input_hash=h,
-    canonical_text="...",   # pass now to avoid future call-site changes (v0.9.1)
+    canonical_text="...",   # pass now to avoid call-site changes when semantic lands
 )
 ```
 
@@ -217,7 +217,7 @@ Registered on the shared `pf_core.llm.tracking.schema.metadata`. Created by the 
 | `expires_at` | TIMESTAMP NULL | NULL = never |
 | `created_at` | TIMESTAMP | |
 
-### `llm_embeddings` (v0.9.1)
+### `llm_embeddings` (semantic layer — schema only today)
 
 Vector index for semantic cache. Not yet populated.
 

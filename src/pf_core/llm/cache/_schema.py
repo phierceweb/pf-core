@@ -5,7 +5,7 @@ Defines two tables registered on the shared ``pf_core.llm.tracking.schema``
 metadata so ``metadata.create_all()`` creates them in the same pass:
 
 - ``llm_cache_entries`` — exact-cache index (one row per canonical input_hash)
-- ``llm_embeddings`` — semantic vector index (opt-in, added in v0.9.1)
+- ``llm_embeddings`` — semantic vector index (schema only; lookup not yet shipped)
 
 See ``docs/llm-cache.md`` for design rationale and usage.
 """

@@ -84,6 +84,31 @@ A client exception (timeout, non-zero exit, transport error) is recorded as a `s
 
 ---
 
+## The messages variant — `tracked_messages_call`
+
+For call sites that build a real message list (system + user roles, multi-turn) instead of rendering a spec into one user message:
+
+```python
+from pf_core.llm.tracked import tracked_messages_call
+
+content, usage, run_id = tracked_messages_call(
+    client=client,
+    agent_type="summarizer",
+    messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+    model=cfg["model"],
+    sampling=sampling,                                   # forwarded to chat AND recorded
+    chat_kwargs={"response_format": {"type": "json_object"}, "timeout": 120},  # forwarded only
+    spec=spec,                                           # registers system (+ user) prompt ids
+    provider="openrouter",
+    input_hash=input_hash,                               # pair with your cache lookup
+    configs={"report_config": config_id},
+)
+```
+
+Differences from `tracked_call`: messages pass through verbatim (rendered system/user are extracted by role for `llm_run_payloads`); `spec` is optional and may be minimal (`{"version": int, "system": str}` for canonical-template registration; a full `load_prompt_spec` dict also registers the `user` part, with `spec_on_change` forwarded to `resolve_prompt_id`); there is no JSON retry (validate downstream with `parse_and_validate`); it returns `(content, usage, run_id)`. Client exceptions record a `status="failed"` row and re-raise, same as `tracked_call`. `on_record_error="warn"` makes the tracking sink best-effort — a failed `record()` logs a warning and returns `run_id=None` instead of masking the call result (for pipelines where tracking must never break the work).
+
+---
+
 ## Why not `@track_run`
 
 `tracked_call` composes `LlmRunRepo` directly rather than reusing the generic `@track_run` decorator because `track_run` cannot carry a spec-resolved `system_prompt_id` nor emit the retry-linked second row — the two things this layer exists to provide.

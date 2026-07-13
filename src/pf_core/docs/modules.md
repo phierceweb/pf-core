@@ -31,7 +31,7 @@ Persist and inspect every LLM call so cost, prompts, validations, and outcomes a
 | Module | Concern |
 |---|---|
 | [LLM tracking](llm-tracking.md) | One database row per LLM call with sidecar tables for prompts, parsed output, validations, links, tags, metrics, and job attribution. The single source of truth that the dashboard, eval harness, cache, and budget guards all read from. |
-| [Tracked LLM call](llm-tracked.md) | `tracked_call` — render spec → invoke injected client → record one run → tracked JSON retry. The common "spec → invoke → record → maybe-parse" shape in one function. |
+| [Tracked LLM call](llm-tracked.md) | `tracked_call` — render spec → invoke injected client → record one run → tracked JSON retry; `tracked_messages_call` — the same recording contract for verbatim message lists (failure rows, optional prompt-id registration, best-effort sink mode). |
 | [LLM cache](llm-cache.md) | Avoid paying for identical calls twice. Per-agent TTL policy with hit-rate analytics. |
 | [Prompts](prompts.md) | Load prompts from YAML, version them, and register them in the database so every tracked run links back to the prompt that produced it. |
 | [Model router](model-router.md) | Per-agent model, sampling, and backend configuration loaded from YAML with live reload. Swap an agent's model — or which client serves it (`resolve_agent`, nested per-backend blocks, opt-in availability fallback, custom backends via the client registry) — without code changes or restarts. |
@@ -120,7 +120,7 @@ Make architecture violations and bloated files fail the build, not a code review
 | [Doctor](doctor.md) | `pf-doctor` — runtime ground-truth attestation: loaded copy/version, extras, env resolution (redacted), router-config validity, dependency versions; `--db` adds a read-only connectivity + migration check. |
 | [Linting](linting.md) | Layer import linter (enforces the call direction in the repo's `layering` rule) and file-size linter (per-layer line budgets with project overrides). |
 | [CLI](cli.md) | Typer scaffold with consistent verbose flag and exception-to-exit-code mapping. |
-| [Testing](testing.md) | Pytest fixtures auto-registered as a plugin: isolated per-test SQLite database (file-backed, concurrency-safe), savepoint-per-test, FastAPI test client. |
+| [Testing](testing.md) | Pytest fixtures auto-registered as a plugin: isolated per-test SQLite database (file-backed, concurrency-safe; `PF_TEST_DATABASE_URL` for Postgres/MySQL), savepoint-per-test, FastAPI test client, framework-table DDL helpers, budget-guard silencing, hermetic-env conftest helpers. |
 | [Output reporters](output.md) | Reporter protocol for batch progress, with console (Rich) and structlog implementations. |
 
 ## Configuration & infrastructure

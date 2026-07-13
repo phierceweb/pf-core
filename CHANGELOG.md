@@ -2,6 +2,12 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.6.0 — 2026-07-12
+
+### Added
+- `pf_core.llm.tracked.tracked_messages_call` — the messages-based tracked call: sends a verbatim message list, records one `llm_runs` row (failure rows with error/class/http_status on client exceptions, then re-raises), extracts rendered system/user by role for payloads, optionally registers system (+ user) prompt ids from a spec dict (`spec_on_change` forwarded), and carries `sampling` (recorded) separately from `chat_kwargs` (forwarded only). Supports `input_hash`, `configs`, `tags`, `metrics`, `items_out`; `on_record_error="warn"` makes the tracking sink best-effort (`run_id=None` on sink failure). Returns `(content, usage, run_id)`.
+- `pf_core.db.types` — public home for the cross-dialect column-type variants the framework tables are built from: `PK_INT`/`PK_SMALL`/`PK_BIG`, `FK_INT`/`FK_SMALL`/`FK_BIG`, `TIMESTAMP_US`, `LARGE_TEXT`, `JSON_`, `server_now()`. The underscored names in `pf_core.llm.tracking.schema` remain as aliases of the same objects.
+
 ## v0.5.0 — 2026-07-11
 
 ### Added

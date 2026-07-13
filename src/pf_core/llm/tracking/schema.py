@@ -39,98 +39,41 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects import mysql, postgresql
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import expression
-from sqlalchemy.types import JSON, TIMESTAMP, Boolean
+from sqlalchemy.types import TIMESTAMP, Boolean
 
-# ---------------------------------------------------------------------------
-# Reusable type variants
-# ---------------------------------------------------------------------------
-
-# Microsecond-precision UTC timestamp. MySQL stores TIMESTAMP(6); Postgres
-# stores TIMESTAMPTZ; SQLite stores ISO 8601 in TEXT (handled by SQLAlchemy).
-_TIMESTAMP_US = (
-    TIMESTAMP()
-    .with_variant(mysql.TIMESTAMP(fsp=6), "mysql")
-    .with_variant(postgresql.TIMESTAMP(timezone=True), "postgresql")
+from pf_core.db.types import (
+    FK_BIG,
+    FK_INT,
+    FK_SMALL,
+    JSON_,
+    LARGE_TEXT,
+    PK_BIG,
+    PK_INT,
+    PK_SMALL,
+    TIMESTAMP_US,
+    server_now,
 )
 
-# Large variable text. MySQL gets MEDIUMTEXT (~16MB); Postgres and SQLite use
-# native TEXT (effectively unlimited).
-_LARGE_TEXT = Text().with_variant(mysql.MEDIUMTEXT(), "mysql")
+# ---------------------------------------------------------------------------
+# Type variants — the public home is pf_core.db.types. The underscored
+# aliases stay: framework siblings and consumer schema extensions import them.
+# ---------------------------------------------------------------------------
 
-# JSON column. Postgres uses JSONB (indexable); MySQL uses native JSON;
-# SQLite stores serialized JSON in TEXT (SQLAlchemy handles encoding).
-_JSON = JSON().with_variant(postgresql.JSONB(), "postgresql")
+_TIMESTAMP_US = TIMESTAMP_US
+_LARGE_TEXT = LARGE_TEXT
+_JSON = JSON_
+_PK_INT = PK_INT
+_PK_SMALL = PK_SMALL
+_PK_BIG = PK_BIG
+_FK_INT = FK_INT
+_FK_SMALL = FK_SMALL
+_FK_BIG = FK_BIG
+_server_now = server_now
 
 # Cost in USD. Six decimal places to capture sub-cent OpenRouter values.
 _COST_USD = Numeric(10, 6)
-
-# PK / FK integer variants.
-#
-# Base type is ``Integer`` on every variant so SQLite emits literal
-# ``INTEGER`` — required for the rowid alias that powers SQLite's
-# autoincrement. A ``BigInteger`` base would compile to ``BIGINT`` on SQLite,
-# which silently breaks autoincrement (the first INSERT raises
-# ``NOT NULL constraint failed: llm_runs.id``). MySQL uses SMALLINT for
-# reference tables; BIGINT for the hot ``llm_runs`` table so id exhaustion
-# is never a practical concern at the scale consumer projects target. All
-# autoincrement columns (and the FKs that reference them) are ``UNSIGNED``
-# on MySQL — negative ids would be wasted range for autoincrement. Postgres
-# has no unsigned integer type; SQLite uses ``INTEGER`` regardless.
-_PK_INT = (
-    Integer()
-    .with_variant(mysql.INTEGER(unsigned=True), "mysql")
-)
-_PK_SMALL = (
-    Integer()
-    .with_variant(mysql.SMALLINT(unsigned=True), "mysql")
-    .with_variant(postgresql.SMALLINT(), "postgresql")
-)
-_PK_BIG = (
-    Integer()
-    .with_variant(mysql.BIGINT(unsigned=True), "mysql")
-    .with_variant(postgresql.BIGINT(), "postgresql")
-)
-
-_FK_INT = (
-    Integer()
-    .with_variant(mysql.INTEGER(unsigned=True), "mysql")
-)
-_FK_SMALL = (
-    SmallInteger()
-    .with_variant(mysql.SMALLINT(unsigned=True), "mysql")
-    .with_variant(postgresql.SMALLINT(), "postgresql")
-)
-_FK_BIG = (
-    Integer()
-    .with_variant(mysql.BIGINT(unsigned=True), "mysql")
-    .with_variant(postgresql.BIGINT(), "postgresql")
-)
-
-
-class _server_now(expression.FunctionElement):
-    """Cross-dialect server-side timestamp default with microsecond precision.
-
-    MySQL requires ``CURRENT_TIMESTAMP(6)`` to match ``TIMESTAMP(6)`` columns
-    under STRICT_TRANS_TABLES; plain ``CURRENT_TIMESTAMP`` is rejected as an
-    invalid default. Postgres and SQLite accept ``CURRENT_TIMESTAMP`` with no
-    precision argument.
-    """
-
-    type = TIMESTAMP()
-    inherit_cache = True
-
-
-@compiles(_server_now, "mysql")
-def _mysql_server_now(element, compiler, **kw):  # noqa: ARG001
-    return "CURRENT_TIMESTAMP(6)"
-
-
-@compiles(_server_now)
-def _default_server_now(element, compiler, **kw):  # noqa: ARG001
-    return "CURRENT_TIMESTAMP"
 
 
 class _server_now_minus_seconds(expression.FunctionElement):

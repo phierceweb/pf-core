@@ -86,19 +86,19 @@ class TestLayeringConfig:
         assert "workers" in v.reason and "api" in v.reason
 
     def test_allowlist_exempts_exact_edge(self, tmp_path: Path) -> None:
-        _mk(tmp_path / "app/db/cache.py", "import app.services.parsers.substack\n")
+        _mk(tmp_path / "app/db/cache.py", "import app.services.parsers.rss_feed\n")
         cfg = GuardsConfig(
-            layering_allowlist={"app/db/cache.py": ["app.services.parsers.substack"]}
+            layering_allowlist={"app/db/cache.py": ["app.services.parsers.rss_feed"]}
         )
         assert check_layering(tmp_path, config=cfg) == []
 
     def test_allowlist_other_edges_still_violate(self, tmp_path: Path) -> None:
         _mk(
             tmp_path / "app/db/cache.py",
-            "import app.services.parsers.substack\nimport app.repo.entries\n",
+            "import app.services.parsers.rss_feed\nimport app.repo.entries\n",
         )
         cfg = GuardsConfig(
-            layering_allowlist={"app/db/cache.py": ["app.services.parsers.substack"]}
+            layering_allowlist={"app/db/cache.py": ["app.services.parsers.rss_feed"]}
         )
         (v,) = check_layering(tmp_path, config=cfg)
         assert v.imported == "app.repo.entries"

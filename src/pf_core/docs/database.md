@@ -208,6 +208,23 @@ row = conn.execute(text("SELECT ...")).fetchone()
 entry = row_to_dict(row)  # plain dict or None
 ```
 
+## Column type variants — `pf_core.db.types`
+
+Cross-dialect column types the framework's own tables are built from. Use them when defining tables adjacent to (or extending) the framework schema so DDL matches on MySQL, PostgreSQL, and SQLite:
+
+```python
+from pf_core.db.types import FK_INT, PK_INT, TIMESTAMP_US, server_now
+
+my_refs = Table(
+    "my_refs", metadata,
+    Column("id", PK_INT, primary_key=True, autoincrement=True),
+    Column("job_id", FK_INT, ForeignKey("jobs.id", ondelete="CASCADE")),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
+)
+```
+
+Available: `PK_INT` / `PK_SMALL` / `PK_BIG`, `FK_INT` / `FK_SMALL` / `FK_BIG` (UNSIGNED on MySQL; `Integer` base so SQLite autoincrement works), `TIMESTAMP_US` (microsecond precision; TIMESTAMPTZ on Postgres), `LARGE_TEXT` (MEDIUMTEXT on MySQL), `JSON_` (JSONB on Postgres), and `server_now()` (`CURRENT_TIMESTAMP(6)` on MySQL — required for `TIMESTAMP(6)` defaults under STRICT_TRANS_TABLES).
+
 ## Model name resolver
 
 Thread-safe, cached resolver that maps LLM model names to database IDs. Uses a `models` table with `id` (auto-increment) and `name` (unique) columns.

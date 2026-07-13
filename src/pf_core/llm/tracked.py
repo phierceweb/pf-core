@@ -1,55 +1,23 @@
-"""One tracked LLM call — render spec → invoke → record → JSON-retry.
+"""Tracked LLM calls — invoke a client and record exactly one ``llm_runs`` row.
 
-This is the orchestration layer consumers kept re-implementing by hand.
-pf-core already ships every primitive used here:
+Two shapes over the same recording contract (failure rows on client
+exceptions, then re-raise):
 
-- :func:`pf_core.llm.prompts.render_spec` — render a loaded prompt spec.
-- :func:`pf_core.llm.tracking.resolve_agent_type_id` /
-  :func:`~pf_core.llm.tracking.resolve_prompt_id` — reference-table FKs.
-- :class:`pf_core.llm.tracking.LlmRunRepo` — the atomic ``llm_runs`` write.
-- :func:`pf_core.llm.parse.parse_llm_json` — tolerant JSON extraction.
+- :func:`tracked_call` — render a spec into a single user message, resolve
+  its ``system_prompt_id``, invoke, record; with ``expect_json=True``, parse
+  with one tracked retry (linked via ``llm_run_links.relation="retry"``),
+  raising :class:`LlmJsonError` (raw response on ``.raw``) on exhaustion.
+- :func:`tracked_messages_call` — the same contract for a verbatim message
+  list.
 
-What was missing — and what this module adds — is the *composition*:
-render the spec, resolve a ``system_prompt_id`` from it, invoke the
-client, record exactly one ``llm_runs`` row (success or
-``status="failed"``), and — when JSON is expected — parse it with a
-single **tracked** retry whose row is linked to the first via
-``llm_run_links.relation="retry"``. On exhaustion it raises
-:class:`LlmJsonError`, which carries the last raw response on ``.raw``
-so callers can persist it for debugging.
-
-It composes :class:`LlmRunRepo` directly rather than reusing the generic
-``@track_run`` decorator: ``track_run`` cannot carry a spec-resolved
-``system_prompt_id`` nor emit the retry-linked second row, which are the
-whole reason this layer exists.
-
-The client is injected, not coded in: any object exposing
-``chat(messages=..., model=...) -> (content, usage)`` works — both
-:class:`pf_core.clients.claude_code.ClaudeCodeClient` and
-:class:`pf_core.clients.openrouter.OpenRouterClient` satisfy it. Stages
-that need tools bake ``extra_args=["--allowedTools", ...]`` into the
-client they pass in; this orchestrator stays backend-agnostic.
-
-Usage::
-
-    from pf_core.clients.claude_code import get_client
-    from pf_core.llm import tracked_call
-    from pf_core.llm.prompts import load_prompt_spec
-
-    spec = load_prompt_spec("config/prompts/classifier.yaml",
-                            expected_agent="classifier")
-    parsed, run_id = tracked_call(
-        client=get_client(model="haiku"),
-        agent_type="classifier",
-        spec=spec,
-        model="haiku",
-        render_kwargs={"context": context_text, "examples": examples_json},
-        expect_json=True,
-    )
+The client is injected: anything exposing ``chat(messages=..., model=...)
+-> (content, usage)``. See ``docs/llm-tracked.md`` for usage and the
+comparison with the ``@track_run`` decorator.
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any, Protocol
 
 from pf_core.exceptions import AppError, InvalidInputError
@@ -62,6 +30,7 @@ try:
         resolve_agent_type_id,
         resolve_prompt_id,
     )
+    from pf_core.llm.tracking.decorator import _extract_rendered_prompts
 except ImportError as e:  # pragma: no cover - exercised by the extra matrix
     from pf_core._extras import extra_import_error
 
@@ -283,4 +252,132 @@ def _invoke_and_record(
     return content, run_id
 
 
-__all__ = ["ChatClient", "LlmJsonError", "tracked_call"]
+def tracked_messages_call(
+    *,
+    client: ChatClient,
+    agent_type: str,
+    messages: list[dict],
+    model: str,
+    sampling: dict[str, Any] | None = None,
+    chat_kwargs: dict[str, Any] | None = None,
+    spec: dict | None = None,
+    spec_on_change: str = "keep_first",
+    provider: str | None = None,
+    input_hash: str | None = None,
+    configs: dict[str, int] | None = None,
+    tags: list[str] | None = None,
+    metrics: dict[str, float] | None = None,
+    items_out: int | None = None,
+    on_record_error: str = "raise",
+    repo: LlmRunRepo | None = None,
+) -> tuple[str, dict, int | None]:
+    """One tracked call with a verbatim *messages* list.
+
+    The messages-based sibling of :func:`tracked_call` (which renders a spec
+    into a single user message). Sends *messages* unchanged, records exactly
+    one ``llm_runs`` row — ``status="failed"`` with the error captured when
+    the client raises (then re-raises) — and returns
+    ``(content, usage, run_id)``.
+
+    ``sampling`` is forwarded to ``chat()`` AND recorded; ``chat_kwargs`` is
+    forwarded only (transport options like ``response_format``/``timeout``
+    are not sampling). ``spec`` — a :func:`~pf_core.llm.prompts.load_prompt_spec`
+    dict, or minimally ``{"version": int, "system": str}`` — registers the
+    canonical system (and, when present, user) template in ``llm_prompts``
+    and stamps the ids on the run; ``spec_on_change`` is passed through to
+    ``resolve_prompt_id``. ``on_record_error="warn"`` makes the tracking sink
+    best-effort: a failed ``record()`` logs a warning and yields
+    ``run_id=None`` instead of masking the call result.
+
+    Raises:
+        InvalidInputError: unknown ``on_record_error`` value.
+    """
+    if on_record_error not in ("raise", "warn"):
+        raise InvalidInputError(
+            f"on_record_error must be 'raise' or 'warn', got {on_record_error!r}"
+        )
+
+    system_prompt_id: int | None = None
+    user_prompt_id: int | None = None
+    if spec is not None:
+        agent_type_id = resolve_agent_type_id(agent_type)
+        version = int(spec["version"])
+        system_prompt_id = resolve_prompt_id(
+            agent_type_id=agent_type_id,
+            part="system",
+            version=version,
+            content=spec["system"],
+            on_change=spec_on_change,
+        )
+        if spec.get("user"):
+            user_prompt_id = resolve_prompt_id(
+                agent_type_id=agent_type_id,
+                part="user",
+                version=version,
+                content=spec["user"],
+                on_change=spec_on_change,
+            )
+
+    rendered_system, rendered_user = _extract_rendered_prompts(messages)
+    _repo = repo if repo is not None else LlmRunRepo()
+
+    def _record(**kwargs: Any) -> int | None:
+        try:
+            return _repo.record(
+                agent_type=agent_type,
+                model=model,
+                provider=provider,
+                sampling=sampling or None,
+                system_prompt_id=system_prompt_id,
+                user_prompt_id=user_prompt_id,
+                input_hash=input_hash,
+                configs=configs,
+                tags=tags,
+                metrics=metrics,
+                rendered_prompts=(rendered_system, rendered_user),
+                **kwargs,
+            )
+        except Exception:
+            if on_record_error == "raise":
+                raise
+            logger.warning(
+                "llm_run_record_failed", agent_type=agent_type, model=model
+            )
+            return None
+
+    logger.info("llm_call_start", agent_type=agent_type, model=model)
+    merged_kwargs = {**(sampling or {}), **(chat_kwargs or {})}
+    t0 = time.monotonic()
+    try:
+        content, usage = client.chat(messages=messages, model=model, **merged_kwargs)
+    except Exception as exc:
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        ctx = getattr(exc, "context", None) or {}
+        http_status = ctx.get("status_code") if isinstance(ctx, dict) else None
+        _record(
+            usage={"duration_ms": elapsed_ms},
+            status="failed",
+            error=str(exc)[:_MAX_ERROR_LEN],
+            error_class=type(exc).__name__,
+            http_status=http_status if isinstance(http_status, int) else None,
+        )
+        raise
+
+    usage.setdefault("duration_ms", int((time.monotonic() - t0) * 1000))
+    logger.info(
+        "llm_call_done",
+        agent_type=agent_type,
+        model=model,
+        duration_ms=usage.get("duration_ms"),
+        content_len=len(content or ""),
+    )
+    run_id = _record(
+        usage={k: v for k, v in usage.items() if k != "system_fingerprint"},
+        model_fingerprint=usage.get("system_fingerprint"),
+        items_out=items_out,
+        raw_response=content if isinstance(content, str) else None,
+    )
+    return content, usage, run_id
+
+
+__all__ = ["ChatClient", "LlmJsonError", "tracked_call", "tracked_messages_call"]
