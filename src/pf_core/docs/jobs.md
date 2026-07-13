@@ -308,7 +308,7 @@ All three tables live on the shared `pf_core.llm.tracking.metadata` — `metadat
 
 ## The `pf-jobs` CLI
 
-Admin CLI shipped in `bin/pf-jobs`. Reads from whatever DB the consumer project configures.
+Admin CLI, installed as the `pf-jobs` console script with the `[jobs]` extra. Reads from whatever DB the consumer project configures.
 
 ```
 pf-jobs list [--kind X] [--status Y] [--since 24h] [--limit 20]
@@ -335,7 +335,7 @@ def main() -> None:
     run_cli(app)
 ```
 
-Now `myapp jobs list`, `myapp jobs retry 42`, `myapp jobs purge --older-than 90d --yes` behave identically to `pf-jobs <cmd>`. `bin/pf-jobs` is itself a thin shim over the same sub-app, so both entry points stay in sync forever — re-implementing these commands per project is not necessary.
+Now `myapp jobs list`, `myapp jobs retry 42`, `myapp jobs purge --older-than 90d --yes` behave identically to `pf-jobs <cmd>` — the console script and the sub-app are the same Typer app, so both entry points stay in sync forever; re-implementing these commands per project is not necessary.
 
 **Safe by default:** `retry`, `cancel`, and `purge` require explicit arguments. `purge` prompts for confirmation unless `--yes` is passed.
 

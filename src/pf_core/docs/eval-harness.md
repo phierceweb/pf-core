@@ -49,7 +49,7 @@ Given a golden run, the replay engine:
 4. Records the new `llm_runs` row, links it to the golden via `llm_run_links(relation='replay')`
 5. Compares golden output vs replay output; writes score to `llm_run_outcomes(outcome_kind='eval_score')`
 
-All replay runs are regular tracked runs — they appear in `pf-jobs`, `pf-stats`, cost reports, etc.
+All replay runs are regular tracked runs — they appear in cost reports, the admin dashboard, etc. Each is tagged `eval:replay:<version>` and `agent:<agent_type>` (plus your `tag_as` label); the bare `eval:<version>` tag is golden-set membership and never appears on replays.
 
 ### Comparators
 
@@ -233,28 +233,14 @@ Gates check `llm_run_metrics` on the replay run (if the service wrote them). If 
 
 ---
 
-## `bin/pf-eval` CLI
+## CLI status — Python API only
 
-```
-pf-eval run --version golden_v1 --agent-type summarizer \
-            --target model=anthropic/claude-opus-4-7 \
-            [--tag-as experiment:opus47] \
-            [--output out/report.html]
-
-pf-eval compare --baseline experiment:current-prod \
-                --candidate experiment:opus47 \
-                --agent-type summarizer
-
-pf-eval list-golden --version golden_v1 [--agent-type summarizer]
-
-pf-eval seed --version golden_v1 --outcome-kind summary_accepted \
-             [--agent-type summarizer] [--limit 50] [--dry-run]
-
-pf-eval promote <run_id> --version golden_v1 [--notes "..."]
-pf-eval demote  <run_id> --version golden_v1
-```
-
-Exit code: **0** = eval passed (mean score ≥ threshold); **1** = eval failed or error.
+**No console script ships.** The harness is driven through the Python API
+(`GoldenSetRepo`, `EvalRunner`); every operation above maps one-to-one. For
+command-line and CI use, wire a small runner script in your project — the
+recommended shape is a `bin/eval-gate` wrapper over a `scripts/run_eval.py`
+that builds an `EvalRunner`, prints `report.summary()`, and exits `0` when
+`report.passed` else `1` (so CI can gate merges on the exit code).
 
 ---
 
@@ -325,20 +311,20 @@ for item in reviewed_items:
 ## CI integration
 
 ```yaml
-# .github/workflows/eval.yml
+# .github/workflows/eval.yml — via your project's runner script (see "CLI status")
 - name: Run summarizer eval
   run: |
-    pf-eval run \
+    python scripts/run_eval.py \
       --version golden_v1 \
       --agent-type summarizer \
-      --target model=anthropic/claude-sonnet-4-6 \
+      --target-model anthropic/claude-sonnet-4-6 \
       --tag-as ci:pr-${{ github.event.pull_request.number }}
   env:
     DATABASE_URL: ${{ secrets.DATABASE_URL }}
     OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-Non-zero exit code from `pf-eval run` blocks the PR merge.
+The runner exits non-zero when the eval fails, blocking the PR merge.
 
 ---
 
@@ -430,19 +416,9 @@ agents:
 
 ### Step 2 — Seed the golden set
 
-**From existing outcome records** (the summarizer and classifier agents):
-
-```bash
-# Dry-run first to see candidates
-pf-eval seed --version golden_v1 --outcome-kind summary_accepted \
-             --agent-type summarizer --limit 50 --dry-run
-
-# Promote when happy with the list
-pf-eval seed --version golden_v1 --outcome-kind summary_accepted \
-             --agent-type summarizer --limit 50
-```
-
-Or in Python (e.g. a one-time migration script):
+**From existing outcome records** (the summarizer and classifier agents), in a
+one-time seeding script — dry-run first (`dry_run=True` lists candidates
+without promoting):
 
 ```python
 from pf_core.eval import GoldenSetRepo
@@ -496,8 +472,11 @@ print(f"Seeded {len(rows)} extractor runs with ground truth")
 
 ### Step 3 — Verify coverage
 
-```bash
-pf-eval list-golden --version golden_v1 --agent-type summarizer
+```python
+from pf_core.eval import GoldenSetRepo
+
+members = GoldenSetRepo().list(version="golden_v1", agent_type="summarizer")
+print(len(members))
 ```
 
 Or via SQL:
@@ -515,41 +494,34 @@ Aim for 30–50 members per agent type. Prioritise diverse, hard cases over volu
 
 ### Step 4 — Run the eval
 
-```bash
-# Test against the current production model
-pf-eval run --version golden_v1 --agent-type summarizer \
-            --tag-as experiment:baseline \
-            --output out/summarizer_baseline.html
+```python
+from pf_core.eval import EvalRunner
 
-# Test a new model
-pf-eval run --version golden_v1 --agent-type summarizer \
-            --target model=anthropic/claude-opus-4-7 \
-            --tag-as experiment:opus47 \
-            --output out/summarizer_opus47.html
+runner = EvalRunner(config_path="config/eval.yaml")
 
-# Compare
-pf-eval compare --baseline experiment:baseline \
-                --candidate experiment:opus47 \
-                --agent-type summarizer
+# Baseline against the current production model (empty target = router config)
+baseline = runner.run(version="golden_v1", agent_type="summarizer",
+                      target={}, tag_as="experiment:baseline")
+
+# Candidate model
+candidate = runner.run(version="golden_v1", agent_type="summarizer",
+                       target={"model": "anthropic/claude-opus-4-7"},
+                       tag_as="experiment:opus47")
+
+# Compare, paired by golden member
+pairs = runner.compare_experiments(baseline="experiment:baseline",
+                                   candidate="experiment:opus47",
+                                   agent_type="summarizer")
 ```
+
+(Wrap this in your project runner script for command-line / CI use — see
+"CLI status" above.)
 
 ### Step 5 — Wire CI
 
-```yaml
-# .github/workflows/eval.yml
-- name: Summarizer eval gate
-  run: |
-    pf-eval run \
-      --version golden_v1 \
-      --agent-type summarizer \
-      --target model=anthropic/claude-sonnet-4-6 \
-      --tag-as ci:pr-${{ github.event.pull_request.number }}
-  env:
-    DATABASE_URL: ${{ secrets.DATABASE_URL }}
-    OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-```
-
-Exit code 1 blocks the PR merge automatically.
+Add a workflow step that runs your project's runner script on router/prompt
+changes — the full example is in "CI integration" above. The runner's
+non-zero exit on a failed eval blocks the PR merge automatically.
 
 ---
 

@@ -2,6 +2,13 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.6.1 — 2026-07-13
+
+### Fixed
+- Eval replays no longer join the golden set: `EvalRunner` tagged each replay run `eval:<version>` — the exact golden-membership tag — so every eval added its replays to the set it was evaluating (and the next run would replay the replays). Replays are now tagged `eval:replay:<version>`. Consumers whose sets were contaminated: delete the `eval:<version>` tag rows on replay-linked runs (`llm_run_links.relation='replay'`).
+- The `pf-jobs` console script is now actually installed (the CLI existed and was documented, but the `[project.scripts]` entry point was missing).
+- Docs corrected to match what ships: the eval harness is Python-API-only (the documented `pf-eval` CLI does not exist — CLI/CI use goes through a small project runner script); install-guidance pin examples updated from `~=0.2.0`/`~=0.4.1` to the current release line.
+
 ## v0.6.0 — 2026-07-12
 
 ### Added

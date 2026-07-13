@@ -1,9 +1,9 @@
 """
 Mountable Typer sub-app for pf-core jobs administration.
 
-Exposes the list / show / retry / cancel / reclaim / purge commands that
-``bin/pf-jobs`` ships as a standalone script, so a consumer project can
-include them inside its own CLI namespace instead of rewriting them::
+Exposes the list / show / retry / cancel / reclaim / purge commands behind
+the ``pf-jobs`` console script, so a consumer project can also include them
+inside its own CLI namespace instead of rewriting them::
 
     # my_project/app/cli/__init__.py
     from pf_core.cli.jobs import app as jobs_app

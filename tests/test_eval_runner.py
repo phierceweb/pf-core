@@ -201,6 +201,75 @@ def test_eval_runner_run_dispatches_to_each_golden(tracking_db, monkeypatch):
     assert report.passed is True
 
 
+def test_replay_runs_do_not_join_the_golden_set(tracking_db, monkeypatch):
+    """A replay must not carry the golden-membership tag (``eval:<version>``)
+    — that tag IS membership, so copying it onto replays makes every eval
+    contaminate its own golden set (replays-of-replays on the next run)."""
+    from sqlalchemy import select
+
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+    from pf_core.llm.tracking import (
+        llm_agent_types,
+        llm_models,
+        llm_run_payloads,
+        llm_run_tags,
+        llm_runs,
+    )
+
+    with tracking_db.begin() as conn:
+        mid = conn.execute(
+            llm_models.insert().values(name="tagfix-model")
+        ).inserted_primary_key[0]
+        aid = conn.execute(
+            llm_agent_types.insert().values(slug="tagfix_agent")
+        ).inserted_primary_key[0]
+        gid = conn.execute(
+            llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
+        ).inserted_primary_key[0]
+        conn.execute(
+            llm_run_payloads.insert().values(
+                llm_run_id=gid, rendered_user="Q", parsed_output={"answer": 1}
+            )
+        )
+
+    repo = GoldenSetRepo()
+    repo.add(gid, version="tagfix_v1")
+
+    class _FakeClient:
+        def chat(self, *, messages, model="", **kwargs):
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    monkeypatch.setattr(
+        "pf_core.clients.openrouter.get_client", lambda *a, **k: _FakeClient()
+    )
+
+    cfg = EvalConfig({"agents": {"tagfix_agent": {"compare": "structured_diff"}}})
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = cfg
+
+    report = runner.run(
+        version="tagfix_v1",
+        agent_type="tagfix_agent",
+        target={"model": "candidate-model"},
+        tag_as="experiment:tagfix",
+    )
+    assert report.results and report.results[0].score == 1.0
+
+    replay_id = report.results[0].run_id
+    with tracking_db.connect() as conn:
+        replay_tags = {
+            r[0]
+            for r in conn.execute(
+                select(llm_run_tags.c.tag).where(llm_run_tags.c.llm_run_id == replay_id)
+            )
+        }
+    assert "eval:tagfix_v1" not in replay_tags
+    assert "eval:replay:tagfix_v1" in replay_tags
+    assert "experiment:tagfix" in replay_tags
+    assert len(repo.list(version="tagfix_v1")) == 1
+
+
 def test_eval_runner_raises_on_empty_golden_set(pf_engine):
     """PreconditionError raised when no golden runs exist."""
     from pf_core.eval._runner import EvalRunner

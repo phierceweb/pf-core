@@ -108,8 +108,8 @@ def load_eval_config(path: str | None = None) -> EvalConfig:
     Args:
         path: Override path. Falls back to ``EVAL_CONFIG`` env var, then
             ``config/eval.yaml``. Returns a default (empty) config if the
-            file does not exist — this lets ``pf-eval`` run without a project
-            config when using only CLI overrides.
+            file does not exist — a runner can work from per-call overrides
+            alone, without a project config file.
 
     Raises:
         ConfigurationError: If the file exists but cannot be parsed.

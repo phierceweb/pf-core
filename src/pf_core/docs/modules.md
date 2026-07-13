@@ -77,7 +77,7 @@ Replay historical LLM calls against new models, prompts, or comparators. Decide 
 
 | Module | Concern |
 |---|---|
-| [Eval harness](eval-harness.md) | Tag-based golden sets, structured-diff and LLM-judge comparators, per-agent tolerances, parallel replay, and a `pf-eval` CLI. |
+| [Eval harness](eval-harness.md) | Tag-based golden sets, structured-diff and LLM-judge comparators, per-agent tolerances, parallel replay (Python API; consumers wire a small runner script for CLI/CI use). |
 
 ## Database
 

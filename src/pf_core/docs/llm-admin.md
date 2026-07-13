@@ -158,7 +158,7 @@ The `reason` body field is optional; default is `"canceled via admin"`. Project 
 
 ## What this doesn't do (v1)
 
-- **No other write actions.** No "retry this run", no "re-validate" buttons. Operators use `bin/pf-jobs`, `bin/pf-eval`, or direct SQL for surgical actions. Cancel is the one exception — interrupting a runaway job is a common admin need.
+- **No other write actions.** No "retry this run", no "re-validate" buttons. Operators use the `pf-jobs` CLI, the eval Python API, or direct SQL for surgical actions. Cancel is the one exception — interrupting a runaway job is a common admin need.
 - **No SVG charts.** Tables only for v1. Add charts in a follow-up.
 - **No validator heatmaps, router drift, eval pages, cost-over-time time series.** Deferred to follow-ups — the foundation is in place to add them incrementally.
 - **No WebSocket live updates.** Pages refresh on load.

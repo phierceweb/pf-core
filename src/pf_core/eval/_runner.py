@@ -92,10 +92,12 @@ class EvalRunner:
         if not goldens:
             raise PreconditionError(
                 f"No golden runs found for version={version!r}, agent_type={agent_type!r}. "
-                "Use `pf-eval promote` to add some."
+                "Use GoldenSetRepo.add()/seed_from_outcomes() to add some."
             )
 
-        replay_tags = [f"eval:{version}", f"agent:{agent_type}"]
+        # NOT f"eval:{version}" — that exact string is the golden-membership
+        # tag; putting it on replays adds them to the golden set.
+        replay_tags = [f"eval:replay:{version}", f"agent:{agent_type}"]
         if tag_as:
             replay_tags.append(tag_as)
 
@@ -107,7 +109,7 @@ class EvalRunner:
                 "target": target,
                 "tag_as": tag_as,
             },
-            created_by="pf-eval",
+            created_by="pf_core.eval",
         )
 
         results: list[EvalResult] = []
