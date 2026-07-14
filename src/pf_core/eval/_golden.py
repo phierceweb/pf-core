@@ -27,6 +27,9 @@ from sqlalchemy import select
 from pf_core.db.repository import Repository
 from pf_core.llm.tracking import schema as s
 from pf_core.llm.tracking.subrepos import LlmRunOutcomeRepo
+from pf_core.log import get_logger
+
+logger = get_logger(__name__)
 
 
 class GoldenSetRepo(Repository):
@@ -50,6 +53,11 @@ class GoldenSetRepo(Repository):
         and optional ground-truth metrics. Idempotent: re-adding rewrites the tag
         and outcome but preserves existing metrics unless overridden.
 
+        Warns (``golden_missing_payload`` / ``golden_missing_parsed_output``)
+        when the run has no payload sidecar or an empty ``parsed_output`` —
+        the former can't replay at all, the latter degrades ``structured_diff``
+        to the raw_response fallback.
+
         Args:
             run_id: ``llm_runs.id`` of the run to promote.
             version: Golden set version string (e.g. ``"golden_v2"``).
@@ -57,6 +65,14 @@ class GoldenSetRepo(Repository):
                 ``llm_run_metrics`` rows. Used by metric gates.
             notes: Free-text note written to the ``golden_approved`` outcome.
         """
+        payload = self.get_payload(run_id)
+        if payload is None:
+            logger.warning("golden_missing_payload", run_id=run_id, version=version)
+        elif not payload.get("parsed_output"):
+            logger.warning(
+                "golden_missing_parsed_output", run_id=run_id, version=version
+            )
+
         tag = f"eval:{version}"
         with self._tx() as conn:
             conn.execute(

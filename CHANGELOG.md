@@ -2,6 +2,12 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.6.2 — 2026-07-13
+
+### Fixed
+- `EvalRunner` no longer scores replays against `{}` when a golden's stored `parsed_output` is empty (consumers that validate post-record can overwrite it with JSON null, which SQL `IS NOT NULL` can't detect): the comparison falls back to re-parsing the golden's stored `raw_response`.
+- `GoldenSetRepo.add()` / `seed_from_outcomes()` warn at promote time when the run has no payload sidecar (`golden_missing_payload`) or an empty `parsed_output` (`golden_missing_parsed_output`), so unreplayable goldens surface at seeding instead of as uniform eval scores.
+
 ## v0.6.1 — 2026-07-13
 
 ### Fixed

@@ -47,7 +47,7 @@ Given a golden run, the replay engine:
 2. Overlays the target config (new model, eval sampling)
 3. Calls `OpenRouterClient.chat()` with the stored prompts verbatim
 4. Records the new `llm_runs` row, links it to the golden via `llm_run_links(relation='replay')`
-5. Compares golden output vs replay output; writes score to `llm_run_outcomes(outcome_kind='eval_score')`
+5. Compares golden output vs replay output; writes score to `llm_run_outcomes(outcome_kind='eval_score')`. If the golden's stored `parsed_output` is empty (e.g. a post-record validator wrote JSON null), the comparison falls back to re-parsing the golden's stored `raw_response` instead of scoring against `{}`
 
 All replay runs are regular tracked runs — they appear in cost reports, the admin dashboard, etc. Each is tagged `eval:replay:<version>` and `agent:<agent_type>` (plus your `tag_as` label); the bare `eval:<version>` tag is golden-set membership and never appears on replays.
 
@@ -107,6 +107,8 @@ payload = repo.get_payload(run_id=1042)
 gt = repo.get_ground_truth(run_id=8891)
 # {"expected_score": 85.0, "field_ratio": 0.9}
 ```
+
+`add()` (and therefore `seed_from_outcomes()`) warns at promote time when a run has no `llm_run_payloads` row (`golden_missing_payload` — it can't replay) or an empty `parsed_output` (`golden_missing_parsed_output` — comparison will rely on the replay-time `raw_response` fallback). Fix payloads when seeding, not when an eval scores strangely.
 
 ---
 

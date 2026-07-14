@@ -270,6 +270,71 @@ def test_replay_runs_do_not_join_the_golden_set(tracking_db, monkeypatch):
     assert len(repo.list(version="tagfix_v1")) == 1
 
 
+def test_golden_with_empty_parsed_output_falls_back_to_raw_response(
+    tracking_db, monkeypatch
+):
+    """Consumers that validate post-record can store JSON-null ``parsed_output``
+    (SQL ``IS NOT NULL`` can't see it). The runner must fall back to parsing the
+    stored ``raw_response`` instead of scoring every replay against ``{}``."""
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+    from pf_core.llm.tracking import (
+        llm_agent_types,
+        llm_models,
+        llm_run_payloads,
+        llm_runs,
+    )
+
+    golden_json = '{"category": "a", "confidence": 0.9}'
+    with tracking_db.begin() as conn:
+        mid = conn.execute(
+            llm_models.insert().values(name="fallback-model")
+        ).inserted_primary_key[0]
+        aid = conn.execute(
+            llm_agent_types.insert().values(slug="fallback_agent")
+        ).inserted_primary_key[0]
+        gid = conn.execute(
+            llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
+        ).inserted_primary_key[0]
+        conn.execute(
+            llm_run_payloads.insert().values(
+                llm_run_id=gid,
+                rendered_user="Q",
+                raw_response=golden_json,
+                parsed_output=None,
+            )
+        )
+
+    GoldenSetRepo().add(gid, version="fallback_v1")
+
+    class _FakeClient:
+        def chat(self, *, messages, model="", **kwargs):
+            return golden_json, {"duration_ms": 1}
+
+    monkeypatch.setattr(
+        "pf_core.clients.openrouter.get_client", lambda *a, **k: _FakeClient()
+    )
+
+    cfg = EvalConfig(
+        {
+            "agents": {
+                "fallback_agent": {
+                    "compare": "structured_diff",
+                    "diff_fields": ["category", "confidence"],
+                }
+            }
+        }
+    )
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = cfg
+
+    report = runner.run(
+        version="fallback_v1", agent_type="fallback_agent", target={"model": "candidate"}
+    )
+    assert report.results[0].error is None
+    assert report.results[0].score == 1.0
+
+
 def test_eval_runner_raises_on_empty_golden_set(pf_engine):
     """PreconditionError raised when no golden runs exist."""
     from pf_core.eval._runner import EvalRunner

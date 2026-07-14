@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from pf_core.eval._golden import GoldenSetRepo
@@ -323,3 +325,53 @@ def test_seed_from_outcomes_empty(tracking_db):
     repo = GoldenSetRepo()
     seeded = repo.seed_from_outcomes(version="golden_v1", outcome_kind="nonexistent_kind")
     assert seeded == []
+
+
+# ---------------------------------------------------------------------------
+# Promote-time payload warnings
+# ---------------------------------------------------------------------------
+
+
+def _seed_bare_run(tracking_db, *, slug: str, payload_values: dict | None) -> int:
+    """Insert one run; attach a payload row only if payload_values is given."""
+    with tracking_db.begin() as conn:
+        mid = conn.execute(
+            llm_models.insert().values(name=f"warn-model-{slug}")
+        ).inserted_primary_key[0]
+        aid = conn.execute(
+            llm_agent_types.insert().values(slug=slug)
+        ).inserted_primary_key[0]
+        run_id = conn.execute(
+            llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
+        ).inserted_primary_key[0]
+        if payload_values is not None:
+            conn.execute(
+                llm_run_payloads.insert().values(llm_run_id=run_id, **payload_values)
+            )
+    return run_id
+
+
+def test_add_warns_when_run_has_no_payload(tracking_db, caplog):
+    """A golden with no llm_run_payloads row cannot replay — warn at promote time."""
+    run_id = _seed_bare_run(tracking_db, slug="warn_nopayload_agent", payload_values=None)
+    with caplog.at_level(logging.WARNING, logger="pf_core.eval._golden"):
+        GoldenSetRepo().add(run_id, version="warn_v1")
+    assert any("golden_missing_payload" in r.getMessage() for r in caplog.records)
+
+
+def test_add_warns_when_parsed_output_empty(tracking_db, caplog):
+    """JSON-null / empty parsed_output degrades structured_diff — warn at promote time."""
+    run_id = _seed_bare_run(
+        tracking_db,
+        slug="warn_nullparsed_agent",
+        payload_values={"rendered_user": "Q", "raw_response": "{}", "parsed_output": None},
+    )
+    with caplog.at_level(logging.WARNING, logger="pf_core.eval._golden"):
+        GoldenSetRepo().add(run_id, version="warn_v1")
+    assert any("golden_missing_parsed_output" in r.getMessage() for r in caplog.records)
+
+
+def test_add_does_not_warn_on_complete_payload(tracking_db, seed_run, caplog):
+    with caplog.at_level(logging.WARNING, logger="pf_core.eval._golden"):
+        GoldenSetRepo().add(seed_run, version="warn_v1")
+    assert not [r for r in caplog.records if "golden_missing" in r.getMessage()]

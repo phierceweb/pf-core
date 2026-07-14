@@ -281,6 +281,12 @@ class EvalRunner:
         rendered_system = payload.get("rendered_system")
         rendered_user = payload.get("rendered_user")
         golden_parsed: dict = payload.get("parsed_output") or {}
+        if not golden_parsed and payload.get("raw_response"):
+            # Consumers that validate post-record can store JSON-null
+            # parsed_output; without this fallback every replay scores vs {}.
+            reparsed = parse_llm_json(payload["raw_response"])
+            if isinstance(reparsed, dict):
+                golden_parsed = reparsed
 
         messages: list[dict] = []
         if rendered_system:
