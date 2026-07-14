@@ -207,6 +207,29 @@ def test_record_failed_run_with_error_fields(tracking_db):
 # ---------------------------------------------------------------------------
 
 
+def test_record_none_parsed_output_stores_sql_null(tracking_db):
+    """record(parsed_output=None) must leave the column SQL NULL, not JSON
+    'null' — golden-set seeding in two consumers tripped on the difference."""
+    from sqlalchemy import text
+
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        rendered_prompts=("system text", "user text"),
+        raw_response="not json",
+        parsed_output=None,
+    )
+    with tracking_db.connect() as conn:
+        n = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM llm_run_payloads "
+                "WHERE llm_run_id = :id AND parsed_output IS NULL"
+            ),
+            {"id": run_id},
+        ).scalar()
+    assert n == 1
+
+
 def test_record_computes_input_hash_when_omitted(tracking_db):
     run_id = LlmRunRepo().record(
         agent_type="drafter",

@@ -49,6 +49,38 @@ class TestTypeVariants:
         )
 
 
+class TestJsonNoneAsNull:
+    def test_none_stores_sql_null(self, pf_engine):
+        """Python None must store as SQL NULL, not JSON 'null' — otherwise
+        ``IS NULL`` predicates and raw SELECTs (truthy ``'null'`` text) lie."""
+        from sqlalchemy import text
+
+        from pf_core.db import types as T
+
+        md = MetaData()
+        t = Table(
+            "t_json_null_probe",
+            md,
+            Column("id", T.PK_INT, primary_key=True),
+            Column("payload", T.JSON_, nullable=True),
+        )
+        md.create_all(pf_engine)
+        try:
+            with pf_engine.begin() as conn:
+                conn.execute(t.insert().values(id=1, payload=None))
+                conn.execute(t.insert().values(id=2, payload={"k": 1}))
+                n_null = conn.execute(
+                    text("SELECT COUNT(*) FROM t_json_null_probe WHERE payload IS NULL")
+                ).scalar()
+                stored = conn.execute(
+                    t.select().where(t.c.id == 2)
+                ).mappings().fetchone()
+            assert n_null == 1
+            assert stored["payload"] == {"k": 1}
+        finally:
+            md.drop_all(pf_engine)
+
+
 class TestSchemaSharesObjects:
     def test_tracking_schema_uses_the_public_objects(self):
         # The underscored names must stay importable (consumers pin them)

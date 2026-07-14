@@ -34,7 +34,11 @@ LARGE_TEXT = Text().with_variant(mysql.MEDIUMTEXT(), "mysql")
 
 # JSON column. Postgres uses JSONB (indexable); MySQL uses native JSON;
 # SQLite stores serialized JSON in TEXT (SQLAlchemy handles encoding).
-JSON_ = JSON().with_variant(postgresql.JSONB(), "postgresql")
+# none_as_null: Python None stores as SQL NULL, not JSON 'null' — keeps
+# IS NULL predicates truthful (use sqlalchemy.JSON.NULL to store JSON null).
+JSON_ = JSON(none_as_null=True).with_variant(
+    postgresql.JSONB(none_as_null=True), "postgresql"
+)
 
 # PK variants: SMALL for reference tables, BIG for hot tables where id
 # exhaustion must never be a practical concern.

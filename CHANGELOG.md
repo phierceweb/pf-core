@@ -2,6 +2,11 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.7.0 — 2026-07-13
+
+### Changed
+- Framework JSON columns (`pf_core.db.types.JSON_`, used by the tracking, jobs, cache, and budget tables) now store Python `None` as SQL NULL instead of JSON `null` (`none_as_null=True`): `IS NULL` / `IS NOT NULL` predicates match reality and raw SELECTs no longer return the truthy text `'null'`. Typed reads are unchanged (both decode to `None`). To store an explicit JSON null, pass `sqlalchemy.JSON.NULL`. Rows written by earlier versions keep their JSON nulls — match both in SQL until backfilled: `col IS NULL OR JSON_TYPE(col) = 'NULL'` (MySQL).
+
 ## v0.6.3 — 2026-07-13
 
 ### Fixed

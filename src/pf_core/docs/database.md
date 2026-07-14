@@ -223,7 +223,7 @@ my_refs = Table(
 )
 ```
 
-Available: `PK_INT` / `PK_SMALL` / `PK_BIG`, `FK_INT` / `FK_SMALL` / `FK_BIG` (UNSIGNED on MySQL; `Integer` base so SQLite autoincrement works), `TIMESTAMP_US` (microsecond precision; TIMESTAMPTZ on Postgres), `LARGE_TEXT` (MEDIUMTEXT on MySQL), `JSON_` (JSONB on Postgres), and `server_now()` (`CURRENT_TIMESTAMP(6)` on MySQL — required for `TIMESTAMP(6)` defaults under STRICT_TRANS_TABLES).
+Available: `PK_INT` / `PK_SMALL` / `PK_BIG`, `FK_INT` / `FK_SMALL` / `FK_BIG` (UNSIGNED on MySQL; `Integer` base so SQLite autoincrement works), `TIMESTAMP_US` (microsecond precision; TIMESTAMPTZ on Postgres), `LARGE_TEXT` (MEDIUMTEXT on MySQL), `JSON_` (JSONB on Postgres; Python `None` stores as SQL NULL, not JSON `null` — pass `sqlalchemy.JSON.NULL` to store a JSON null), and `server_now()` (`CURRENT_TIMESTAMP(6)` on MySQL — required for `TIMESTAMP(6)` defaults under STRICT_TRANS_TABLES).
 
 ## Model name resolver
 
