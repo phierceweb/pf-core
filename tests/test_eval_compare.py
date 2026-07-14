@@ -85,6 +85,19 @@ def test_field_score_int_float_coercion():
     assert _field_score(10.0, 10, tolerance=None) == 1.0
 
 
+def test_field_score_int_int_with_tolerance():
+    """LLM JSON numbers usually parse as ints — tolerance must apply to them."""
+    assert _field_score(85, 87, tolerance=2.0) == 1.0
+    score = _field_score(85, 95, tolerance=2.0)
+    assert 0.0 <= score < 1.0
+
+
+def test_field_score_bools_ignore_tolerance():
+    """bool is an int subclass — tolerance must never make True ≈ False."""
+    assert _field_score(True, False, tolerance=2.0) == 0.0
+    assert _field_score(True, True, tolerance=2.0) == 1.0
+
+
 def test_field_score_list_iou():
     assert _field_score(["a", "b", "c"], ["a", "b", "c"], tolerance=None) == 1.0
     assert _field_score(["a", "b"], ["a", "b", "c"], tolerance=None) == pytest.approx(2 / 3)
@@ -128,6 +141,15 @@ def test_structured_diff_with_tolerance():
         golden, replay, context={"diff_fields": ["score"], "tolerances": {"score": 3.0}}
     )
     assert score_tolerant == 1.0
+
+
+def test_structured_diff_int_tolerance():
+    golden = {"score": 85}
+    replay = {"score": 87}
+    score = structured_diff(
+        golden, replay, context={"diff_fields": ["score"], "tolerances": {"score": 2}}
+    )
+    assert score == 1.0
 
 
 def test_structured_diff_missing_field_in_replay():

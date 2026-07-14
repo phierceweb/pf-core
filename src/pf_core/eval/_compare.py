@@ -92,6 +92,17 @@ def _field_score(golden: Any, replay: Any, *, tolerance: float | None) -> float:
     elif isinstance(r, int) and isinstance(g, float):
         r = float(r)
 
+    # A configured tolerance makes int pairs float pairs (LLM JSON numbers
+    # usually parse as ints). bool is an int subclass — keep it exact.
+    if (
+        tolerance is not None
+        and not isinstance(g, bool)
+        and not isinstance(r, bool)
+        and isinstance(g, (int, float))
+        and isinstance(r, (int, float))
+    ):
+        g, r = float(g), float(r)
+
     if type(g) is not type(r):
         return 0.0
 

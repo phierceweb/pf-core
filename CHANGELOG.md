@@ -2,6 +2,11 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.6.3 — 2026-07-13
+
+### Fixed
+- `structured_diff` tolerances now apply to int-valued fields: `_field_score` coerced ints to float only in mixed pairs, so int-vs-int comparisons (the common case — LLM JSON numbers parse as ints) silently ignored the configured tolerance and compared exact. Bools still compare exact. Consumers with int-valued tolerance fields: the tolerance takes effect as configured.
+
 ## v0.6.2 — 2026-07-13
 
 ### Fixed

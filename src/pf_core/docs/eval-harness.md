@@ -211,7 +211,7 @@ agents:
 | `parallelism` | `4` | Concurrent replay workers. |
 | `sampling` | `{temperature: 0.0}` | Sampling overrides for replay calls (merged over base agent config). |
 | `diff_fields` | all golden fields | Fields to compare in `structured_diff`. |
-| `tolerances` | `{}` | Per-field abs tolerance for numeric fields. |
+| `tolerances` | `{}` | Per-field abs tolerance for numeric fields (int or float; bools always compare exact). |
 | `judge_agent_type` | `null` (falls back to `<agent>_judge`) | Slug of the judge agent type when `compare: llm_judge`. When unset, the runner uses `<agent_type>_judge`. The resolved slug must exist in `model_router.yaml`. |
 | `metrics` | `[]` | Optional metric gates (see below). |
 
