@@ -371,6 +371,24 @@ def test_add_warns_when_parsed_output_empty(tracking_db, caplog):
     assert any("golden_missing_parsed_output" in r.getMessage() for r in caplog.records)
 
 
+def test_add_warns_when_parsed_output_not_a_dict(tracking_db, caplog):
+    """Array-output goldens can't be structured-diffed — warn at promote time."""
+    run_id = _seed_bare_run(
+        tracking_db,
+        slug="warn_arrayparsed_agent",
+        payload_values={
+            "rendered_user": "Q",
+            "raw_response": "[1, 2, 3]",
+            "parsed_output": [1, 2, 3],
+        },
+    )
+    with caplog.at_level(logging.WARNING, logger="pf_core.eval._golden"):
+        GoldenSetRepo().add(run_id, version="warn_v1")
+    assert any(
+        "golden_non_dict_parsed_output" in r.getMessage() for r in caplog.records
+    )
+
+
 def test_add_does_not_warn_on_complete_payload(tracking_db, seed_run, caplog):
     with caplog.at_level(logging.WARNING, logger="pf_core.eval._golden"):
         GoldenSetRepo().add(seed_run, version="warn_v1")

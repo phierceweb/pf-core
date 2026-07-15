@@ -1,5 +1,7 @@
 # pf-core
 
+[![PyPI](https://img.shields.io/pypi/v/pf-core)](https://pypi.org/project/pf-core/)
+
 A dependency-light Python foundation for building LLM applications — and one built to be worked on by AI coding agents as much as by people. The base install provides structured logging, an exception hierarchy, config-from-env, and a service/repo architecture; opt-in extras add LLM clients, output validation, cost tracking and budgets, an eval harness, and a FastAPI + SQLAlchemy app framework. Capabilities compose orthogonally — the foundation alone, the LLM layer without a database, or the web layer without LLMs.
 
 ## Built for AI-assisted development
@@ -42,6 +44,77 @@ Extras compose orthogonally (`[db]` without LLM, `[web]` without `[db]`, `[llm]`
 - **[docs/](https://github.com/phierceweb/pf-core/tree/main/src/pf_core/docs)** — per-module reference with usage and parameter detail
 - **[CHANGELOG.md](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)** — release history
 
+<details>
+<summary><b>All docs</b> — every file in <code>src/pf_core/docs/</code>, one link each</summary>
+
+- [INSTALLATION](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/INSTALLATION.md)
+- [alembic](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/alembic.md)
+- [anthropic](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/anthropic.md)
+- [article-fetch](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/article-fetch.md)
+- [brave](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/brave.md)
+- [cache](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/cache.md)
+- [claude-code](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/claude-code.md)
+- [cli-subcommands](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/cli-subcommands.md)
+- [cli](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/cli.md)
+- [config-path](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/config-path.md)
+- [config](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/config.md)
+- [cost-budget](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/cost-budget.md)
+- [database](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/database.md)
+- [dates](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/dates.md)
+- [db-upsert](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/db-upsert.md)
+- [doctor](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/doctor.md)
+- [env](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/env.md)
+- [eval-harness](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/eval-harness.md)
+- [exceptions](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/exceptions.md)
+- [export](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/export.md)
+- [guards](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/guards.md)
+- [hashing](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/hashing.md)
+- [ids](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/ids.md)
+- [io](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/io.md)
+- [jobs](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/jobs.md)
+- [json-recovery](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/json-recovery.md)
+- [json-utils](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/json-utils.md)
+- [linting](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/linting.md)
+- [llm-admin](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-admin.md)
+- [llm-cache](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-cache.md)
+- [llm-parse](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-parse.md)
+- [llm-safe-apply](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-safe-apply.md)
+- [llm-schema-validation](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-schema-validation.md)
+- [llm-tracked](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-tracked.md)
+- [llm-tracking](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-tracking.md)
+- [llm-validation](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-validation.md)
+- [logging](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/logging.md)
+- [markdown](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/markdown.md)
+- [model-router](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/model-router.md)
+- [modules](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/modules.md)
+- [openrouter](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/openrouter.md)
+- [orchestrators](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/orchestrators.md)
+- [output](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/output.md)
+- [pagination](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/pagination.md)
+- [parallel](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/parallel.md)
+- [parsers](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/parsers.md)
+- [periods](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/periods.md)
+- [phash](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/phash.md)
+- [pipeline](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/pipeline.md)
+- [pricing](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/pricing.md)
+- [project-portability](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/project-portability.md)
+- [prompts](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/prompts.md)
+- [relative-dates](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/relative-dates.md)
+- [scaffold](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/scaffold.md)
+- [services](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/services.md)
+- [similarity](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/similarity.md)
+- [soft-delete](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/soft-delete.md)
+- [test-migration](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/test-migration.md)
+- [testing](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/testing.md)
+- [throttle](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/throttle.md)
+- [urls](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/urls.md)
+- [versioned-config](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/versioned-config.md)
+- [vocab](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/vocab.md)
+- [web](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/web.md)
+- Recipes: [batch-llm-service](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/batch-llm-service.md) · [critic](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/critic.md) · [job-refs-bridge](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/job-refs-bridge.md) · [self-consistency](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/self-consistency.md)
+
+</details>
+
 ## Development
 
 ```bash
@@ -53,3 +126,7 @@ python bin/verify-bare-install                                # confirm the base
 ```
 
 Pytest fixtures auto-register as a plugin via the `pf_core` entry point — no `conftest.py` import needed in consumers. Contribution guidelines: **[CONTRIBUTING.md](https://github.com/phierceweb/pf-core/blob/main/CONTRIBUTING.md)**.
+
+## Project history
+
+pf-core was developed privately from early April 2026 and first published on June 14, 2026, with the pre-publication history squashed. Public releases are tagged (`v*`) and published to PyPI by CI via OIDC trusted publishing ([publish.yml](https://github.com/phierceweb/pf-core/blob/main/.github/workflows/publish.yml)); `main` is the development line and is pushed with each release.

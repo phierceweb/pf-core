@@ -98,6 +98,14 @@ def test_field_score_bools_ignore_tolerance():
     assert _field_score(True, True, tolerance=2.0) == 1.0
 
 
+def test_field_score_bool_vs_float_not_coerced():
+    """The int↔float coercion must not make True ≈ 1.0 (bools compare exact)."""
+    assert _field_score(True, 1.0, tolerance=None) == 0.0
+    assert _field_score(False, 0.0, tolerance=None) == 0.0
+    assert _field_score(1.0, True, tolerance=None) == 0.0
+    assert _field_score(True, 1, tolerance=None) == 0.0
+
+
 def test_field_score_list_iou():
     assert _field_score(["a", "b", "c"], ["a", "b", "c"], tolerance=None) == 1.0
     assert _field_score(["a", "b"], ["a", "b", "c"], tolerance=None) == pytest.approx(2 / 3)

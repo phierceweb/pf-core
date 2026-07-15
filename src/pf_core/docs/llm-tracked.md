@@ -58,7 +58,7 @@ parsed, run_id = tracked_call(
 )
 ```
 
-In order: render `spec[part]` with the chosen placeholder `style`; resolve `agent_type` (auto-registered) and a `system_prompt_id` for `(agent_type, part, version)` from the spec's `version`; send the rendered text as the **user** message; record one `llm_runs` row with the rendered prompt and raw response.
+In order: render `spec[part]` with the chosen placeholder `style`; resolve `agent_type` (auto-registered) and a `system_prompt_id` for `(agent_type, part, version)` from the spec's `version`; send the rendered text as the **user** message; record one `llm_runs` row with the rendered prompt and raw response. The rendered text lands in the payload's `rendered_user` slot — the slot matches the wire role, so eval replays rebuild the same message role the call actually used.
 
 `render_kwargs` keys are upper-cased internally for the default `style="@@"` (token placeholders are `@@UPPER@@`); for `style="brace"` they pass through unchanged.
 

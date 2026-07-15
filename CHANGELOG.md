@@ -2,6 +2,18 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.7.1 — 2026-07-15
+
+### Fixed
+- Eval replays resolve their client through the model router — replays run on the backend the agent declares instead of a hardcoded OpenRouter client, so an eval measures the transport production uses (the judge already routed this way). `target` accepts `backend` and `model` overrides; an agent absent from the router degrades to the OpenRouter client with a `replay_router_unavailable` warning, and resolution failures other than `ConfigurationError` surface as error results instead of being silently swallowed.
+- Structured comparison requires a non-empty dict golden: a golden whose parsed output is a list or irrecoverably empty errors before the replay call is spent, instead of crashing (list) or scoring `{}` vs `{}` as 1.0 (empty). `GoldenSetRepo.add()` warns `golden_non_dict_parsed_output` at promote time.
+- `structured_diff` no longer coerces bools through the int↔float path: `True` vs `1.0` scores 0.0 — bools compare exact on every path, matching the tolerance rule from 0.6.3.
+- The eval judge honors its agent's YAML sampling; `temperature 0.0` / `max_tokens 512` are defaults for unset keys, not overrides (a `reasoning_effort` judge is no longer token-starved into scoring 0).
+
+### Changed
+- `tracked_call` records its rendered text in the payload's `rendered_user` slot, matching the user role it is sent with — eval replays rebuild message roles from the slots, so replays of `tracked_call` goldens now keep production's role. Goldens recorded by earlier versions carry the text in `rendered_system` and replay system-role; re-promote them for role-faithful replays.
+- Docs surface: README gains a PyPI badge, a project-history section, and a collapsed all-docs index linking every file in `src/pf_core/docs/`; `modules.md` now indexes every doc (`periods`, `scaffold`, and `test-migration` were missing) and points at `INSTALLATION.md`.
+
 ## v0.7.0 — 2026-07-13
 
 ### Changed

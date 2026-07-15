@@ -335,6 +335,131 @@ def test_golden_with_empty_parsed_output_falls_back_to_raw_response(
     assert report.results[0].score == 1.0
 
 
+def _seed_golden(tracking_db, *, slug: str, parsed_output, raw_response=None) -> int:
+    from pf_core.llm.tracking import llm_agent_types, llm_models, llm_run_payloads, llm_runs
+
+    with tracking_db.begin() as conn:
+        mid = conn.execute(
+            llm_models.insert().values(name=f"seed-model-{slug}")
+        ).inserted_primary_key[0]
+        aid = conn.execute(
+            llm_agent_types.insert().values(slug=slug)
+        ).inserted_primary_key[0]
+        gid = conn.execute(
+            llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
+        ).inserted_primary_key[0]
+        conn.execute(
+            llm_run_payloads.insert().values(
+                llm_run_id=gid,
+                rendered_user="Q",
+                raw_response=raw_response,
+                parsed_output=parsed_output,
+            )
+        )
+    return gid
+
+
+def test_replay_resolves_client_through_the_router(tracking_db, monkeypatch):
+    """Replays run on the router-resolved backend — not a hardcoded OpenRouter
+    client — so an agent's eval measures the transport it uses in production."""
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+
+    gid = _seed_golden(tracking_db, slug="routed_agent", parsed_output={"answer": 1})
+    GoldenSetRepo().add(gid, version="routed_v1")
+
+    models_called = []
+
+    class _RoutedClient:
+        def chat(self, *, messages, model="", **kwargs):
+            models_called.append(model)
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    def _fake_resolve(slug, *, backend=None, model_override=None):
+        assert slug == "routed_agent"
+        return (
+            _RoutedClient(),
+            {"model": model_override or "routed-model", "temperature": 0.1},
+            "fake_backend",
+        )
+
+    monkeypatch.setattr("pf_core.eval._runner.resolve_agent", _fake_resolve)
+
+    def _boom(*a, **k):
+        raise AssertionError("hardcoded OpenRouter client must not be used")
+
+    monkeypatch.setattr("pf_core.clients.openrouter.get_client", _boom)
+
+    cfg = EvalConfig({"agents": {"routed_agent": {"compare": "structured_diff"}}})
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = cfg
+
+    # No target model: the router supplies it — previously impossible for
+    # nested-form agents.
+    report = runner.run(version="routed_v1", agent_type="routed_agent", target={})
+    assert report.results[0].error is None
+    assert report.results[0].score == 1.0
+    assert models_called == ["routed-model"]
+
+
+def test_replay_non_config_router_error_becomes_error_result(tracking_db, monkeypatch):
+    """Only ConfigurationError degrades to the OpenRouter fallback; any other
+    resolution failure surfaces as an error result, never silently swallowed."""
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+
+    gid = _seed_golden(tracking_db, slug="broken_resolve_agent", parsed_output={"a": 1})
+    GoldenSetRepo().add(gid, version="broken_v1")
+
+    def _boom_resolve(slug, **kwargs):
+        raise RuntimeError("client exploded")
+
+    monkeypatch.setattr("pf_core.eval._runner.resolve_agent", _boom_resolve)
+
+    cfg = EvalConfig({"agents": {"broken_resolve_agent": {"compare": "structured_diff"}}})
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = cfg
+
+    report = runner.run(
+        version="broken_v1", agent_type="broken_resolve_agent", target={"model": "x"}
+    )
+    result = report.results[0]
+    assert result.error is not None and "client exploded" in result.error
+    assert result.passed is False
+
+
+def test_array_golden_errors_instead_of_silent_pass(tracking_db, monkeypatch):
+    """A golden whose parsed_output isn't a non-empty dict cannot be
+    structured-diffed: it must error before spending the replay call —
+    never collapse to {} vs {} and score 1.0."""
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+
+    gid = _seed_golden(
+        tracking_db,
+        slug="array_agent",
+        parsed_output=[1, 2, 3],
+        raw_response="[1, 2, 3]",
+    )
+    GoldenSetRepo().add(gid, version="array_v1")
+
+    def _no_resolve(*a, **k):
+        raise AssertionError("replay call must not be spent on an uncomparable golden")
+
+    monkeypatch.setattr("pf_core.eval._runner.resolve_agent", _no_resolve)
+    monkeypatch.setattr("pf_core.clients.openrouter.get_client", _no_resolve)
+
+    cfg = EvalConfig({"agents": {"array_agent": {"compare": "structured_diff"}}})
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = cfg
+
+    report = runner.run(version="array_v1", agent_type="array_agent", target={"model": "x"})
+    result = report.results[0]
+    assert result.error is not None and "parsed_output" in result.error
+    assert result.score == 0.0
+    assert result.passed is False
+
+
 def test_eval_runner_raises_on_empty_golden_set(pf_engine):
     """PreconditionError raised when no golden runs exist."""
     from pf_core.eval._runner import EvalRunner

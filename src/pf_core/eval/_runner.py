@@ -23,10 +23,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from pf_core.exceptions import PreconditionError
+from pf_core.exceptions import ConfigurationError, PreconditionError
 from pf_core.jobs import Job, JobRepo
 from pf_core.llm.parse import parse_llm_json
-from pf_core.llm.router import get_agent_config
+from pf_core.llm.router import get_agent_config, resolve_agent
 from pf_core.llm.tracking.repo import LlmRunRepo
 from pf_core.llm.tracking.subrepos import LlmRunOutcomeRepo
 from pf_core.log import get_logger
@@ -269,7 +269,6 @@ class EvalRunner:
     ) -> EvalResult:
         """Execute one replay and return a scored EvalResult."""
         from pf_core.eval._judge import run_judge
-        from pf_core.clients.openrouter import get_client
 
         payload = golden_repo.get_payload(golden_id)
         if payload is None:
@@ -288,17 +287,47 @@ class EvalRunner:
             if isinstance(reparsed, dict):
                 golden_parsed = reparsed
 
+        # Structured comparators need a non-empty dict golden — fail here,
+        # before the replay spends tokens ({} vs {} would score 1.0).
+        if agent_cfg.compare != "llm_judge" and (
+            not isinstance(golden_parsed, dict) or not golden_parsed
+        ):
+            raise PreconditionError(
+                f"golden {golden_id} has no non-empty dict parsed_output for "
+                f"structured comparison (compare={agent_cfg.compare!r}). "
+                "Re-promote it with dict output or use compare: llm_judge."
+            )
+
         messages: list[dict] = []
         if rendered_system:
             messages.append({"role": "system", "content": rendered_system})
         if rendered_user:
             messages.append({"role": "user", "content": rendered_user})
 
-        # Merge: base router config ← eval sampling overrides ← target overrides
+        # Resolve the replay client through the router so replays run on the
+        # backend the agent declares (target keys "backend"/"model" override).
+        # Agents absent from the router degrade — loudly — to the OpenRouter
+        # client with the target-supplied model.
+        target = dict(target)
+        backend_override = target.pop("backend", None)
+        model_override = target.pop("model", None)
         try:
-            base_cfg = get_agent_config(agent_type)
-        except Exception:
-            base_cfg = {}
+            client, base_cfg, _replay_backend = resolve_agent(
+                agent_type, backend=backend_override, model_override=model_override
+            )
+        except ConfigurationError as exc:
+            logger.warning(
+                "replay_router_unavailable",
+                agent_type=agent_type,
+                error=str(exc)[:200],
+            )
+            from pf_core.clients.openrouter import get_client
+
+            client = get_client()
+            try:
+                base_cfg = get_agent_config(agent_type, model_override=model_override)
+            except ConfigurationError:
+                base_cfg = {"model": model_override} if model_override else {}
         merged = {**base_cfg, **agent_cfg.sampling, **target}
         model = merged.pop("model", "")
         if not model:
@@ -309,7 +338,7 @@ class EvalRunner:
 
         t0 = time.monotonic()
         try:
-            raw_content, usage_raw = get_client().chat(
+            raw_content, usage_raw = client.chat(
                 messages=messages, model=model, **merged
             )
             status = "success"

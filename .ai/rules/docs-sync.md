@@ -24,6 +24,10 @@
 - [ ] Create `docs/<module>.md` if it has non-obvious behavior
 - [ ] Add cross-references from related docs (e.g. database.md linking to dates.md)
 
+### New file added to `src/pf_core/docs/` (module doc, recipe, or guide)?
+- [ ] Add it to `docs/modules.md` under the right concern group — the index must list **every** doc; a silently partial index is worse than none, because readers and evaluating agents treat it as exhaustive
+- [ ] Add it to the README's collapsed **All docs** index as an absolute `blob/main` URL — the README is the PyPI long-description (relative links 404 there), and agents can't discover unlinked docs (GitHub blocks `/tree/` crawling)
+
 ### Existing module's public API changed?
 - [ ] Update the corresponding `docs/*.md` file
 - [ ] Check downstream projects' import examples if exports were renamed or removed

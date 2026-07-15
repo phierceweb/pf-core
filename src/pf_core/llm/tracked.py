@@ -207,7 +207,9 @@ def _invoke_and_record(
 
     Records ``status="failed"`` on any client exception (timeout,
     non-zero exit, transport error) and re-raises so the caller decides
-    whether to retry or abort.
+    whether to retry or abort. The rendered text is recorded in the *user*
+    payload slot, matching its wire role — eval replays rebuild message
+    roles from the slots, so slot and role must agree.
     """
     logger.info("llm_call_start", agent_type=agent_type, model=model)
     try:
@@ -225,7 +227,7 @@ def _invoke_and_record(
             status="failed",
             error=str(exc)[:_MAX_ERROR_LEN],
             error_class=type(exc).__name__,
-            rendered_prompts=(rendered, None),
+            rendered_prompts=(None, rendered),
             parent_run=parent_run,
         )
         raise
@@ -245,7 +247,7 @@ def _invoke_and_record(
         system_prompt_id=system_prompt_id,
         usage={k: v for k, v in usage.items() if k != "system_fingerprint"},
         model_fingerprint=usage.get("system_fingerprint"),
-        rendered_prompts=(rendered, None),
+        rendered_prompts=(None, rendered),
         raw_response=content,
         parent_run=parent_run,
     )

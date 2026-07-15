@@ -84,13 +84,15 @@ def _field_score(golden: Any, replay: Any, *, tolerance: float | None) -> float:
     if golden is None or replay is None:
         return 0.0
 
-    # Allow int ↔ float coercion for numeric fields
+    # Allow int ↔ float coercion for numeric fields (bool is an int
+    # subclass — never coerced, so True stays ≠ 1.0)
     g: Any = golden
     r: Any = replay
-    if isinstance(g, int) and isinstance(r, float):
-        g = float(g)
-    elif isinstance(r, int) and isinstance(g, float):
-        r = float(r)
+    if not isinstance(g, bool) and not isinstance(r, bool):
+        if isinstance(g, int) and isinstance(r, float):
+            g = float(g)
+        elif isinstance(r, int) and isinstance(g, float):
+            r = float(r)
 
     # A configured tolerance makes int pairs float pairs (LLM JSON numbers
     # usually parse as ints). bool is an int subclass — keep it exact.

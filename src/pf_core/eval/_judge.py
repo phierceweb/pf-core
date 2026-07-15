@@ -106,8 +106,10 @@ def run_judge(
     # framework-chosen model.
     client, cfg, _backend = resolve_agent(judge_agent_type)
     model = cfg.pop("model")
-    # Force deterministic for judge
-    cfg = {**cfg, "temperature": 0.0, "max_tokens": 512}
+    # Deterministic defaults only — the judge agent's YAML sampling wins when
+    # set (a reasoning judge may need max_tokens well past 512).
+    cfg.setdefault("temperature", 0.0)
+    cfg.setdefault("max_tokens", 512)
 
     try:
         raw_content, usage_raw = client.chat(messages=messages, model=model, **cfg)

@@ -2,7 +2,7 @@
 
 What each module in `src/pf_core/` is responsible for, grouped by concern. Every entry links to the module's own doc for usage details.
 
-This file is the navigational index. It describes responsibilities, not APIs — for API-level detail (function signatures, parameters, examples) see the linked module doc.
+This file is the navigational index. It describes responsibilities, not APIs — for API-level detail (function signatures, parameters, examples) see the linked module doc. For the extras matrix and install/release/update flows, see [INSTALLATION.md](INSTALLATION.md).
 
 ---
 
@@ -121,6 +121,8 @@ Make architecture violations and bloated files fail the build, not a code review
 | [Linting](linting.md) | Layer import linter (enforces the call direction in the repo's `layering` rule) and file-size linter (per-layer line budgets with project overrides). |
 | [CLI](cli.md) | Typer scaffold with consistent verbose flag and exception-to-exit-code mapping. |
 | [Testing](testing.md) | Pytest fixtures auto-registered as a plugin: isolated per-test SQLite database (file-backed, concurrency-safe; `PF_TEST_DATABASE_URL` for Postgres/MySQL), savepoint-per-test, FastAPI test client, framework-table DDL helpers, budget-guard silencing, hermetic-env conftest helpers. |
+| [New-consumer scaffold](scaffold.md) | `bin/new-consumer` — stamp a runnable, conformant consumer skeleton (lib or app layout) from the pf-core checkout's templates. From-checkout dev tool; not shipped in the wheel. |
+| [Test migration](test-migration.md) | Checklist for verifying a consumer after a pf-core upgrade or a migration onto framework APIs — classify each change by test impact, fix imports and mock targets, run the steps in order. |
 | [Output reporters](output.md) | Reporter protocol for batch progress, with console (Rich) and structlog implementations. |
 
 ## Configuration & infrastructure
@@ -159,6 +161,7 @@ Small, focused helpers used across the framework.
 | [IDs](ids.md) | URL-safe nanoid generation with collision-safe allocation against a database table. |
 | [Dates](dates.md) | Stable parsing, formatting, and range generation for ISO dates and YYYY-MM month labels. |
 | [Relative dates](relative-dates.md) | Resolve LLM-emitted phrases like "yesterday" or "Tuesday" against a known reference date. |
+| [Periods](periods.md) | Resolve named period presets (`yesterday`, `last_7d`, `day:2026-05-12`) into `(start, end, label)` tuples — one shared label convention so period labels stay consistent cohort keys across reporting CLIs. |
 | [URLs](urls.md) | Domain extraction, canonical URL forms, suspicious-archive-timestamp detection. |
 | [JSON utils](json-utils.md) | Tolerant JSON parsing for database columns that may already be parsed, plus `canonical_json` — sorted-key serialization so equal objects compare and hash identically. |
 | [Content hashing](hashing.md) | `content_hash` — stable hex digest of text or a structured object (via `canonical_json`) for change-detection and cache keys. Not a security primitive. |

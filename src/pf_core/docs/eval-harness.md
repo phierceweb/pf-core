@@ -45,9 +45,9 @@ Given a golden run, the replay engine:
 
 1. Loads the stored rendered prompts from `llm_run_payloads`
 2. Overlays the target config (new model, eval sampling)
-3. Calls `OpenRouterClient.chat()` with the stored prompts verbatim
+3. Resolves the agent's client through the model router, so the replay runs on the backend the agent declares — the eval measures the transport production uses. `target` keys `backend` and `model` override the routed choice; an agent absent from the router degrades, with a `replay_router_unavailable` warning, to the OpenRouter client and the target-supplied model. Any resolution failure other than `ConfigurationError` surfaces as that golden's error result
 4. Records the new `llm_runs` row, links it to the golden via `llm_run_links(relation='replay')`
-5. Compares golden output vs replay output; writes score to `llm_run_outcomes(outcome_kind='eval_score')`. If the golden's stored `parsed_output` is empty (e.g. a post-record validator wrote JSON null), the comparison falls back to re-parsing the golden's stored `raw_response` instead of scoring against `{}`
+5. Compares golden output vs replay output; writes score to `llm_run_outcomes(outcome_kind='eval_score')`. If the golden's stored `parsed_output` is empty (e.g. a post-record validator wrote JSON null), the comparison falls back to re-parsing the golden's stored `raw_response` instead of scoring against `{}`. Structured comparison requires a non-empty **dict** golden: a golden whose parsed output is a list, or irrecoverably empty, errors before the replay call is spent — `{}` vs `{}` never scores 1.0
 
 All replay runs are regular tracked runs — they appear in cost reports, the admin dashboard, etc. Each is tagged `eval:replay:<version>` and `agent:<agent_type>` (plus your `tag_as` label); the bare `eval:<version>` tag is golden-set membership and never appears on replays.
 
@@ -56,7 +56,7 @@ All replay runs are regular tracked runs — they appear in cost reports, the ad
 | Name | Description |
 |---|---|
 | `structured_diff` | Field-by-field comparison with per-field tolerances. Returns mean score across `diff_fields`. |
-| `llm_judge` | Sends golden + replay output to a judge LLM; parses `{"score": 0-1, "rationale": "..."}`. The judge agent is routed via `resolve_agent(judge_agent_type)` and must be declared in `model_router.yaml` — an unconfigured or unresolvable judge agent raises `ConfigurationError` (the eval fails loudly rather than scoring against a default model). The judge call is itself a tracked `llm_runs` row, linked to the replay run via `llm_run_links(relation='critic')`. |
+| `llm_judge` | Sends golden + replay output to a judge LLM; parses `{"score": 0-1, "rationale": "..."}`. The judge agent is routed via `resolve_agent(judge_agent_type)` and must be declared in `model_router.yaml` — an unconfigured or unresolvable judge agent raises `ConfigurationError` (the eval fails loudly rather than scoring against a default model). The judge call is itself a tracked `llm_runs` row, linked to the replay run via `llm_run_links(relation='critic')`. The judge agent's YAML sampling is honored — `temperature: 0.0` and `max_tokens: 512` apply only as defaults for unset keys. |
 | `custom:<name>` | Project-registered comparator via `@register_comparator("name")`. |
 
 ### Job tracking

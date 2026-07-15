@@ -56,7 +56,9 @@ class GoldenSetRepo(Repository):
         Warns (``golden_missing_payload`` / ``golden_missing_parsed_output``)
         when the run has no payload sidecar or an empty ``parsed_output`` —
         the former can't replay at all, the latter degrades ``structured_diff``
-        to the raw_response fallback.
+        to the raw_response fallback. Warns ``golden_non_dict_parsed_output``
+        when it's set but not a dict — structured comparison needs a dict, and
+        such goldens error at replay time.
 
         Args:
             run_id: ``llm_runs.id`` of the run to promote.
@@ -71,6 +73,13 @@ class GoldenSetRepo(Repository):
         elif not payload.get("parsed_output"):
             logger.warning(
                 "golden_missing_parsed_output", run_id=run_id, version=version
+            )
+        elif not isinstance(payload.get("parsed_output"), dict):
+            logger.warning(
+                "golden_non_dict_parsed_output",
+                run_id=run_id,
+                version=version,
+                got=type(payload.get("parsed_output")).__name__,
             )
 
         tag = f"eval:{version}"

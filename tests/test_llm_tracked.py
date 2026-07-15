@@ -105,7 +105,10 @@ def test_success_returns_raw_and_records_one_row(tracking_db):
     assert row["system_prompt_id"] is not None
 
     full = LlmRunRepo().get_with_payload(run_id)
-    assert full["payload"]["rendered_system"] == "You are a triager."
+    # Sent as the user message → recorded in the user slot, so eval replays
+    # rebuild the same role the call actually used.
+    assert full["payload"]["rendered_user"] == "You are a triager."
+    assert full["payload"]["rendered_system"] is None
     assert full["payload"]["raw_response"] == "hello world"
 
 
