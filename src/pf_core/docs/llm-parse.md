@@ -29,6 +29,8 @@ Walks a multi-step fallback pipeline to extract valid JSON from LLM output:
 
 Strict parsing runs first so well-formed responses stay on the fast path — `json_repair` is only called when the stricter steps have all failed, which keeps its permissive tolerance from masking genuine structural defects.
 
+> **Truncation is lossy and unsignaled in the return.** Step 4 salvages the complete-object prefix of an array cut off at `max_tokens` and **drops the incomplete tail** — `[{"a":1},{"b":2},{"c":3` returns `[{"a":1},{"b":2}]`. The return type carries no truncation flag, so a caller can't tell a salvaged-partial result from a complete one by value. When it fires, the parser logs a **WARNING** (`parse_llm_json_recovered_truncated`, with the recovered item count) precisely so a batch pipeline can't silently shed the tail of every long response — watch that event, or raise `max_tokens`, if completeness matters. Pass `recover=False` to disable truncation recovery (and `json_repair`) entirely and get `None` on any truncated input instead.
+
 ```python
 # Parse any JSON
 parse_llm_json('{"key": "val"}')                     # {"key": "val"}

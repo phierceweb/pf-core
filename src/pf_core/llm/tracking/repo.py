@@ -50,14 +50,22 @@ def _compute_input_hash(
 ) -> str:
     """SHA256 of model + rendered prompts + sampling + configs.
 
-    Stable across calls — only includes keys whose values are not None,
-    and orders dicts by key for determinism.
+    Stable across calls — dicts ordered by key for determinism. Only the
+    ``_SAMPLING_COLS`` keys participate from ``sampling``: the filter lives
+    HERE so every producer of this hash (``record()``, the public
+    ``compute_input_hash``, the exact cache keyed on it) agrees by
+    construction — a dirty sampling dict (``model``, transport kwargs)
+    cannot fork the hash.
     """
     payload = {
         "model": model,
         "rendered_system": rendered_system,
         "rendered_user": rendered_user,
-        "sampling": dict(sorted((sampling or {}).items())),
+        "sampling": dict(
+            sorted(
+                (k, v) for k, v in (sampling or {}).items() if k in _SAMPLING_COLS
+            )
+        ),
         "configs": dict(sorted((configs or {}).items())),
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
@@ -99,17 +107,11 @@ def compute_input_hash(
 
         rendered_system, rendered_user = _extract_rendered_prompts(messages)
 
-    # Strip non-sampling keys from sampling dict (e.g. model, agent_type)
-    _SAMPLING_KEYS = {"temperature", "top_p", "max_tokens", "seed", "stop_sequences"}
-    clean_sampling: dict | None = None
-    if sampling:
-        clean_sampling = {k: v for k, v in sampling.items() if k in _SAMPLING_KEYS}
-
     return _compute_input_hash(
         model=model,
         rendered_system=rendered_system,
         rendered_user=rendered_user,
-        sampling=clean_sampling,
+        sampling=sampling,
         configs=configs,
     )
 

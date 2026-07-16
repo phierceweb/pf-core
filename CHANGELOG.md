@@ -2,6 +2,12 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.7.2 — 2026-07-15
+
+### Fixed
+- `parse_llm_json` logs a WARNING (`parse_llm_json_recovered_truncated`, with recovered item count) when truncation recovery salvages a partial array — the return value carries no truncation flag, so the previous DEBUG-level line let batch pipelines silently drop the tail of every `max_tokens`-cut response while reporting success.
+- `LlmRunRepo.record()` computes `input_hash` with the same sampling-key filter as the public `compute_input_hash` (the filter now lives in the shared internal, so the two paths cannot diverge again). Callers passing non-sampling keys in `sampling` previously stored a hash the exact cache — which keys on the public function — could never match, so cache lookups and `find_by_hash` silently missed. Runs recorded before this fix keep their old hashes; affected cache entries re-fill on the next call.
+
 ## v0.7.1 — 2026-07-15
 
 ### Fixed

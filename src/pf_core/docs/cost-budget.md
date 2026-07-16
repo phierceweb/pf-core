@@ -110,6 +110,8 @@ Checks in order: **global → agent → job_kind → job_id → tag**. First fai
 
 Per budget: snapshot value + live delta from `llm_runs` recorded after the snapshot. Runs with `status IN ('cache_hit', 'budget_blocked')` are excluded.
 
+> **`cost_usd` is not homogeneous across backends — know the mix before you sum.** Each client populates the field with what it can actually know: **OpenRouter** reports the provider's billed cost (an actual); **Anthropic** computes it locally from the bundled rate table (an estimate); **Claude Code** records `0.0` (a Claude Max session doesn't bill per call). A budget scope, a `cost_by_model` total, or any `SUM(cost_usd)` therefore blends billed-actuals, local-estimates, and structural zeros into one number. This is correct per-call and usually fine within a single-backend scope; it becomes misleading only when one agent's runs span backends. `llm_runs.provider` records which backend produced each row — group or filter by it when the blend would distort the figure (the shipped `stats` aggregates group by model, not provider).
+
 ### Period boundaries
 
 Calendar-anchored, UTC:

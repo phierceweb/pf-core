@@ -114,11 +114,18 @@ def parse_llm_json(
         if result is not None:
             logger.debug("parse_llm_json_succeeded", step="extract")
 
-    # Step 4: recovery for truncated arrays
+    # Step 4: truncated-array recovery salvages a prefix and DROPS the tail;
+    # the return carries no flag, so the WARNING is the only signal.
     if result is None and recover and expect in ("array", "any"):
         result = recover_truncated_json(cleaned)
         if result is not None:
             logger.debug("parse_llm_json_succeeded", step="recover_truncated")
+            logger.warning(
+                "parse_llm_json_recovered_truncated",
+                recovered_items=len(result) if isinstance(result, list) else None,
+                raw_len=len(raw),
+                hint="response was truncated (likely max_tokens); tail dropped",
+            )
 
     # Step 5: json_repair — permissive last-resort repair for malformed LLM
     # output. Handles the specific failure modes stdlib json.loads rejects:

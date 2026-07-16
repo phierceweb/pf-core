@@ -48,6 +48,20 @@ class TestParseLlmJson:
         result = parse_llm_json(raw, recover=True, expect="array")
         assert result == [{"a": 1}, {"b": 2}]
 
+    def test_truncated_recovery_warns_about_dropped_tail(self, caplog):
+        """Truncation recovery drops the incomplete tail — that must be visible
+        (a batch pipeline silently losing every long response's tail is the
+        failure this warning exists to surface), not a DEBUG line."""
+        import logging
+
+        raw = '[{"a":1},{"b":2},{"c":3'
+        with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
+            parse_llm_json(raw, recover=True, expect="array")
+        assert any(
+            "parse_llm_json_recovered_truncated" in r.getMessage()
+            for r in caplog.records
+        )
+
     def test_truncated_array_no_recovery(self):
         raw = '[{"a":1},{"b":2},{"c":3'
         result = parse_llm_json(raw, recover=False, expect="array")

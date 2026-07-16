@@ -95,6 +95,50 @@ def test_record_reuses_existing_agent_and_model_ids(tracking_db):
 # ---------------------------------------------------------------------------
 
 
+def test_input_hash_algorithm_is_pinned():
+    """Golden-value pin: input_hash is a durable data key (llm_runs.input_hash,
+    the exact cache's unique key). Any change to the algorithm — key order,
+    separator, sampling filter — re-keys every stored run and orphans every
+    cache entry. If this test fails, that is a DATA MIGRATION, not a refactor:
+    bump deliberately and changelog the re-key."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    assert (
+        compute_input_hash(
+            model="pin-model",
+            rendered_system="sys text",
+            rendered_user="user text",
+            sampling={"temperature": 0.5, "max_tokens": 100},
+            configs={"report_config": 7},
+        )
+        == "37e1fb656f1b92c993a4de63cf71d9f13410b40e4dc41e0b1b83259929c8c0d1"
+    )
+
+
+def test_record_hash_matches_public_compute_with_dirty_sampling(tracking_db):
+    """record() and compute_input_hash must produce the SAME hash for the same
+    inputs even when the sampling dict carries non-sampling keys (model, custom
+    knobs) — the exact cache keys on the public function, so a divergent
+    record() hash makes cache lookups and find_by_hash silently miss."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    dirty_sampling = {"temperature": 0.3, "model": "hash-model", "custom_knob": 1}
+    repo = LlmRunRepo()
+    run_id = repo.record(
+        agent_type="hash_agent",
+        model="hash-model",
+        sampling=dirty_sampling,
+        rendered_prompts=("sys text", "user text"),
+    )
+    expected = compute_input_hash(
+        model="hash-model",
+        rendered_system="sys text",
+        rendered_user="user text",
+        sampling=dirty_sampling,
+    )
+    assert repo.get(run_id)["input_hash"] == expected
+
+
 def test_record_extra_run_values_overrides_framework_column(tracking_db):
     """extra_run_values is merged after the framework columns (last wins)."""
     run_id = LlmRunRepo().record(
