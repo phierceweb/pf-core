@@ -83,7 +83,7 @@ def _populate_invalidate_dir(
     (out / "sections" / "Intro.md").write_text("# Intro")
     (out / "INDEX.md").write_text("# INDEX")
     (out / run_record_filename).write_text(
-        json.dumps({"input": f"{stem}.html", "version": "0.17.0"})
+        json.dumps({"input": f"{stem}.html", "version": "1.0.0"})
     )
 
 
@@ -101,7 +101,7 @@ def _populate_baseline_dir(
     (out / run_record_filename).write_text(
         json.dumps(
             {
-                "version": "0.17.1",
+                "version": "1.0.1",
                 "preset": "rag-default",
                 "input": "doc.html",
                 "section_count": 1,
@@ -243,7 +243,7 @@ class TestInvalidateSubcommand:
     ) -> None:
         out = tmp_path / "out"
         out.mkdir()
-        (out / "run.json").write_text(json.dumps({"version": "0.17.0"}))
+        (out / "run.json").write_text(json.dumps({"version": "1.0.0"}))
 
         app = self._app(registry)
         result = runner.invoke(app, ["invalidate", str(out), "split"])
@@ -350,7 +350,7 @@ class TestBaselineSubcommandGroup:
         assert result.exit_code == 0
         assert "alpha" in result.output
         assert "beta" in result.output
-        assert "0.17.1" in result.output
+        assert "1.0.1" in result.output
         assert "rag-default" in result.output
 
     def test_diff_unknown_label_errors(self, tmp_path: Path) -> None:
@@ -518,5 +518,5 @@ class TestBaselineSubcommandGroup:
 
         assert result.exit_code == 0
         assert "version" in result.output
-        assert "0.17.1" in result.output
+        assert "1.0.1" in result.output
         assert "rag-default" in result.output

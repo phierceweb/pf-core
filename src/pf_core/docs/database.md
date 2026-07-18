@@ -232,7 +232,7 @@ Thread-safe, cached resolver that maps LLM model names to database IDs. Uses a `
 ```python
 from pf_core.db import resolve_model_id
 
-model_id = resolve_model_id("anthropic/claude-3.5-sonnet")  # int or None
+model_id = resolve_model_id("anthropic/claude-sonnet-4.6")  # int or None
 ```
 
 - Thread-safe with a process-level lock and cache

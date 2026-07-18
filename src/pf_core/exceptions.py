@@ -74,8 +74,8 @@ class NotFoundError(FlowException):
 
     Usage::
 
-        raise NotFoundError("Course", course_id)
-        raise NotFoundError("Section")
+        raise NotFoundError("Order", order_id)
+        raise NotFoundError("Invoice")
     """
 
     def __init__(self, entity: str = "record", identifier: object = None) -> None:

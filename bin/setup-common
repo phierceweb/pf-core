@@ -23,13 +23,13 @@ pf_header() { echo; echo "── $* ──────────────�
 
 # ── Python detection ──────────────────────────────────────────────────────────
 # Finds a Python >= 3.11 interpreter.  Honours an optional env-var override
-# whose name is passed as the first argument (e.g. pf_pick_python GRADING_PYTHON).
+# whose name is passed as the first argument (e.g. pf_pick_python MYPROJECT_PYTHON).
 # Prints the path to stdout; exits 1 if nothing suitable is found.
 pf_pick_python() {
   local env_var="${1:-}"
   local p tried="" candidates=() i
 
-  # Honour project-specific override env var (e.g. GRADING_PYTHON)
+  # Honour project-specific override env var (e.g. MYPROJECT_PYTHON)
   if [[ -n "$env_var" && -n "${!env_var:-}" ]]; then
     candidates+=("${!env_var}")
   fi

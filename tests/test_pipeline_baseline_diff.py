@@ -18,7 +18,7 @@ from pf_core.pipeline.baseline_diff import (
 )
 
 
-def _populate_live_output(out: Path, version: str = "0.22.0") -> None:
+def _populate_live_output(out: Path, version: str = "1.1.0") -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "doc.md").write_text("# Doc\n\nbody line 1\nbody line 2\n", encoding="utf-8")
     (out / "INDEX.md").write_text("# INDEX\n", encoding="utf-8")
@@ -63,11 +63,11 @@ def test_diff_baseline_unchanged_run_record_section_set_and_bodies(tmp_path: Pat
 
 def test_diff_baseline_run_record_field_change(tmp_path: Path) -> None:
     out = tmp_path / "out"
-    _populate_live_output(out, version="0.22.0")
+    _populate_live_output(out, version="1.1.0")
     _save_initial_baseline(out, label="v1")
     # Mutate the live run.json.
     run_record = json.loads((out / "run.json").read_text(encoding="utf-8"))
-    run_record["version"] = "0.22.2"
+    run_record["version"] = "1.1.2"
     run_record["section_count"] = 5
     run_record["resolved_flags"]["cleanup"] = "aggressive"
     (out / "run.json").write_text(json.dumps(run_record), encoding="utf-8")
@@ -75,7 +75,7 @@ def test_diff_baseline_run_record_field_change(tmp_path: Path) -> None:
     report = diff_baseline(out, label="v1")
 
     assert report.run_record.changed_fields == {
-        "version": ("0.22.0", "0.22.2"),
+        "version": ("1.1.0", "1.1.2"),
         "section_count": (2, 5),
         "resolved_flags.cleanup": ("basic", "aggressive"),
     }

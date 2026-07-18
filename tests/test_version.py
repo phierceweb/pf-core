@@ -1,10 +1,7 @@
 """Guard against ``pf_core.__version__`` drifting from the package metadata.
 
-The version was hardcoded as a literal in ``pf_core/__init__.py`` for a long
-time and silently fell out of sync with ``pyproject.toml`` on nearly every
-release (see CHANGELOG v0.22, v0.23, v0.36). It's now derived from the
-installed distribution metadata so there is a single source of truth. This
-test fails if anyone reintroduces a hand-maintained literal.
+``__version__`` derives from the installed distribution metadata — the single
+source of truth. Fails if a hand-maintained literal is reintroduced.
 """
 from __future__ import annotations
 

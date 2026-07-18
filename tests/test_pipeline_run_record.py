@@ -38,7 +38,7 @@ def test_write_run_record_default_filename(tmp_path: Path) -> None:
     out.mkdir()
     written = write_run_record(
         out,
-        version="0.22.0",
+        version="1.1.0",
         preset=None,
         resolved_flags={},
         input_path=src,
@@ -57,7 +57,7 @@ def test_write_run_record_custom_filename(tmp_path: Path) -> None:
     out.mkdir()
     written = write_run_record(
         out,
-        version="0.18.0",
+        version="1.1.0",
         preset=None,
         resolved_flags={},
         input_path=src,
@@ -76,7 +76,7 @@ def test_write_run_record_schema(tmp_path: Path) -> None:
     out.mkdir()
     write_run_record(
         out,
-        version="0.22.0",
+        version="1.1.0",
         preset="rag-default",
         resolved_flags={"cleanup": "basic", "split_sections": True},
         input_path=src,
@@ -86,7 +86,7 @@ def test_write_run_record_schema(tmp_path: Path) -> None:
         image_count=7,
     )
     record = json.loads((out / DEFAULT_FILENAME).read_text(encoding="utf-8"))
-    assert record["version"] == "0.22.0"
+    assert record["version"] == "1.1.0"
     assert record["preset"] == "rag-default"
     assert record["resolved_flags"] == {"cleanup": "basic", "split_sections": True}
     assert record["input"] == "doc.pdf"
@@ -105,7 +105,7 @@ def test_write_run_record_extra_fields_flattened(tmp_path: Path) -> None:
     out.mkdir()
     write_run_record(
         out,
-        version="0.22.0",
+        version="1.1.0",
         preset=None,
         resolved_flags={},
         input_path=src,
@@ -117,7 +117,7 @@ def test_write_run_record_extra_fields_flattened(tmp_path: Path) -> None:
     assert record["custom_field"] == "custom_value"
     assert record["another"] == 123
     # Standard fields still present.
-    assert record["version"] == "0.22.0"
+    assert record["version"] == "1.1.0"
 
 
 def test_write_run_record_input_sha256_stable(tmp_path: Path) -> None:
@@ -131,7 +131,7 @@ def test_write_run_record_input_sha256_stable(tmp_path: Path) -> None:
     out2 = tmp_path / "o2"
     out2.mkdir()
     common = {
-        "version": "0.22.0",
+        "version": "1.1.0",
         "preset": None,
         "resolved_flags": {},
         "started_at": "2026-05-10T00:00:00Z",
@@ -155,7 +155,7 @@ def test_read_run_record_returns_dict_when_present(tmp_path: Path) -> None:
     out.mkdir()
     write_run_record(
         out,
-        version="0.22.0",
+        version="1.1.0",
         preset="test",
         resolved_flags={"a": 1},
         input_path=src,
@@ -164,7 +164,7 @@ def test_read_run_record_returns_dict_when_present(tmp_path: Path) -> None:
     )
     record = read_run_record(out)
     assert record is not None
-    assert record["version"] == "0.22.0"
+    assert record["version"] == "1.1.0"
     assert record["preset"] == "test"
 
 
@@ -175,7 +175,7 @@ def test_read_run_record_custom_filename(tmp_path: Path) -> None:
     out.mkdir()
     write_run_record(
         out,
-        version="0.22.0",
+        version="1.1.0",
         preset=None,
         resolved_flags={},
         input_path=src,
@@ -190,7 +190,7 @@ def test_read_run_record_custom_filename(tmp_path: Path) -> None:
 def test_run_record_dataclass_fields() -> None:
     """The `RunRecord` dataclass mirrors the JSON schema."""
     rec = RunRecord(
-        version="0.22.0",
+        version="1.1.0",
         preset=None,
         resolved_flags={},
         input="doc.pdf",

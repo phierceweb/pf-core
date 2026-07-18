@@ -137,10 +137,10 @@ class TestConcurrentAccess:
 class TestFixtureThreadSafetyInvariant:
     """Guard against the *self-masking* property that hid the original bug.
 
-    The pre-0.34.0 ``pf_engine`` used in-memory ``StaticPool`` — a single
-    shared DBAPI connection — so no db test could ever exercise
-    concurrency: the fixture itself raised ``SQLITE_MISUSE`` before any
-    concurrency assertion could run. The bug had no test that *could*
+    A ``StaticPool``-backed ``pf_engine`` — a single shared DBAPI
+    connection — could not exercise concurrency: the fixture itself
+    raised ``SQLITE_MISUSE`` before any concurrency assertion could
+    run. That earlier shape had no test that *could*
     trip it because the test infrastructure was the broken thing.
 
     These assertions fail loudly if the fixture is ever reverted to a

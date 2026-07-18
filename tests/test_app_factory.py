@@ -36,7 +36,7 @@ def client():
 
     @app.get("/not-found")
     async def raise_not_found():
-        raise NotFoundError("Course", 42)
+        raise NotFoundError("Order", 42)
 
     @app.get("/invalid-input")
     async def raise_invalid_input():
@@ -75,7 +75,7 @@ class TestExceptionToHttpMapping:
     def test_not_found_returns_404(self, client):
         r = client.get("/not-found")
         assert r.status_code == 404
-        assert "Course not found: 42" in r.json()["detail"]
+        assert "Order not found: 42" in r.json()["detail"]
 
     def test_invalid_input_returns_422(self, client):
         r = client.get("/invalid-input")
@@ -127,7 +127,7 @@ class TestHtmlNegotiation:
     def test_json_accept_gets_json(self, client):
         r = client.get("/not-found", headers={"accept": "application/json"})
         assert r.status_code == 404
-        assert r.json()["detail"] == "Course not found: 42"
+        assert r.json()["detail"] == "Order not found: 42"
 
     def test_409_html_shows_conflict(self, client):
         r = client.get("/precondition", headers={"accept": "text/html"})

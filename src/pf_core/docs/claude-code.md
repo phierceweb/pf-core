@@ -21,11 +21,11 @@ content, usage = client.chat(
 
 ## What it does (and doesn't) honor
 
-- **Model** — honored as of v0.22. Passed as `--model X` to the CLI. An OpenRouter-style `provider/model` prefix is stripped automatically (e.g. `anthropic/claude-3.7-sonnet` → `claude-3.7-sonnet`) so a legacy single model string in your config still works on this backend. Resolution order, highest wins:
+- **Model** — passed as `--model X` to the CLI. An OpenRouter-style `provider/model` prefix is stripped automatically (e.g. `anthropic/claude-3.7-sonnet` → `claude-3.7-sonnet`) so a legacy single model string in your config still works on this backend. Resolution order, highest wins:
   1. Per-call `chat(model="opus")`
   2. Constructor arg `ClaudeCodeClient(model="haiku")` / `get_client(model="haiku")`
   3. Env var `$PF_CORE_CLAUDE_CODE_MODEL`
-  4. No `--model` flag → CLI uses the active interactive session model (the pre-v0.22 behavior). For Claude Max users this can silently route batch work onto Sonnet/Opus and chew through quota — pin a model whenever you batch.
+  4. No `--model` flag → CLI uses the active interactive session model. For Claude Max users this can silently route batch work onto Sonnet/Opus and chew through quota — pin a model whenever you batch.
 - **Temperature / max_tokens / top_p / response_format** — accepted as kwargs for API parity with `OpenRouterClient` but **ignored**. The active Claude Code session controls sampling. Passing them won't error; they just don't reach the CLI.
 - **Token counts** — always `0`. The CLI doesn't expose them.
 - **Cost** — always `0.0`. Claude Max sessions don't bill per call.
@@ -204,7 +204,7 @@ Each backend entry declares its own model string in its own format (claude_code 
 ### Practical caveats
 
 - **Throughput**: subprocess invocation is much slower per call than an HTTP request. A `claude --print` call takes 5–15× longer than the same call against OpenRouter. With per-agent parallelism (e.g. via [`pf_core.parallel.run_parallel`](parallel.md)) you can mostly mask this, but expect longer wall times even at `-j 4`.
-- **Per-agent model selection works on the Claude Code backend** as of v0.22 — pass `model=` per call (or per-instance via `get_client`) to pin different agents to `haiku` vs `sonnet` vs `opus`. Without it the CLI falls through to the active interactive session model.
+- **Per-agent model selection works on the Claude Code backend** — pass `model=` per call (or per-instance via `get_client`) to pin different agents to `haiku` vs `sonnet` vs `opus`. Without it the CLI falls through to the active interactive session model.
 - **Concurrency**: each `chat()` call spawns a subprocess. The CLI itself may have an internal session lock; if you see serialized calls despite parallel workers, that's why.
 
 ## See also

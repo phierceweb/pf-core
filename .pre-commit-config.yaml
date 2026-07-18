@@ -16,3 +16,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: docs-gates
+        name: docs pins + version-reference gate
+        entry: .venv/bin/pytest tests/test_docs_pins.py -q
+        language: system
+        pass_filenames: false
+        always_run: true

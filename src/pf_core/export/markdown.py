@@ -7,8 +7,8 @@ review. Subclasses implement :meth:`MarkdownExporter.iter_artifacts`, yielding
 write:
 
 - **write-if-changed** — a file is rewritten only when its content actually
-  differs, so unchanged files keep their mtime and a downstream index (QMD,
-  git, an rsync) re-imports only the delta.
+  differs, so unchanged files keep their mtime and a downstream index (a
+  search index, git, an rsync) re-imports only the delta.
 - **atomic** — each write goes through :func:`pf_core.utils.io.atomic_write_text`,
   so a crash mid-export never leaves a torn file.
 - **prune** — files the exporter previously produced but no longer yields are

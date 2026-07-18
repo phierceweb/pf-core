@@ -82,7 +82,7 @@ class CacheHit:
         model: Model name used by the source run.
         agent_type: Agent slug.
         input_hash: SHA256 key that produced this hit.
-        hit_type: ``"exact"`` (v0.9.0) or ``"semantic"`` (v0.9.1+).
+        hit_type: ``"exact"`` (currently the only type) or ``"semantic"`` (reserved).
         similarity: Cosine similarity score; ``1.0`` for exact hits.
         created_at: When the cache entry was created (for age tagging).
     """
@@ -108,20 +108,20 @@ def cache_lookup(
     *,
     agent_type: str,
     input_hash: str,
-    canonical_text: str | None = None,  # reserved for semantic lookup (v0.9.1)
+    canonical_text: str | None = None,  # reserved for future semantic lookup
 ) -> CacheHit | None:
     """Look up a cached response for *agent_type* + *input_hash*.
 
     Checks exact cache first (always, when ``exact=true`` in config).
-    Semantic lookup is a no-op in v0.9.0 — pass ``canonical_text`` now to
-    avoid needing to update call sites when v0.9.1 semantic cache ships.
+    Semantic lookup is not yet implemented — pass ``canonical_text`` now to
+    avoid updating call sites when it lands.
 
     Args:
         agent_type: Agent slug used to load policy from ``cache.yaml``.
         input_hash: SHA256 of model + rendered prompts + sampling + configs.
             Computed by :func:`pf_core.llm.tracking.compute_input_hash`.
-        canonical_text: Canonicalized prompt text for semantic lookup (v0.9.1).
-            Ignored in v0.9.0.
+        canonical_text: Canonicalized prompt text, reserved for future
+            semantic lookup. Currently ignored.
 
     Returns:
         A :class:`CacheHit` on success, ``None`` on miss or disabled cache.
@@ -160,7 +160,7 @@ def cache_store(
     model: str,
     parsed_output: Any = None,
     raw_response: str | None = None,
-    canonical_text: str | None = None,  # reserved for semantic store (v0.9.1)
+    canonical_text: str | None = None,  # reserved for future semantic store
 ) -> None:
     """Store a response in the cache for future lookup.
 
@@ -173,7 +173,7 @@ def cache_store(
         model: Model name (stored for attribution on cache-hit runs).
         parsed_output: Parsed JSON to cache.
         raw_response: Raw LLM response string to cache.
-        canonical_text: Canonicalized text for semantic indexing (v0.9.1).
+        canonical_text: Canonicalized text, reserved for future semantic indexing.
     """
     cfg = get_agent_cache_config(agent_type)
 

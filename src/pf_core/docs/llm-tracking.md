@@ -2,7 +2,7 @@
 
 Records every LLM invocation a project makes — one row per call, plus optional sidecars for payloads, configs, validations, outcomes, run-to-run links, tags, and metrics.
 
-This module replaces ad-hoc per-project tracking (one consumer's `agent_runs`, another's `summary_runs` / `feedback_runs` / `extraction_runs`). The replacement is the `llm_runs` table plus seven sidecar tables, all prefixed `llm_` to signal framework ownership.
+This module replaces the ad-hoc per-project run-tracking tables a project tends to grow. The replacement is the `llm_runs` table plus seven sidecar tables, all prefixed `llm_` to signal framework ownership.
 
 This doc is the implementation reference. The column-by-column schema definitions live in [`pf_core.llm.tracking.schema`](../llm/tracking/schema.py).
 
@@ -53,13 +53,13 @@ from pf_core.llm.tracking import LlmRunRepo
 from pf_core.clients.openrouter import get_client
 
 content, usage = get_client().chat(
-    model="anthropic/claude-3.5-sonnet",
+    model="anthropic/claude-sonnet-4.6",
     messages=[{"role": "user", "content": "Hello"}],
 )
 
 run_id = LlmRunRepo().record(
     agent_type="summarizer",
-    model="anthropic/claude-3.5-sonnet",
+    model="anthropic/claude-sonnet-4.6",
     usage=usage,
     rendered_prompts=(None, "Hello"),
     raw_response=content,

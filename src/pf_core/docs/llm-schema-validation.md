@@ -251,7 +251,7 @@ parse_and_validate(
 | `validation_context` | Dict passed to every cross-field validator's `context=` kwarg. |
 | `stages` | Stages to run. Pass `("shape",)` to skip semantic and cross-field during migration. |
 | `expect` | Forwarded to `parse_llm_json`: `"any"`, `"array"`, or `"object"`. |
-| `missing_pipeline` | `"raise"` (default) raises `PipelineNotRegisteredError` naming the missing slug and currently-registered agents. `"fallback"` preserves pre-0.13 behavior: emit a WARNING log and return `ok=False` with one `no_pipeline_registered` error signal. Use `"fallback"` only for generic replay tooling that legitimately expects unregistered agents. |
+| `missing_pipeline` | `"raise"` (default) raises `PipelineNotRegisteredError` naming the missing slug and currently-registered agents. `"fallback"` emits a WARNING log and returns `ok=False` with one `no_pipeline_registered` error signal. Use `"fallback"` only for generic replay tooling that legitimately expects unregistered agents. |
 
 ### `ValidationResult`
 

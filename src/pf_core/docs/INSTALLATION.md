@@ -13,7 +13,7 @@ How to install `pf-core` for local development, deploy from PyPI, and pick the r
 | Lightweight LLM tool — clients + anti-slop guards | `pip install pf-core[llm]` |
 | Crawl/fetch web pages — title, body, publish date, liveness | `pip install pf-core[crawl]` |
 | Active pf-core development on this machine | `pip install -e ~/projects/pf-core` |
-| New consumer project, full app framework | Pin `pf-core[full,<dialect>]~=0.6.0` in `pyproject.toml`, then `pip install -e .` |
+| New consumer project, full app framework | Pin `pf-core[full,<dialect>]~=0.7.0` in `pyproject.toml`, then `pip install -e .` |
 | Fresh machine, consumer only | `git clone <project>` → `pip install -e .` (pulls pf-core from PyPI automatically) |
 | Fresh machine, also editing pf-core | Clone pf-core → `pip install -e ~/projects/pf-core` (overrides the PyPI pin) |
 
@@ -36,7 +36,7 @@ Pin a compatible release in your project's `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "pf-core[full,postgres]~=0.6.0",
+    "pf-core[full,postgres]~=0.7.0",
 ]
 ```
 
@@ -127,11 +127,11 @@ Real-world shapes, by project type. Anything importing `pf_core.clients` / `pf_c
 
 | Project shape | Install line |
 |---|---|
-| Full-stack web app, Postgres | `pf-core[full,llm,postgres]~=0.6.0` |
-| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles]~=0.6.0` (+ `[redis,ratelimit]` if caching/limits are used) |
-| Full-stack web app, SQLite | `pf-core[full,llm]~=0.6.0` (SQLite driver is stdlib) |
-| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm]~=0.6.0` |
-| Foundation-only CLI (no LLM at all) | `pf-core[cli]~=0.6.0` |
+| Full-stack web app, Postgres | `pf-core[full,llm,postgres]~=0.7.0` |
+| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles]~=0.7.0` (+ `[redis,ratelimit]` if caching/limits are used) |
+| Full-stack web app, SQLite | `pf-core[full,llm]~=0.7.0` (SQLite driver is stdlib) |
+| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm]~=0.7.0` |
+| Foundation-only CLI (no LLM at all) | `pf-core[cli]~=0.7.0` |
 
 ## Updating the dependency
 
@@ -149,21 +149,19 @@ cd ~/projects/pf-core
 git add -A && git commit -m "what changed"
 
 # 2. Tag the release and push — a v* tag triggers .github/workflows/publish.yml,
-#    which builds the sdist/wheel and uploads to PyPI
-git tag v0.2.0
+#    which runs the full suite, builds the sdist/wheel, and uploads to PyPI
+git tag vX.Y.Z
 git push origin main --tags
 
 # 3. Bump the compatible-release pin in each consumer's pyproject.toml
-#    "pf-core[full,postgres]~=0.6.0"
+#    "pf-core[full,postgres]~=0.7.0"
 
 # 4. Reinstall in each consumer
 cd ~/projects/my-project
 pip install -U -e .
 ```
 
-PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). `~=0.6.0` consumers pick up `0.2.x` patches on the next reinstall with no pin change; only a new minor (`0.3.0`) requires them to bump. If OIDC trusted publishing isn't active for the run, publish manually from the pf-core checkout: `python -m build && twine upload -u __token__ dist/*`.
-
-There's a `pf-core-rollout` skill that automates the consumer-side reinstall + verify loop across all projects (`/pf-rollout` slash command).
+PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). A `~=0.7.0` consumer picks up `0.7.x` patches on the next reinstall with no pin change; a new minor (`0.8.x`) requires a deliberate pin bump. Patch fixes land on the newest minor only — once a new minor ships, older lines are frozen, so bumping the pin is how a consumer keeps receiving fixes. If OIDC trusted publishing isn't active for the run, publish manually from the pf-core checkout: `python -m build && twine upload -u __token__ dist/*`.
 
 ### On a fresh machine
 
@@ -216,4 +214,4 @@ The in-suite `tests/test_pyproject_tiers.py` guards the dependency *metadata* (b
 python bin/verify-bare-install
 ```
 
-It builds a throwaway venv, installs pf-core with no extras, and runs `bin/bare_install_smoke.py` inside it. Run this after any change to the dependency tiers (and wire it into CI when one exists).
+It builds a throwaway venv, installs pf-core with no extras, and runs `bin/bare_install_smoke.py` inside it. Run this after any change to the dependency tiers; CI runs the same smoke on every push (the `bare` job in `.github/workflows/test.yml`).

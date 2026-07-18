@@ -242,12 +242,12 @@ class TestReleaseChecks:
         assert by_name["versions"].status == "PASS"
 
     def test_versions_mismatch_fails(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path, version="1.0.0", changelog="0.9.0")
+        _git_repo_with_release(tmp_path, version="1.0.0", changelog="0.7.0")
         monkeypatch.chdir(tmp_path)
         by_name = {r.name: r for r in release_checks()}
         assert by_name["versions"].status == "FAIL"
         assert "1.0.0" in by_name["versions"].detail
-        assert "0.9.0" in by_name["versions"].detail
+        assert "0.7.0" in by_name["versions"].detail
 
     def test_missing_changelog_warns(self, tmp_path, monkeypatch):
         _git_repo_with_release(tmp_path, changelog=None)

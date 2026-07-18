@@ -180,10 +180,10 @@ class ClaudeCodeClient:
         # isolate=True prepends --safe-mode (leads the argv). See _SAFE_MODE_FLAG.
         isolation_args = [_SAFE_MODE_FLAG] if self.isolate else []
         # Prompt goes on stdin, not argv. Argv has a hard OS limit
-        # (ARG_MAX, ~256 KB on macOS) — large prompts (multi-day reports,
-        # bundled context) blow past it and raise E2BIG: "Argument list
-        # too long". stdin has no such limit. `claude --print` reads
-        # stdin when no positional prompt is supplied.
+        # (ARG_MAX, ~256 KB on macOS) — a large rendered prompt blows
+        # past it and raises E2BIG: "Argument list too long". stdin has
+        # no such limit. `claude --print` reads stdin when no positional
+        # prompt is supplied.
         cmd = [binary_path, *isolation_args, *self.extra_args, *model_flag, "--print"]
         wall_timeout = timeout if timeout is not None else self.timeout
 

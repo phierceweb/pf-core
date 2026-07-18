@@ -7,7 +7,7 @@ into:
     collapsed)
   - A list of inline links with surrounding-text context
 
-Designed for the content-ingest shape: a post arrives as HTML, we hand
+Designed for the content ingestion shape: a post arrives as HTML, we hand
 the LLM the plain text for record extraction and the link list with
 context so the model can identify which record a candidate source
 URL backs.

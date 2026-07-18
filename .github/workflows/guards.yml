@@ -12,4 +12,4 @@ jobs:
       - name: file-size gate
         run: python -m pf_core.guards
       - name: ruff
-        run: pip install ruff && ruff check src tests
+        run: pip install "ruff==0.15.15" && ruff check src tests

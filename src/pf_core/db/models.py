@@ -11,7 +11,7 @@ Usage::
 
     from pf_core.db.models import resolve_model_id
 
-    model_id = resolve_model_id("anthropic/claude-3.5-sonnet")
+    model_id = resolve_model_id("anthropic/claude-sonnet-4.6")
 """
 
 from __future__ import annotations

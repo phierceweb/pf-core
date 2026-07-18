@@ -151,8 +151,8 @@ def parse_and_validate(
             ``agent_type``. ``"raise"`` (default) raises
             :class:`pf_core.exceptions.PipelineNotRegisteredError` naming
             the missing slug and currently-registered agents.
-            ``"fallback"`` preserves pre-0.13 behavior: emit a WARNING log
-            and return ``ValidationResult(ok=False,
+            ``"fallback"`` emits a WARNING log and returns
+            ``ValidationResult(ok=False,
             signals=[no_pipeline_registered])``.
 
     Returns:

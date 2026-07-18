@@ -2,6 +2,16 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.7.3 — 2026-07-17
+
+### Fixed
+- Install/versioning docs corrected: pin examples track the current minor line (now enforced by `tests/test_docs_pins.py`).
+- CI lint installs a pinned ruff instead of unpinned latest; `[dev]` extras (pf-core and the consumer templates) declare a compatible-release ruff band.
+- `publish.yml` gates the PyPI upload on the full suite passing at the tagged sha (previously build-only).
+
+### Changed
+- Build floor raised to `setuptools>=77` (PEP 639 license metadata requires it).
+
 ## v0.7.2 — 2026-07-15
 
 ### Fixed

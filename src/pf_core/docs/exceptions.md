@@ -44,7 +44,7 @@ raise InvalidInputError("Date must be in YYYY-MM-DD format")
 raise PreconditionError("Task 42 is already completed")
 
 # Business rule says no → 403
-raise ActionNotAllowedError("Section is locked for editing")
+raise ActionNotAllowedError("Invoice is locked for editing")
 
 # Missing config → 500 (broken app, not user's fault)
 raise ConfigurationError("DATABASE_URL not set")

@@ -109,7 +109,7 @@ class LlmRunValidationRepo(Repository):
         but stored as VARCHAR to allow project-specific extensions.
 
         Retries up to 3 times on MySQL deadlock (error 1213) as defense in
-        depth: concurrent pipeline processes (e.g. parallel ``content-ingest``
+        depth: concurrent pipeline processes (e.g. parallel ``content ingestion``
         runs) writing the same key can still rarely deadlock, and the upsert is
         safe to replay since the row key is ``(llm_run_id, validator)``.
         """

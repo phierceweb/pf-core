@@ -54,15 +54,15 @@ class TestAppErrorHierarchy:
 
 class TestNotFoundError:
     def test_entity_only(self):
-        exc = NotFoundError("Course")
-        assert str(exc) == "Course not found"
-        assert exc.entity == "Course"
+        exc = NotFoundError("Order")
+        assert str(exc) == "Order not found"
+        assert exc.entity == "Order"
         assert exc.identifier is None
 
     def test_entity_and_identifier(self):
-        exc = NotFoundError("Course", 42)
-        assert str(exc) == "Course not found: 42"
-        assert exc.entity == "Course"
+        exc = NotFoundError("Order", 42)
+        assert str(exc) == "Order not found: 42"
+        assert exc.entity == "Order"
         assert exc.identifier == 42
 
     def test_default_entity(self):
@@ -94,8 +94,8 @@ class TestTaskError:
 
 class TestActionNotAllowedError:
     def test_message(self):
-        exc = ActionNotAllowedError("Section is locked for editing")
-        assert str(exc) == "Section is locked for editing"
+        exc = ActionNotAllowedError("Invoice is locked for editing")
+        assert str(exc) == "Invoice is locked for editing"
 
     def test_is_flow_exception(self):
         assert issubclass(ActionNotAllowedError, FlowException)

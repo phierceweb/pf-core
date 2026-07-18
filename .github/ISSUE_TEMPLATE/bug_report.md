@@ -19,7 +19,7 @@ The smallest snippet or steps that trigger it. A failing test is ideal.
 ```
 
 **Environment**
-- pf-core version: <!-- e.g. 0.50.2, or git SHA -->
+- pf-core version: <!-- e.g. 0.7.2, or git SHA -->
 - Install extras: <!-- e.g. [full,llm,postgres] -->
 - Python version:
 - OS:

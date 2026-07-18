@@ -16,7 +16,7 @@ from pf_core.pipeline.baseline import (
 )
 
 
-def _populate_live_output(out: Path, version: str = "0.22.0") -> None:
+def _populate_live_output(out: Path, version: str = "1.1.0") -> None:
     """Create a live output dir shaped like a real pipeline result."""
     out.mkdir(parents=True, exist_ok=True)
     (out / "doc.md").write_text("# Doc\n\nBody.\n", encoding="utf-8")
@@ -52,9 +52,9 @@ def test_save_baseline_copies_manifest_files(tmp_path: Path) -> None:
     out = tmp_path / "out"
     _populate_live_output(out)
 
-    save_baseline(out, label="v0.22.0-corpus")
+    save_baseline(out, label="v1.0.0-corpus")
 
-    base = out / ".baselines" / "v0.22.0-corpus"
+    base = out / ".baselines" / "v1.0.0-corpus"
     assert (base / "doc.md").read_text(encoding="utf-8") == "# Doc\n\nBody.\n"
     assert (base / "INDEX.md").exists()
     assert (base / "sections" / "Intro.md").exists()
@@ -66,9 +66,9 @@ def test_save_baseline_skips_caches_and_raw(tmp_path: Path) -> None:
     out = tmp_path / "out"
     _populate_live_output(out)
 
-    save_baseline(out, label="v0.22.0-corpus")
+    save_baseline(out, label="v1.0.0-corpus")
 
-    base = out / ".baselines" / "v0.22.0-corpus"
+    base = out / ".baselines" / "v1.0.0-corpus"
     assert not (base / "doc.raw.md").exists()
     assert not (base / "doc.post-cleanup.md").exists()
     assert not (base / "doc.pre-normalize.md").exists()
@@ -78,11 +78,11 @@ def test_save_baseline_skips_caches_and_raw(tmp_path: Path) -> None:
 
 def test_save_baseline_default_label_uses_version_and_timestamp(tmp_path: Path) -> None:
     out = tmp_path / "out"
-    _populate_live_output(out, version="0.22.0")
+    _populate_live_output(out, version="1.1.0")
 
     record = save_baseline(out)
 
-    assert record.label.startswith("0.22.0-")
+    assert record.label.startswith("1.1.0-")
     assert (out / ".baselines" / record.label / "doc.md").exists()
 
 
@@ -137,7 +137,7 @@ def test_list_baselines_returns_records_sorted_by_saved_at_desc(tmp_path: Path) 
     # which we copy from the live run record. The fixture has identical
     # started_at, so the sort is stable on label as a fallback. Assert
     # both present + the records have the expected fields.
-    assert all(r.version == "0.22.0" for r in records)
+    assert all(r.version == "1.1.0" for r in records)
     assert all(r.preset == "rag-default" for r in records)
 
 
@@ -147,7 +147,7 @@ def test_baseline_record_dataclass_fields() -> None:
         label="x",
         path=Path("/tmp/x"),
         consolidated_md=Path("/tmp/x/doc.md"),
-        version="0.22.0",
+        version="1.1.0",
         preset="rag-default",
         saved_at="2026-05-10T00:00:00Z",
         section_count=2,
@@ -161,23 +161,23 @@ def test_auto_snapshot_skips_when_no_previous_run_record(tmp_path: Path) -> None
     """First run on a fresh output dir → no snapshot."""
     out = tmp_path / "out"
     out.mkdir()
-    auto_snapshot_on_version_change(out, current_version="0.22.0")
+    auto_snapshot_on_version_change(out, current_version="1.1.0")
     assert not (out / ".baselines").exists()
 
 
 def test_auto_snapshot_skips_when_version_unchanged(tmp_path: Path) -> None:
     out = tmp_path / "out"
-    _populate_live_output(out, version="0.22.0")
-    auto_snapshot_on_version_change(out, current_version="0.22.0")
+    _populate_live_output(out, version="1.1.0")
+    auto_snapshot_on_version_change(out, current_version="1.1.0")
     assert not (out / ".baselines").exists()
 
 
 def test_auto_snapshot_fires_on_version_change(tmp_path: Path) -> None:
     out = tmp_path / "out"
-    _populate_live_output(out, version="0.21.0")
-    auto_snapshot_on_version_change(out, current_version="0.22.0")
+    _populate_live_output(out, version="1.0.0")
+    auto_snapshot_on_version_change(out, current_version="1.1.0")
 
-    base = out / ".baselines" / "0.21.0"
+    base = out / ".baselines" / "1.0.0"
     assert base.exists()
     assert (base / "doc.md").exists()
 
@@ -186,17 +186,17 @@ def test_auto_snapshot_dedupes_collision_with_timestamp(tmp_path: Path) -> None:
     """If `<previous-version>` already exists as a baseline, append a
     timestamp suffix."""
     out = tmp_path / "out"
-    _populate_live_output(out, version="0.21.0")
-    auto_snapshot_on_version_change(out, current_version="0.22.0")
+    _populate_live_output(out, version="1.0.0")
+    auto_snapshot_on_version_change(out, current_version="1.1.0")
 
     # Restore the live output (auto_snapshot doesn't move; it copies)
     # and bump again to trigger a collision.
-    auto_snapshot_on_version_change(out, current_version="0.22.0-rc1")
+    auto_snapshot_on_version_change(out, current_version="1.1.0-rc1")
 
     bases = sorted((out / ".baselines").iterdir())
     labels = [p.name for p in bases]
-    assert "0.21.0" in labels
-    assert any(label.startswith("0.21.0-") and label != "0.21.0" for label in labels)
+    assert "1.0.0" in labels
+    assert any(label.startswith("1.0.0-") and label != "1.0.0" for label in labels)
 
 
 def test_auto_snapshot_skips_when_sections_empty(tmp_path: Path) -> None:
@@ -205,18 +205,18 @@ def test_auto_snapshot_skips_when_sections_empty(tmp_path: Path) -> None:
     import shutil
 
     out = tmp_path / "out"
-    _populate_live_output(out, version="0.21.0")
+    _populate_live_output(out, version="1.0.0")
     # Wipe sections to simulate an empty previous run.
     shutil.rmtree(out / "sections")
 
-    auto_snapshot_on_version_change(out, current_version="0.22.0")
+    auto_snapshot_on_version_change(out, current_version="1.1.0")
     assert not (out / ".baselines").exists()
 
 
 def test_auto_snapshot_failure_is_non_fatal(tmp_path: Path, monkeypatch) -> None:
     """A baseline-write failure must not break the calling pipeline."""
     out = tmp_path / "out"
-    _populate_live_output(out, version="0.21.0")
+    _populate_live_output(out, version="1.0.0")
 
     import pf_core.pipeline.baseline as baseline_mod
 
@@ -226,7 +226,7 @@ def test_auto_snapshot_failure_is_non_fatal(tmp_path: Path, monkeypatch) -> None
     monkeypatch.setattr(baseline_mod, "save_baseline", boom)
 
     # Should not raise.
-    auto_snapshot_on_version_change(out, current_version="0.22.0")
+    auto_snapshot_on_version_change(out, current_version="1.1.0")
 
 
 def _populate_live_output_custom(
@@ -268,7 +268,7 @@ def test_save_baseline_custom_config_uses_custom_filenames(tmp_path: Path) -> No
     out = tmp_path / "out"
     _populate_live_output_custom(
         out,
-        version="0.22.0",
+        version="1.1.0",
         run_record_filename=".custom-run.json",
         sections_dir_name="sections",
     )
@@ -290,7 +290,7 @@ def test_list_baselines_custom_config_finds_baselines_in_custom_dir(tmp_path: Pa
     out = tmp_path / "out"
     _populate_live_output_custom(
         out,
-        version="0.22.0",
+        version="1.1.0",
         run_record_filename=".custom-run.json",
         sections_dir_name="sections",
     )
@@ -301,6 +301,6 @@ def test_list_baselines_custom_config_finds_baselines_in_custom_dir(tmp_path: Pa
     records = list_baselines(out, config=config)
     labels = {r.label for r in records}
     assert labels == {"custom-v1", "custom-v2"}
-    assert all(r.version == "0.22.0" for r in records)
+    assert all(r.version == "1.1.0" for r in records)
     # Default config sees no baselines in the default dir.
     assert list_baselines(out) == []

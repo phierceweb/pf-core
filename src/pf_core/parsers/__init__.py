@@ -1,4 +1,4 @@
-"""Parser-side primitives for content-ingest pipelines.
+"""Parser-side primitives for content ingestion pipelines.
 
 Framework-level pieces shared by any consumer building a "fetch from
 external source → extract structured records" pipeline. Per-source

@@ -11,11 +11,11 @@ dependencies = [
     # pf-core foundation + the extras this project uses, pinned to a compatible
     # PyPI release (picks up patch/minor within the line). 0.4+ carries the
     # config-driven structural gate (config in .pf-guards.toml).
-    "pf-core[__EXTRAS__]~=0.6.0",
+    "pf-core[__EXTRAS__]~=0.7.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6", "pre-commit>=3.0"]
+dev = ["pytest>=8.0", "ruff~=0.15.0", "pre-commit>=3.0"]
 
 [project.scripts]
 __NAME__ = "__PKG__.cli:main"

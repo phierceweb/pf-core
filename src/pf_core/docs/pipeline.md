@@ -31,7 +31,7 @@ from pf_core.pipeline.run_record import write_run_record, read_run_record, file_
 write_run_record(
     output_dir,
     input_path=src,
-    version="0.18.0",
+    version="1.0.0",
     preset="default",
     resolved_flags={"workers": 4, "model": "haiku"},
     started_at="2026-06-14T10:00:00Z",
@@ -42,7 +42,7 @@ write_run_record(
 )
 
 record = read_run_record(output_dir)
-# {"version": "0.18.0", "preset": "default", "input": "...", "input_sha256": "...",
+# {"version": "1.0.0", "preset": "default", "input": "...", "input_sha256": "...",
 #  "started_at": "...", "finished_at": "...", "resolved_flags": {...},
 #  "section_count": 12, "image_count": 47, "backend": "default"}
 ```

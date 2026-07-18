@@ -2,7 +2,7 @@
 
 `pf_core.budget` — pre-call cost guardrails for LLM spending. Answers "would this call push us over the daily/monthly cap?" *before* the request leaves the process.
 
-The triggering context is a runaway-cost incident — a broken prompt ran hundreds of dollars through in an afternoon. Budgets make that failure mode bounded.
+Budgets bound the runaway-cost failure mode: a broken or looping prompt that would otherwise burn unbounded spend before anyone notices.
 
 ## Quick start
 
@@ -199,7 +199,7 @@ Sequential, defensively:
 1. Populate `llm_cost_rates` with current provider prices for each model in `llm_models`.
 2. Start with `warn`-only global budget. Watch for a week to calibrate — verify projected ≈ actual.
 3. Add agent budgets as `warn` first. Measure threshold crossings.
-4. Promote to `block` one agent at a time, starting with the highest-volume loop (the exact shape of the runaway-cost incident).
+4. Promote to `block` one agent at a time, starting with the highest-volume loop (the highest-risk shape for runaway spend).
 5. Route the structured `budget_threshold_crossed` / `budget_warn_exceeded` log events to Slack or similar via your log pipeline (pf-core does not ship a webhook integration).
 6. For agents that should fall back rather than fail: service-side catch `CostBudgetExceeded`, call `get_agent_config(cheaper_slug)`, retry.
 

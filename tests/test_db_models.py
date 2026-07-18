@@ -21,7 +21,7 @@ def _clear_model_cache():
 
 class TestResolveModelId:
     def test_creates_new_model(self, pf_tables, pf_connection):
-        model_id = resolve_model_id("anthropic/claude-3.5-sonnet")
+        model_id = resolve_model_id("anthropic/claude-sonnet-4.6")
         assert model_id is not None
         assert isinstance(model_id, int)
 
@@ -121,7 +121,7 @@ def test_resolve_model_id_emits_dialect_valid_insert(monkeypatch, dialect_name):
 
     monkeypatch.setattr(models_mod, "transaction", _fake_transaction)
 
-    model_id = resolve_model_id("anthropic/claude-3.5-sonnet")
+    model_id = resolve_model_id("anthropic/claude-sonnet-4.6")
     assert model_id == 1  # resolved from the SELECT that follows the insert
 
     # First statement executed is the insert; compile it for its dialect.

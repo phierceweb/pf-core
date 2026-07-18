@@ -14,7 +14,7 @@ Usage::
     client = get_client()
     content, usage = client.chat(
         messages=[{"role": "user", "content": "Hello"}],
-        model="anthropic/claude-3.5-sonnet",
+        model="anthropic/claude-sonnet-4.6",
     )
 """
 

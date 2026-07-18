@@ -32,7 +32,7 @@ foundation = [
     "pf_core.services.base", "pf_core.utils", "pf_core.utils.env",
     "pf_core.utils.dates", "pf_core.utils.ids", "pf_core.utils.json",
     "pf_core.utils.similarity", "pf_core.utils.vocab",
-    # generic JSON-from-messy-text recovery (moved out of pf_core.llm in 0.42.0).
+    # generic JSON-from-messy-text recovery (lives outside pf_core.llm).
     "pf_core.utils.json_recovery",
 ]
 for mod in foundation:

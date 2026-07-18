@@ -10,7 +10,7 @@ from pf_core.clients.openrouter import get_client
 client = get_client()
 content, usage = client.chat(
     messages=[{"role": "user", "content": "Hello"}],
-    model="anthropic/claude-3.5-sonnet",
+    model="anthropic/claude-sonnet-4.6",
 )
 ```
 
@@ -43,7 +43,7 @@ content, usage = client.chat(
         {"role": "system", "content": "You are a research assistant."},
         {"role": "user", "content": "Summarize this document."},
     ],
-    model="anthropic/claude-3.5-sonnet",
+    model="anthropic/claude-sonnet-4.6",
     temperature=0.2,       # default 0.2
     max_tokens=4096,       # default 4096
     top_p=1.0,             # default 1.0
@@ -199,7 +199,7 @@ class SummaryService:
     def summarize(self, text: str) -> str:
         content, _usage = self._llm.chat(
             messages=[{"role": "user", "content": f"Summarize: {text}"}],
-            model="anthropic/claude-3.5-sonnet",
+            model="anthropic/claude-sonnet-4.6",
         )
         return content
 ```

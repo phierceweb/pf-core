@@ -37,22 +37,22 @@ class TestResolveOr404:
 
     def test_exception_carries_entity(self):
         with pytest.raises(NotFoundError) as exc_info:
-            resolve_or_404(None, "Course")
-        assert exc_info.value.entity == "Course"
+            resolve_or_404(None, "Order")
+        assert exc_info.value.entity == "Order"
         assert exc_info.value.identifier is None
 
 
 class TestNotFoundError:
     def test_with_entity_only(self):
-        exc = NotFoundError("Course")
-        assert str(exc) == "Course not found"
-        assert exc.entity == "Course"
+        exc = NotFoundError("Order")
+        assert str(exc) == "Order not found"
+        assert exc.entity == "Order"
         assert exc.identifier is None
 
     def test_with_entity_and_id(self):
-        exc = NotFoundError("Course", 42)
-        assert str(exc) == "Course not found: 42"
-        assert exc.entity == "Course"
+        exc = NotFoundError("Order", 42)
+        assert str(exc) == "Order not found: 42"
+        assert exc.entity == "Order"
         assert exc.identifier == 42
 
     def test_is_flow_exception(self):

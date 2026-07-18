@@ -29,7 +29,7 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.6.0"` (picks up `0.6.x` fixes, holds below `0.7.0`; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.7.0"` (picks up `0.7.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
@@ -43,6 +43,8 @@ Extras compose orthogonally (`[db]` without LLM, `[web]` without `[db]`, `[llm]`
 - **[docs/modules.md](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/modules.md)** — one-line-per-module index, grouped by concern
 - **[docs/](https://github.com/phierceweb/pf-core/tree/main/src/pf_core/docs)** — per-module reference with usage and parameter detail
 - **[CHANGELOG.md](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)** — release history
+
+Docs ship inside the package (`pf_core/docs/` under site-packages), so an installed copy always matches its version — the links above render `main`, which may be ahead of the latest release.
 
 <details>
 <summary><b>All docs</b> — every file in <code>src/pf_core/docs/</code>, one link each</summary>

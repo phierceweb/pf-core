@@ -1,6 +1,6 @@
 # Parsers
 
-`pf_core.parsers` holds framework-level pieces for content-ingest pipelines — the kind of consumer code that fetches from external sources (RSS feeds, sitemaps, web archives) and hands structured records to an orchestrator for downstream processing.
+`pf_core.parsers` holds framework-level pieces for content ingestion pipelines — the kind of consumer code that fetches from external sources (RSS feeds, sitemaps, web archives) and hands structured records to an orchestrator for downstream processing.
 
 The package is intentionally small. Per-source parser modules and the parser-to-orchestrator data classes (`PostRef`, `Post`, link extractors) live in consumers until a second consumer needs the same shape — see "Lift policy" below.
 
@@ -31,7 +31,7 @@ text, links = parse_body_html(post_html)
 # links: list[PostLink] — each with url + anchor_text + surrounding_text
 ```
 
-Pure-stdlib (`html.parser.HTMLParser`) walker that turns post body HTML into a normalized plain-text rendering plus a list of inline links with surrounding-text context. Designed for the content-ingest pattern: the LLM gets clean prose for record extraction and per-link context for "which event does this URL back?" disambiguation.
+Pure-stdlib (`html.parser.HTMLParser`) walker that turns post body HTML into a normalized plain-text rendering plus a list of inline links with surrounding-text context. Designed for the content ingestion pattern: the LLM gets clean prose for record extraction and per-link context for "which event does this URL back?" disambiguation.
 
 | Symbol | Purpose |
 |---|---|
@@ -86,7 +86,7 @@ for source in sources:
 
 The `pf_core.parsers` surface grows by extraction, not by speculation. New entries land here only when:
 
-1. **A second consumer needs the same code.** The first consumer keeps its implementation local; the second triggers the lift. Today's contents (the two exception types) hit that bar via a content-ingest pipeline plus the framework's general-purpose error hierarchy — they're universal enough to belong here from day one.
+1. **A second consumer needs the same code.** The first consumer keeps its implementation local; the second triggers the lift. Today's contents (the two exception types) hit that bar via a content ingestion pipeline plus the framework's general-purpose error hierarchy — they're universal enough to belong here from day one.
 2. **The contract has stabilized.** Whatever moves up should not need versioning churn for at least 90 days of two consumers exercising it. Premature lift forces a generic abstraction that has not yet seen real use.
 3. **The piece is policy-free.** Anything that encodes a specific consumer's source-ranking rules, source list, or business logic stays in the consumer. Parsers belong here; "this is a Tier-1 source" does not.
 
@@ -94,6 +94,6 @@ Today's deliberate non-goals:
 
 - **No per-source parser modules** (per-platform RSS/HTML, etc.) — those have one consumer today; they stay there until a second project needs the same content ingest.
 - **No `PostRef` / `Post` data classes** — these are the parser→orchestrator handoff shape. A different consumer's orchestrator will likely want a different shape; lifting forces a generic abstraction with one real user.
-- **No content-ingest framework** — the orchestration shape is consumer policy.
+- **No content ingestion framework** — the orchestration shape is consumer policy.
 
 When the next piece is ready to lift, follow the `parsers.md` contract: small, explicit, documented here.

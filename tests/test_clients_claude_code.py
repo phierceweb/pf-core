@@ -147,8 +147,8 @@ class TestChatHappyPath:
     @patch("pf_core.clients.claude_code.shutil.which")
     def test_large_prompt_uses_stdin_not_argv(self, mock_which, mock_run):
         """A multi-megabyte prompt must not appear in argv, where it would
-        trip ARG_MAX (E2BIG) on macOS/Linux. Regression for a log-analysis
-        CLI's report stage, which can render a prompt larger than 256 KB."""
+        trip ARG_MAX (E2BIG) on macOS/Linux. Regression for a batch pipeline
+        whose rendered prompt can exceed 256 KB."""
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
         big = "x" * 2_000_000  # 2 MB — well past macOS ARG_MAX (~256 KB)
@@ -263,9 +263,9 @@ class TestEnvIsolation:
 class TestSafeModeIsolation:
     """``claude --print`` runs in the caller's working directory, so without
     isolation it auto-loads the surrounding project's CLAUDE.md, skills,
-    hooks, and plugins. A weaker model then sometimes OBEYS them — a live
-    vision call inside a repo was hijacked into emitting skill text where an
-    image caption belonged. ``--safe-mode`` ("start with all customizations
+    hooks, and plugins. A weaker model can then OBEY that ambient context
+    instead of the caller's request — emitting skill text where the caller
+    expected a completion. ``--safe-mode`` ("start with all customizations
     off"; auth, model, and explicit flags still apply) strips that ambient
     context. It is ON by default — a programmatic library call almost never
     wants the surrounding repo's instructions — with an ``isolate=False``
@@ -723,13 +723,10 @@ class TestPreflight:
 
 class TestModelOverride:
     """A1: ClaudeCodeClient honors ``model=`` (constructor or per-call), falls
-    back to ``PF_CORE_CLAUDE_CODE_MODEL`` env var, and adds nothing when
-    none is set (preserves pre-v0.22 behavior of letting the active session
-    decide). Without the flag, ``claude --print`` runs against the user's
-    interactive session model — fine for local Claude Max users but
-    devastating for batch consumers (a batch pipeline ran into
-    this) where calls silently land on Sonnet/Opus and chew through
-    quota."""
+    back to ``PF_CORE_CLAUDE_CODE_MODEL`` env var, and adds no ``--model``
+    flag when none is set — the CLI then uses the active interactive session
+    model, which can silently land batch calls on Sonnet/Opus and chew
+    through quota."""
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")

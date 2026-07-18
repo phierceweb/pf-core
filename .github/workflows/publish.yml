@@ -1,8 +1,9 @@
 # Builds and publishes the package to PyPI when a release tag (v*) is pushed —
 # tags are the public consumption surface; main carries no stability promise.
 #
-# The `build` job builds the sdist/wheel and runs twine check; the `publish`
-# job uploads to PyPI via OIDC Trusted Publishing — the trusted publisher is
+# The `build` job builds the sdist/wheel and runs twine check; the `test` job
+# runs the full suite on the tagged sha; the `publish` job waits for both and
+# uploads to PyPI via OIDC Trusted Publishing — the trusted publisher is
 # registered on pypi.org (project "pf-core" → GitHub publisher: owner
 # phierceweb, repo pf-core, workflow publish.yml, environment pypi), so no
 # API-token secret lives in the repo.
@@ -36,8 +37,18 @@ jobs:
           name: dist
           path: dist/
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[full,articles,anthropic,image-phash,dev]"
+      - run: python -m pytest tests/ -q
+
   publish:
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

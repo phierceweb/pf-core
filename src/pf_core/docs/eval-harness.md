@@ -2,8 +2,6 @@
 
 Replay historical LLM calls against a new model or prompt version; compare results deterministically or via an LLM judge; surface regressions before they hit production.
 
-**Version added:** v0.8.0
-
 ## Quick start
 
 ```python
