@@ -20,6 +20,9 @@ Public surface::
         # Hash
         compute_input_hash,
 
+        # Metadata split
+        split_metadata,
+
         # Repos
         LlmRunRepo,
         LlmRunOutcomeRepo, LlmRunValidationRepo, LlmRunLinkRepo,
@@ -63,6 +66,7 @@ from pf_core.llm.cache import _schema as _cache_schema  # noqa: F401, E402
 # FK-references llm_models.id, so the tables need to share metadata too.
 from pf_core.budget import _schema as _budget_schema  # noqa: F401, E402
 
+from pf_core.llm.tracking._metadata import split_metadata  # noqa: F401
 from pf_core.llm.tracking._resolvers import (  # noqa: F401
     clear_caches as clear_resolver_caches,
     resolve_agent_type_id,
@@ -101,6 +105,8 @@ __all__ = [
     "resolve_prompt_id",
     # Hash
     "compute_input_hash",
+    # Metadata split
+    "split_metadata",
     # Repos
     "LlmRunLinkRepo",
     "LlmRunOutcomeRepo",

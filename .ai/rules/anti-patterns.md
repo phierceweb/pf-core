@@ -21,6 +21,8 @@ def run_export():
     entries = entry_service.get_entries_for_export()
 ```
 
+The one sanctioned `transaction()` use in an orchestrator: opening a shared transaction that services join via `self._service(Svc, conn=conn)` so a multi-step workflow commits atomically — the orchestrator still never executes SQL itself (see `docs/orchestrators.md`).
+
 ---
 
 ## No god-module `_util.py` files

@@ -13,6 +13,7 @@ This is the orchestration layer on top of [LLM tracking](llm-tracking.md). It do
 - [What one call does](#what-one-call-does)
 - [JSON expectation and the tracked retry](#json-expectation-and-the-tracked-retry)
 - [Failure handling](#failure-handling)
+- [The messages variant — `tracked_messages_call`](#the-messages-variant--tracked_messages_call)
 - [Why not `@track_run`](#why-not-track_run)
 - [Adding a new call site](#adding-a-new-call-site)
 
@@ -106,6 +107,8 @@ content, usage, run_id = tracked_messages_call(
 ```
 
 Differences from `tracked_call`: messages pass through verbatim (rendered system/user are extracted by role for `llm_run_payloads`); `spec` is optional and may be minimal (`{"version": int, "system": str}` for canonical-template registration; a full `load_prompt_spec` dict also registers the `user` part, with `spec_on_change` forwarded to `resolve_prompt_id`); there is no JSON retry (validate downstream with `parse_and_validate`); it returns `(content, usage, run_id)`. Client exceptions record a `status="failed"` row and re-raise, same as `tracked_call`. `on_record_error="warn"` makes the tracking sink best-effort — a failed `record()` logs a warning and returns `run_id=None` instead of masking the call result (for pipelines where tracking must never break the work).
+
+Two attribution kwargs: `metadata=` takes a flat dict, split into tags/metrics via [`split_metadata`](llm-recording.md#split_metadata) and merged beneath any explicit `tags=`/`metrics=` (tags concatenated + deduped; explicit metrics win); `job_id=` attributes the run explicitly, with `None` keeping the ambient-Job fallback. When a [recording window](llm-recording.md) is open, its session metadata merges beneath `metadata=` (call wins) and a per-call summary is appended to the window on success and failure.
 
 ---
 

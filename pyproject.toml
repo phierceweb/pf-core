@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pf-core"
-version = "0.7.3"
+version = "0.8.0"
 description = "Dependency-light Python foundation (logging, exceptions, config, utils) with LLM clients, anti-slop guards, cost tracking, and an opinionated FastAPI+SQLAlchemy framework available as opt-in extras"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -227,6 +227,7 @@ Issues = "https://github.com/phierceweb/pf-core/issues"
 pf-guards = "pf_core.guards.structure:run_cli"
 pf-doctor = "pf_core.doctor:run_cli"
 pf-jobs = "pf_core.cli.jobs:app"
+pf-setup = "pf_core.wiring:run_cli"
 
 [project.entry-points.pytest11]
 pf_core = "pf_core.testing.fixtures"

@@ -57,7 +57,9 @@ Both are keyword-only.
 # Basic — just config propagation:
 svc = self._service(EntryService)
 
-# With a shared connection for transactional orchestration:
+# The transactional-orchestration exception: open ONE shared transaction and
+# thread it through `conn=` so a multi-service step commits atomically. The
+# orchestrator never executes SQL on the connection itself.
 from pf_core.db import transaction
 
 with transaction() as conn:
@@ -88,6 +90,6 @@ orch = ExportOrchestrator(config=cfg, progress=on_progress)
 
 Orchestrators **must not**:
 - Import or instantiate repositories directly — use `_service()` to get services
-- Call `transaction()` — services own data access
+- Call `transaction()` for data access — services own reads and writes. The one sanctioned use is opening a shared transaction threaded through `_service(..., conn=conn)` (above) so a multi-service step commits atomically; the orchestrator never runs SQL on it
 - Contain domain logic — delegate to services
 - Grow beyond the orchestrator line budget (enforced by the `pf_core.guards` gate; the limit lives in `pf_core/guards/config.py`) — split into smaller orchestrators

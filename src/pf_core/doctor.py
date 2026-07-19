@@ -413,11 +413,25 @@ def release_checks() -> list[CheckResult]:
     return results
 
 
+def check_consumer_wiring() -> list[CheckResult]:
+    from pf_core.wiring import check_wiring
+
+    return [CheckResult("wiring", name, status, detail) for name, status, detail in check_wiring()]
+
+
 # ---------------------------------------------------------------------------
 # Runner + CLI
 # ---------------------------------------------------------------------------
 
-_CORE_CHECKS = (check_copy, check_python, check_extras, check_env, check_router, check_deps)
+_CORE_CHECKS = (
+    check_copy,
+    check_python,
+    check_extras,
+    check_env,
+    check_router,
+    check_deps,
+    check_consumer_wiring,
+)
 
 
 def run_checks(*, db: bool = False, release: bool = False) -> list[CheckResult]:

@@ -40,6 +40,7 @@ Exit code: `0` when no check FAILs (WARNs don't flip it), `1` otherwise.
 | `env.resolution` | The pf-core-recognized env vars as the app would see them — a `.env` in the working directory is loaded first (shell values win), and the report names which. Values redacted: key/token/secret vars presence-only, URL credentials masked. |
 | `router.config` | Model-router config path (loader's chain), parse + schema validation, agent slugs, `default_client`. SKIPs when no config exists. |
 | `deps.versions` | Installed versions of the key third-party libraries. |
+| `wiring.docs_link` | Is `docs/pf-core` a live symlink to the installed docs. WARN names the fix (`pf-setup`); FAIL on a broken link or a non-symlink squatting on the path; SKIPs in a framework checkout or a directory with no `docs/`. |
 
 ## `--db` (opt-in)
 

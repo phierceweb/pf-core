@@ -1,0 +1,87 @@
+# pf-core
+
+> A Python foundation for building LLM applications whose prompts and spend you can actually see: every prompt lives in versioned configuration, and every call is recorded — prompt version, model, provider, response, tokens, cost — and replayable, in SQLite, MySQL, or Postgres. Each piece exists elsewhere as a separate product; pf-core integrates them, one schema underneath. The dependency-light base install carries logging, exceptions, config, and a service/repo architecture; opt-in extras add the LLM clients (OpenRouter / Anthropic SDK / Claude Code), output validation and JSON recovery, cost budgets, an eval harness, and a FastAPI + SQLAlchemy app framework. Built to be worked on by AI coding agents: file-size and import-layering conventions are CI-enforced, and every module has a one-file reference doc.
+
+Published to PyPI as `pf-core` (Python 3.11+); pin a compatible release (`pf-core[llm]~=<current minor>`). Docs ship inside the package under `pf_core/docs/`, so an installed copy always matches its version — in a consumer repo, `pf-setup` links them at `docs/pf-core/`. The URLs below render `main`, the development line. Current release and history: see the changelog.
+
+## Start here
+
+- [README](https://raw.githubusercontent.com/phierceweb/pf-core/main/README.md): overview, install, extras
+- [INSTALLATION](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/INSTALLATION.md): extras matrix, install/release/update flows, verification
+- [Module index](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/modules.md): one line per module, grouped by concern
+- [Changelog](https://raw.githubusercontent.com/phierceweb/pf-core/main/CHANGELOG.md): release history
+- [Contributing](https://raw.githubusercontent.com/phierceweb/pf-core/main/CONTRIBUTING.md)
+
+## Module reference
+
+- [alembic](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/alembic.md)
+- [anthropic](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/anthropic.md)
+- [article-fetch](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/article-fetch.md)
+- [brave](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/brave.md)
+- [cache](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/cache.md)
+- [claude-code](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/claude-code.md)
+- [cli-subcommands](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/cli-subcommands.md)
+- [cli](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/cli.md)
+- [config-path](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/config-path.md)
+- [config](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/config.md)
+- [cost-budget](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/cost-budget.md)
+- [database](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/database.md)
+- [dates](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/dates.md)
+- [db-upsert](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/db-upsert.md)
+- [doctor](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/doctor.md)
+- [env](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/env.md)
+- [eval-harness](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/eval-harness.md)
+- [exceptions](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/exceptions.md)
+- [export](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/export.md)
+- [guards](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/guards.md)
+- [hashing](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/hashing.md)
+- [ids](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/ids.md)
+- [io](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/io.md)
+- [jobs](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/jobs.md)
+- [json-recovery](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/json-recovery.md)
+- [json-utils](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/json-utils.md)
+- [linting](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/linting.md)
+- [llm-admin](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-admin.md)
+- [llm-cache](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-cache.md)
+- [llm-parse](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-parse.md)
+- [llm-recording](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-recording.md)
+- [llm-safe-apply](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-safe-apply.md)
+- [llm-schema-validation](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-schema-validation.md)
+- [llm-tracked](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-tracked.md)
+- [llm-tracking](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-tracking.md)
+- [llm-validation](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-validation.md)
+- [logging](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/logging.md)
+- [markdown](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/markdown.md)
+- [model-router](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/model-router.md)
+- [modules](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/modules.md)
+- [openrouter](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/openrouter.md)
+- [orchestrators](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/orchestrators.md)
+- [output](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/output.md)
+- [pagination](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/pagination.md)
+- [parallel](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/parallel.md)
+- [parsers](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/parsers.md)
+- [periods](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/periods.md)
+- [phash](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/phash.md)
+- [pipeline](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/pipeline.md)
+- [pricing](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/pricing.md)
+- [project-portability](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/project-portability.md)
+- [prompts](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/prompts.md)
+- [relative-dates](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/relative-dates.md)
+- [scaffold](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/scaffold.md)
+- [services](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/services.md)
+- [similarity](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/similarity.md)
+- [soft-delete](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/soft-delete.md)
+- [test-migration](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/test-migration.md)
+- [testing](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/testing.md)
+- [throttle](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/throttle.md)
+- [urls](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/urls.md)
+- [versioned-config](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/versioned-config.md)
+- [vocab](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/vocab.md)
+- [web](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/web.md)
+
+## Recipes
+
+- [batch-llm-service](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/recipes/batch-llm-service.md): cache → budget → tracked call → validate → store, fanned across workers
+- [critic](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/recipes/critic.md)
+- [job-refs-bridge](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/recipes/job-refs-bridge.md)
+- [self-consistency](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/recipes/self-consistency.md)

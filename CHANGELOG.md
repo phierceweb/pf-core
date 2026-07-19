@@ -2,6 +2,21 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.8.0 — 2026-07-19
+
+### Added
+- `pf_core.llm.recording` — ambient call-recording window (ContextVar-based, the jobs-runtime pattern): `begin_call_recording(session_metadata=...)` opens a window, `tracked_messages_call` attributes the session metadata to every run inside it and appends a per-call summary, `end_call_recording()` drains. Pool workers join a window via `contextvars.copy_context().run(...)`.
+- `pf_core.llm.tracking.split_metadata(metadata)` — flat dict → (`"key:value"` tags, float metrics): bools tag as `true`/`false`, `None` dropped, 64-char caps matching the sidecar columns.
+- `tracked_messages_call` accepts `metadata=` (split + merged beneath explicit `tags=`/`metrics=`, failed rows included) and `job_id=` (explicit run attribution; `None` keeps the ambient-Job fallback).
+- `llms.txt` at the repo root — AI-discovery index of every shipped doc (completeness enforced by `tests/test_llms_txt.py`).
+- `pf-setup` console script — links the installed package's bundled docs at `docs/pf-core/` in any consumer, so in-repo AI assistants read version-matched docs. Idempotent; never replaces a real file or directory. `pf-doctor` gains a read-only `wiring.docs_link` row reporting the link.
+
+### Fixed
+- `docs/orchestrators.md` no longer contradicts itself on `transaction()`: the shared-connection example is labeled as the sanctioned transactional-orchestration exception, and the "must not" rule is scoped to data access. The layering/anti-patterns rule files carry the same scoping.
+
+### Changed
+- The sdist no longer ships `tests/` (distutils' legacy default included the test files but not `conftest.py`, so the shipped suite could never run).
+
 ## v0.7.3 — 2026-07-17
 
 ### Fixed

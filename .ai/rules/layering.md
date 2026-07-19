@@ -27,7 +27,7 @@ Entry points:
 |-------|------|-----------|
 | **CLI** (`app/cli/`) | Argument parsing; call one orchestrator or service function; print result | Query the DB directly; call LLM APIs; contain business logic |
 | **Web API** (`app/api/`) | HTTP routing; call one orchestrator or service function; return JSON or HTML | Query the DB directly; call LLM APIs; contain business logic |
-| **Orchestrator** (`app/orchestrators/`) | Multi-step coordination; task/state machine; sequence of service calls | Contain single-domain logic (delegate to services); open raw DB connections; call `transaction()` directly |
+| **Orchestrator** (`app/orchestrators/`) | Multi-step coordination; task/state machine; sequence of service calls | Contain single-domain logic (delegate to services); run SQL or access data directly — `transaction()` only to open a shared connection passed into services (`conn=`) for atomicity |
 | **Service** (`app/services/`) | Single-domain business logic; LLM calls for one step; return plain values | Call other orchestrators; manage task state; open raw DB connections |
 | **Repo** (`app/repo/`) | All SQLAlchemy reads and writes; return plain dicts/lists | Call LLM APIs; read files; import from service or orchestrator modules |
 | **Clients** (`app/clients/`) | Wrap external API calls; handle retries, timeouts, transport errors | Import from services, orchestrators, or repo; contain business logic |

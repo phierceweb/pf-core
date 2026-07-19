@@ -27,6 +27,7 @@
 ### New file added to `src/pf_core/docs/` (module doc, recipe, or guide)?
 - [ ] Add it to `docs/modules.md` under the right concern group — the index must list **every** doc; a silently partial index is worse than none, because readers and evaluating agents treat it as exhaustive
 - [ ] Add it to the README's collapsed **All docs** index as an absolute `blob/main` URL — the README is the PyPI long-description (relative links 404 there), and agents can't discover unlinked docs (GitHub blocks `/tree/` crawling)
+- [ ] Add it to `llms.txt` at the repo root (raw URL form) — completeness is enforced by `tests/test_llms_txt.py`
 
 ### Existing module's public API changed?
 - [ ] Update the corresponding `docs/*.md` file

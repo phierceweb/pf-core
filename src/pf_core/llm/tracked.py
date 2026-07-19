@@ -23,12 +23,14 @@ from typing import Any, Protocol
 from pf_core.exceptions import AppError, InvalidInputError
 from pf_core.llm.parse import parse_llm_json
 from pf_core.llm.prompts import render_spec
+from pf_core.llm.recording import current_session_metadata, record_call
 
 try:
     from pf_core.llm.tracking import (
         LlmRunRepo,
         resolve_agent_type_id,
         resolve_prompt_id,
+        split_metadata,
     )
     from pf_core.llm.tracking.decorator import _extract_rendered_prompts
 except ImportError as e:  # pragma: no cover - exercised by the extra matrix
@@ -267,9 +269,11 @@ def tracked_messages_call(
     provider: str | None = None,
     input_hash: str | None = None,
     configs: dict[str, int] | None = None,
+    metadata: dict[str, Any] | None = None,
     tags: list[str] | None = None,
     metrics: dict[str, float] | None = None,
     items_out: int | None = None,
+    job_id: int | None = None,
     on_record_error: str = "raise",
     repo: LlmRunRepo | None = None,
 ) -> tuple[str, dict, int | None]:
@@ -290,6 +294,14 @@ def tracked_messages_call(
     ``resolve_prompt_id``. ``on_record_error="warn"`` makes the tracking sink
     best-effort: a failed ``record()`` logs a warning and yields
     ``run_id=None`` instead of masking the call result.
+
+    ``metadata`` is a flat dict split via
+    :func:`~pf_core.llm.tracking.split_metadata` and merged beneath explicit
+    ``tags``/``metrics`` (tags concatenated + deduped; explicit metrics win).
+    When a :mod:`pf_core.llm.recording` window is open, its session metadata
+    merges beneath ``metadata`` (call wins) and a per-call summary is
+    appended to the window on success and failure. ``job_id`` attributes the
+    run explicitly; ``None`` keeps ``record()``'s ambient-Job fallback.
 
     Raises:
         InvalidInputError: unknown ``on_record_error`` value.
@@ -320,6 +332,12 @@ def tracked_messages_call(
                 on_change=spec_on_change,
             )
 
+    combined_md = {**current_session_metadata(), **(metadata or {})}
+    if combined_md:
+        md_tags, md_metrics = split_metadata(combined_md)
+        tags = list(dict.fromkeys([*md_tags, *(tags or [])]))
+        metrics = {**md_metrics, **(metrics or {})}
+
     rendered_system, rendered_user = _extract_rendered_prompts(messages)
     _repo = repo if repo is not None else LlmRunRepo()
 
@@ -336,6 +354,7 @@ def tracked_messages_call(
                 configs=configs,
                 tags=tags,
                 metrics=metrics,
+                job_id=job_id,
                 rendered_prompts=(rendered_system, rendered_user),
                 **kwargs,
             )
@@ -356,12 +375,23 @@ def tracked_messages_call(
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         ctx = getattr(exc, "context", None) or {}
         http_status = ctx.get("status_code") if isinstance(ctx, dict) else None
-        _record(
+        failed_run_id = _record(
             usage={"duration_ms": elapsed_ms},
             status="failed",
             error=str(exc)[:_MAX_ERROR_LEN],
             error_class=type(exc).__name__,
             http_status=http_status if isinstance(http_status, int) else None,
+        )
+        record_call(
+            _call_summary(
+                agent_type=agent_type,
+                model=model,
+                provider=provider,
+                spec=spec,
+                usage={"duration_ms": elapsed_ms},
+                success=False,
+                run_id=failed_run_id,
+            )
         )
         raise
 
@@ -379,7 +409,43 @@ def tracked_messages_call(
         items_out=items_out,
         raw_response=content if isinstance(content, str) else None,
     )
+    record_call(
+        _call_summary(
+            agent_type=agent_type,
+            model=model,
+            provider=provider,
+            spec=spec,
+            usage=usage,
+            success=True,
+            run_id=run_id,
+        )
+    )
     return content, usage, run_id
+
+
+def _call_summary(
+    *,
+    agent_type: str,
+    model: str,
+    provider: str | None,
+    spec: dict | None,
+    usage: dict,
+    success: bool,
+    run_id: int | None,
+) -> dict[str, Any]:
+    """Recording-window summary for one call; usage values may be None → 0."""
+    return {
+        "agent_type": agent_type,
+        "model": model,
+        "provider": provider,
+        "prompt_version": int(spec["version"]) if spec else None,
+        "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+        "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+        "cost_usd": float(usage.get("cost_usd", 0.0) or 0.0),
+        "duration_ms": int(usage.get("duration_ms", 0) or 0),
+        "success": success,
+        "run_id": run_id,
+    }
 
 
 __all__ = ["ChatClient", "LlmJsonError", "tracked_call", "tracked_messages_call"]

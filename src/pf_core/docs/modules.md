@@ -32,6 +32,7 @@ Persist and inspect every LLM call so cost, prompts, validations, and outcomes a
 |---|---|
 | [LLM tracking](llm-tracking.md) | One database row per LLM call with sidecar tables for prompts, parsed output, validations, links, tags, metrics, and job attribution. The single source of truth that the dashboard, eval harness, cache, and budget guards all read from. |
 | [Tracked LLM call](llm-tracked.md) | `tracked_call` — render spec → invoke injected client → record one run → tracked JSON retry; `tracked_messages_call` — the same recording contract for verbatim message lists (failure rows, optional prompt-id registration, best-effort sink mode). |
+| [LLM call recording](llm-recording.md) | Ambient ContextVar window: open at a batch entry point, attribute session metadata to every tracked call inside, drain per-call summaries at exit. |
 | [LLM cache](llm-cache.md) | Avoid paying for identical calls twice. Per-agent TTL policy with hit-rate analytics. |
 | [Prompts](prompts.md) | Load prompts from YAML, version them, and register them in the database so every tracked run links back to the prompt that produced it. |
 | [Model router](model-router.md) | Per-agent model, sampling, and backend configuration loaded from YAML with live reload. Swap an agent's model — or which client serves it (`resolve_agent`, nested per-backend blocks, opt-in availability fallback, custom backends via the client registry) — without code changes or restarts. |

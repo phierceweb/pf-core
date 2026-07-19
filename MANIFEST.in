@@ -1,0 +1,3 @@
+# Without this, distutils' legacy default ships tests/test_*.py (but not
+# conftest.py) in the sdist — an unrunnable half-suite.
+prune tests
