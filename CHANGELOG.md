@@ -2,6 +2,11 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.9.0 — 2026-07-19
+
+### Added
+- `pf_core.utils.slugify` — fold free text to a stable lowercase ASCII slug (`slugify("Crème brûlée") → "creme-brulee"`, keyword-only `sep=`): strip/lowercase, special-letter map for what NFKD can't decompose (ø, å, æ, œ, ð, þ, ł, ß), NFKD diacritic strip, non-alphanumeric runs collapsed to the separator. Pure stdlib; re-exported from `pf_core.utils`.
+
 ## v0.8.0 — 2026-07-19
 
 ### Added

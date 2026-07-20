@@ -26,6 +26,7 @@ from pf_core.utils.json import (  # noqa: F401
     safe_json_loads,
 )
 from pf_core.utils.hashing import content_hash  # noqa: F401
+from pf_core.utils.slugify import slugify  # noqa: F401
 from pf_core.utils.throttle import Throttle  # noqa: F401
 from pf_core.utils.vocab import SlugNormalizer  # noqa: F401
 

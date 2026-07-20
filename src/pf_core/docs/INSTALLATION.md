@@ -13,7 +13,7 @@ How to install `pf-core` for local development, deploy from PyPI, and pick the r
 | Lightweight LLM tool — clients + anti-slop guards | `pip install pf-core[llm]` |
 | Crawl/fetch web pages — title, body, publish date, liveness | `pip install pf-core[crawl]` |
 | Active pf-core development on this machine | `pip install -e ~/projects/pf-core` |
-| New consumer project, full app framework | Pin `pf-core[full,<dialect>]~=0.8.0` in `pyproject.toml`, then `pip install -e .` |
+| New consumer project, full app framework | Pin `pf-core[full,<dialect>]~=0.9.0` in `pyproject.toml`, then `pip install -e .` |
 | Fresh machine, consumer only | `git clone <project>` → `pip install -e .` (pulls pf-core from PyPI automatically) |
 | Fresh machine, also editing pf-core | Clone pf-core → `pip install -e ~/projects/pf-core` (overrides the PyPI pin) |
 
@@ -38,7 +38,7 @@ Pin a compatible release in your project's `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "pf-core[full,postgres]~=0.8.0",
+    "pf-core[full,postgres]~=0.9.0",
 ]
 ```
 
@@ -129,11 +129,11 @@ Real-world shapes, by project type. Anything importing `pf_core.clients` / `pf_c
 
 | Project shape | Install line |
 |---|---|
-| Full-stack web app, Postgres | `pf-core[full,llm,postgres]~=0.8.0` |
-| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles]~=0.8.0` (+ `[redis,ratelimit]` if caching/limits are used) |
-| Full-stack web app, SQLite | `pf-core[full,llm]~=0.8.0` (SQLite driver is stdlib) |
-| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm]~=0.8.0` |
-| Foundation-only CLI (no LLM at all) | `pf-core[cli]~=0.8.0` |
+| Full-stack web app, Postgres | `pf-core[full,llm,postgres]~=0.9.0` |
+| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles]~=0.9.0` (+ `[redis,ratelimit]` if caching/limits are used) |
+| Full-stack web app, SQLite | `pf-core[full,llm]~=0.9.0` (SQLite driver is stdlib) |
+| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm]~=0.9.0` |
+| Foundation-only CLI (no LLM at all) | `pf-core[cli]~=0.9.0` |
 
 ## Updating the dependency
 
@@ -156,14 +156,14 @@ git tag vX.Y.Z
 git push origin main --tags
 
 # 3. Bump the compatible-release pin in each consumer's pyproject.toml
-#    "pf-core[full,postgres]~=0.8.0"
+#    "pf-core[full,postgres]~=0.9.0"
 
 # 4. Reinstall in each consumer
 cd ~/projects/my-project
 pip install -U -e .
 ```
 
-PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). A `~=0.8.0` consumer picks up `0.8.x` patches on the next reinstall with no pin change; a new minor (`0.9.x`) requires a deliberate pin bump. Patch fixes land on the newest minor only — once a new minor ships, older lines are frozen, so bumping the pin is how a consumer keeps receiving fixes. If OIDC trusted publishing isn't active for the run, publish manually from the pf-core checkout: `python -m build && twine upload -u __token__ dist/*`.
+PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). A `~=0.9.0` consumer picks up `0.9.x` patches on the next reinstall with no pin change; a new minor (`0.10.x`) requires a deliberate pin bump. Patch fixes land on the newest minor only — once a new minor ships, older lines are frozen, so bumping the pin is how a consumer keeps receiving fixes. If OIDC trusted publishing isn't active for the run, publish manually from the pf-core checkout: `python -m build && twine upload -u __token__ dist/*`.
 
 ### On a fresh machine
 

@@ -70,6 +70,7 @@ Published to PyPI as `pf-core` (Python 3.11+); pin a compatible release (`pf-cor
 - [scaffold](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/scaffold.md)
 - [services](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/services.md)
 - [similarity](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/similarity.md)
+- [slugify](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/slugify.md)
 - [soft-delete](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/soft-delete.md)
 - [test-migration](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/test-migration.md)
 - [testing](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/testing.md)

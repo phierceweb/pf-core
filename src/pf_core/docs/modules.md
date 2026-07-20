@@ -159,6 +159,7 @@ Small, focused helpers used across the framework.
 | [Config-path resolver](config-path.md) | `resolve_config_path` — find a config file via override-dir → CWD `config/` → package-bundled default; always absolute, bundled-as-floor. The file-path half of the config-driven convention (pairs with `env.md`). |
 | [Structural guards](guards.md) | Build gate (`python -m pf_core.guards`, config in `.pf-guards.toml`): fails pre-commit + CI on file-size violations (flat limits for library code, per-layer for consumer `app/` trees, baseline ratchet) and on layered-import violations (`check_layering`, wired into the same run). Turns the documented size/layering rules into enforcement. |
 | [Perceptual-hash image dedup](phash.md) | DCT-based image fingerprinting + Hamming-distance clustering for detecting recurring page decorations and re-encoded duplicates that sha256 misses. Optional `[image-phash]` extra. |
+| [Slugify](slugify.md) | Fold free text to a stable lowercase ASCII slug (diacritics folded, punctuation collapsed) for filenames, ids, and URL fragments. Generates from arbitrary text — [vocab](vocab.md) instead maps onto a known controlled vocabulary. |
 | [IDs](ids.md) | URL-safe nanoid generation with collision-safe allocation against a database table. |
 | [Dates](dates.md) | Stable parsing, formatting, and range generation for ISO dates and YYYY-MM month labels. |
 | [Relative dates](relative-dates.md) | Resolve LLM-emitted phrases like "yesterday" or "Tuesday" against a known reference date. |
