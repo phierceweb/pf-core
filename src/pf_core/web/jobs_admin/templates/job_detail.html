@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Job #{{ job.id }}</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 2rem; color: #1a1a2e; max-width: 60rem; }
+  h1 { font-size: 1.2rem; }
+  a { color: #1c4fa1; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+  .badge { padding: 0.1rem 0.5rem; border-radius: 0.6rem; font-size: 0.85em; }
+  .b-succeeded { background: #d9f2e2; color: #14663b; }
+  .b-failed, .b-partial { background: #fbdcdc; color: #a11a1a; }
+  .b-running { background: #dde8fb; color: #1c4fa1; }
+  .b-pending { background: #f4f0d9; color: #7a6a12; }
+  .b-canceled { background: #e8e8ee; color: #555; }
+  .bar { background: #eee; border-radius: 0.4rem; height: 0.7rem; overflow: hidden; margin: 0.6rem 0; }
+  .bar > div { background: #1c4fa1; height: 100%; width: 0; transition: width 0.4s; }
+  .error { background: #fbdcdc; color: #a11a1a; padding: 0.6rem 0.8rem; border-radius: 0.4rem; white-space: pre-wrap; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid #e3e3ee; }
+  button.cancel { background: #a11a1a; color: white; border: 0; padding: 0.4rem 0.9rem; border-radius: 0.4rem; cursor: pointer; }
+  .muted { color: #777; }
+  section { margin-top: 1.4rem; }
+</style>
+</head>
+<body>
+<p><a href="{{ jobs_prefix }}">&larr; Jobs</a></p>
+<h1>
+  {{ job.action }} <span class="mono muted">#{{ job.id }} · {{ job.kind }}</span>
+  <span id="status" class="badge b-{{ job.status }}">{{ job.status }}</span>
+  {% if job.scope.href %}<a href="{{ job.scope.href }}">{{ job.scope.label }}</a>{% endif %}
+</h1>
+
+<div class="bar"><div id="bar-fill"></div></div>
+<p id="progress" class="muted"></p>
+{% if job.error %}<div class="error">{{ job.error }}</div>{% endif %}
+<p>
+  <button id="cancel" class="cancel" hidden>Cancel job</button>
+</p>
+
+<section>
+  <h2>Steps ({{ steps | length }})</h2>
+  <table>
+    <thead><tr><th>#</th><th>Step</th><th>Status</th><th>Duration ms</th></tr></thead>
+    <tbody>
+      {% for s in steps %}
+      <tr><td>{{ s.step_index }}</td><td class="mono">{{ s.name }}</td>
+          <td><span class="badge b-{{ s.status }}">{{ s.status }}</span></td>
+          <td>{{ s.duration_ms or '—' }}</td></tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No steps.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Events ({{ events | length }})</h2>
+  <table>
+    <tbody>
+      {% for e in events %}
+      <tr><td class="mono">{{ e.created_at }}</td><td>{{ e.event_type }}</td><td>{{ e.message }}</td></tr>
+      {% else %}
+      <tr><td class="muted">No events.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+(function () {
+  const jobId = {{ job.id }};
+  const api = "{{ jobs_prefix }}/api/" + jobId;
+  const TERMINAL = ["succeeded", "failed", "partial", "canceled"];
+  const statusEl = document.getElementById("status");
+  const barEl = document.getElementById("bar-fill");
+  const progEl = document.getElementById("progress");
+  const cancelBtn = document.getElementById("cancel");
+  let status = "{{ job.status }}";
+
+  function render(job) {
+    status = job.status;
+    statusEl.textContent = status;
+    statusEl.className = "badge b-" + status;
+    if (job.progress_total) {
+      const pct = Math.round(100 * job.progress_current / job.progress_total);
+      barEl.style.width = pct + "%";
+      progEl.textContent = job.progress_current + "/" + job.progress_total +
+        (job.current_step ? " — " + job.current_step : "");
+    }
+    cancelBtn.hidden = TERMINAL.includes(status);
+  }
+
+  async function poll() {
+    if (TERMINAL.includes(status)) { location.reload(); return; }
+    try {
+      const r = await fetch(api);
+      if (r.ok) render((await r.json()).job);
+    } catch (e) { /* transient — keep polling */ }
+    setTimeout(poll, 2000);
+  }
+
+  cancelBtn.addEventListener("click", async () => {
+    if (!confirm("Cancel this job?")) return;
+    const r = await fetch(api + "/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "canceled from web" }),
+    });
+    // 409 = already terminal; either way, refresh state.
+    location.reload();
+  });
+
+  render({ status: status,
+           progress_current: {{ job.progress_current or 0 }},
+           progress_total: {{ job.progress_total or 'null' }} });
+  if (!TERMINAL.includes(status)) setTimeout(poll, 2000);
+})();
+</script>
+</body>
+</html>

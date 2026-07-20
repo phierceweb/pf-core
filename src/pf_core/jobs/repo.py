@@ -171,6 +171,45 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
             rows = conn.execute(stmt).mappings().fetchall()
         return [_coerce_row_utc(dict(r)) for r in rows]
 
+    #: Sort keys `find_page` accepts — a closed allowlist because the sort
+    #: name typically arrives from a URL query parameter.
+    _PAGE_SORTS = ("id", "kind", "status", "created_at")
+
+    def find_page(
+        self,
+        *,
+        sort: str = "created_at",
+        direction: str = "desc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """One sorted page of jobs plus the unfiltered total row count.
+
+        Backs paginated jobs UIs without consumers touching the private
+        schema. ``sort`` must be one of ``_PAGE_SORTS``; ``direction`` is
+        ``"asc"`` or ``"desc"``. Ties break on ``id`` descending.
+        """
+        if sort not in self._PAGE_SORTS:
+            raise InvalidInputError(
+                f"sort must be one of {self._PAGE_SORTS}, got {sort!r}"
+            )
+        if direction not in ("asc", "desc"):
+            raise InvalidInputError(f"direction must be asc|desc, got {direction!r}")
+        col = s.jobs.c[sort]
+        order = col.asc() if direction == "asc" else col.desc()
+        stmt = (
+            select(s.jobs)
+            .order_by(order, s.jobs.c.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        with self._tx() as conn:
+            rows = conn.execute(stmt).mappings().fetchall()
+            total = conn.execute(
+                select(func.count()).select_from(s.jobs)
+            ).scalar_one()
+        return [_coerce_row_utc(dict(r)) for r in rows], int(total)
+
     def descendants(self, parent_job_id: int) -> list[dict]:
         """Return all child jobs of ``parent_job_id`` (one level deep).
 

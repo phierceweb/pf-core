@@ -100,6 +100,8 @@ Coordinate multi-step work across services and persist progress so jobs survive 
 | Module | Concern |
 |---|---|
 | [Jobs](jobs.md) | Generic job tracker with state machine, idempotent step history, worker-claim leases, and automatic LLM-run attribution. Includes a `pf-jobs` CLI. |
+| [Jobs runtime](jobs-runtime.md) | The execution layer: polling worker pool over `claim_next` (stale-lease reclaim on start), tracked subprocess runner (`SubprocessJobSpec` — argv/log/outputs hooks, job-id env injection, escalating group cancel, byte-offset log tail), and the background thread submitter (`submit_tracked`/`submit_detached`, injectable dedup scope, `wait_all` test drain). |
+| [Jobs admin dashboard](jobs-admin.md) | Mountable jobs list/detail pages + polling JSON API + soft-cancel endpoint (409 on terminal, optional terminate hook) — the jobs sibling of the LLM admin dashboard. |
 | [Orchestrators](orchestrators.md) | Base class for multi-step workflows that coordinate several services. Enforces the layered architecture. |
 | [Services](services.md) | Base class for single-domain business logic. Standard hooks for repos, logging, and configuration. |
 

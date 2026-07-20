@@ -2,6 +2,14 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.11.0 — 2026-07-19
+
+### Added
+- `pf_core.jobs.workers` — the jobs execution layer: `start_workers`/`stop_workers` (daemon claim-loop pool over `claim_next` with non-halting error handling, `JOB_POLL_SECONDS` cadence, and a `reclaim_stale` sweep on start so jobs stranded `running` by a killed worker re-enter the queue), `run_subprocess_job` + `SubprocessJobSpec` (argv/log-path/outputs hooks, job-id env injection — default `PF_JOB_ID` — own-session child, stderr-merged log with `$ argv` header, exit-code → terminal transition with a canceled-row guard), `terminate_job` (process-group SIGTERM with SIGKILL escalation), and `tail_log` (byte-offset log reads).
+- `pf_core.jobs.submit` — background thread submitter for web-triggered jobs: `submit_tracked` (create → `Job` window → progress callback → succeeded; failures recorded by the context manager), `submit_detached` (service creates its own job; the new id is resolved for the caller), `JobAlreadyRunning` dedup via an injectable inputs-predicate, and `wait_all` — the test-suite drain hook for `pf_engine_teardown`.
+- `pf_core.web.jobs_admin.make_jobs_router` — mountable jobs dashboard (sortable/paginated list, polling detail page) + JSON API (`GET .../api/{id}` bundle, `POST .../api/{id}/cancel` — soft cancel, 409 on terminal, optional `terminate_hook`) with `auth_dep`/`kind_labels`/`describe`/`templates` injection; templates are self-contained.
+- `JobRepo.find_page(sort=, direction=, limit=, offset=)` — one sorted page + total, with a fixed sort allowlist (id/kind/status/created_at).
+
 ## v0.10.0 — 2026-07-19
 
 ### Added

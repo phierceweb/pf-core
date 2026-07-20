@@ -53,7 +53,7 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.10.0"` (picks up `0.10.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.11.0"` (picks up `0.11.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
@@ -102,6 +102,8 @@ python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent 
 - [ids](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/ids.md)
 - [io](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/io.md)
 - [jobs](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/jobs.md)
+- [jobs-admin](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/jobs-admin.md)
+- [jobs-runtime](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/jobs-runtime.md)
 - [json-recovery](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/json-recovery.md)
 - [json-utils](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/json-utils.md)
 - [linting](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/linting.md)
