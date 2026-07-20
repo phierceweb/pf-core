@@ -47,6 +47,7 @@ Published to PyPI as `pf-core` (Python 3.11+); pin a compatible release (`pf-cor
 - [llm-recording](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-recording.md)
 - [llm-safe-apply](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-safe-apply.md)
 - [llm-schema-validation](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-schema-validation.md)
+- [llm-step](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-step.md)
 - [llm-tracked](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-tracked.md)
 - [llm-tracking](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-tracking.md)
 - [llm-validation](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/llm-validation.md)

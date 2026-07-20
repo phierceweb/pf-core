@@ -10,79 +10,47 @@ Shape for services that process N items through an LLM with caching, budget enfo
 
 ## When NOT to use
 
-- Single interactive call (no job wrapper needed — call the client directly via `@track_run`)
+- Single interactive call (no job wrapper needed — call the client directly via `tracked_messages_call`)
 - Streaming responses (this pattern assumes a full response arrives per call)
 - Multi-turn agent loops where items depend on prior results
 
 ## The pattern
 
+The per-item hot path — hash → cache → budget → tracked call → validate → store — is one framework call, [`llm_step`](../llm-step.md). The batch shell around it stays explicit in your service.
+
 ```python
 from pf_core.jobs.runtime import Job
-from pf_core.jobs.repo import JobRepo
-from pf_core.parallel import run_parallel
-from pf_core.output import Reporter, NullReporter
-from pf_core.llm import get_agent_config, parse_and_validate
-from pf_core.llm.tracking import compute_input_hash, track_run
-from pf_core.llm.cache import cache_lookup, cache_store, record_cache_hit
-from pf_core.budget import check_budget, project_cost, CostBudgetExceeded, record_blocked_run
+from pf_core.llm.router import get_agent_config
+from pf_core.llm.step import BudgetEstimate, llm_step
+from pf_core.output import NullReporter, Reporter
+from pf_core.parallel import resilient, run_parallel
 from pf_core.clients.openrouter import get_client
 
 AGENT = "summarizer"  # or "classifier", "extractor", ...
 
 
-@track_run(agent_type=AGENT, provider="openrouter")
-def _tracked_chat(*, model, messages, **sampling):
-    return get_client().chat(model=model, messages=messages, **sampling)
-
-
-def _process_one(item: dict, *, cfg: dict) -> dict:
+def _process_one(item: dict, *, cfg: dict, job, job_id: int) -> None:
     """Single-item worker — the hot path. Called by run_parallel."""
-    messages = _build_messages(item)
-    input_hash = compute_input_hash(
-        model=cfg["model"], messages=messages, sampling=cfg
-    )
-
-    # 1. Cache check — zero-cost return if we've seen this input
-    hit = cache_lookup(agent_type=AGENT, input_hash=input_hash)
-    if hit is not None:
-        record_cache_hit(hit=hit)
-        return _finalize(item, hit.parsed_output)
-
-    # 2. Budget guard — raises CostBudgetExceeded on block
-    projected = project_cost(
-        agent_type=AGENT,
-        model=cfg["model"],
-        estimated_prompt_tokens=1500,
-        estimated_completion_tokens=800,
-    )
-    try:
-        check_budget(agent_type=AGENT, projected_cost_usd=projected)
-    except CostBudgetExceeded as exc:
-        record_blocked_run(agent_type=AGENT, model=cfg["model"], exc=exc)
-        raise
-
-    # 3. LLM call — tracked, cost + tokens recorded automatically
-    content, usage = _tracked_chat(messages=messages, **cfg)
-    run_id = usage["_llm_run_id"]
-
-    # 4. Parse + validate — signals written to llm_run_validations.
-    # parse_and_validate returns a ValidationResult: `.ok` is the pass/fail
-    # flag, `.value` is the parsed object (a dict, or a Pydantic instance
-    # when the shape validator is a PydanticValidator).
-    result = parse_and_validate(content, agent_type=AGENT, run_id=run_id)
-    parsed = result.value
-
-    # 5. Cache store — next identical call returns early
-    cache_store(
-        agent_type=AGENT,
-        input_hash=input_hash,
-        source_run_id=run_id,
-        model=cfg["model"],
-        parsed_output=parsed,
-        raw_response=content,
-    )
-
-    return _finalize(item, parsed)
+    with job.step(f"{AGENT}_{item['id']}") as step:
+        if step.skipped:
+            return
+        messages = _build_messages(item)
+        result = llm_step(
+            client=get_client(),
+            agent_type=AGENT,
+            messages=messages,
+            model=cfg["model"],
+            sampling={k: v for k, v in cfg.items() if k != "model"},
+            provider="openrouter",
+            cache=True,
+            budget=BudgetEstimate(job_id=job_id, job_kind=f"{AGENT}_batch"),
+            validate="object",
+        )
+        if result.validation and not result.validation.ok:
+            step.error = "validation failed"
+            return
+        _persist(item, result.value, run_id=result.run_id)   # persistence is yours
+        step.outputs = {"cache_hit": result.cache_hit}
 
 
 def run_batch(
@@ -92,44 +60,42 @@ def run_batch(
     workers: int = 4,
     reporter: Reporter | None = None,
 ) -> None:
-    """Entry point. Wrap the run_parallel worker in a Job so every
-    tracked LLM call gets job_id attribution."""
+    """Entry point. The Job wrapper gives every tracked call job_id attribution."""
     cfg = get_agent_config(AGENT)
     reporter = reporter or NullReporter()
+    failures: list[tuple[str, str]] = []
 
     with Job(job_id) as job:
-        job.event("batch_started", f"{len(items)} items")
+        if job.status == "pending":
+            job.transition("running")
+        job.progress(total=len(items))
 
-        run_parallel(
-            items=items,
-            fn=lambda item: _process_one(item, cfg=cfg),
-            workers=workers,
-            label=f"{AGENT} items processed",
-            reporter=reporter,
-        )
+        @resilient(failures, label_fn=lambda i: str(i["id"]), reporter=reporter)
+        def _one(item: dict) -> None:
+            _process_one(item, cfg=cfg, job=job, job_id=job_id)
 
-        job.event("batch_complete", f"{len(items)} items")
+        run_parallel(items, _one, workers, f"{AGENT} items", None, failures=failures)
+
+        job.outputs = {"n_done": len(items) - len(failures), "n_failed": len(failures)}
+        job.transition("succeeded")
 ```
 
 ## What pf-core gives you automatically
 
-- `@track_run` writes an `llm_runs` row per call with tokens, cost, duration, status, error
+- `llm_step` orders the legs and short-circuits correctly: a cache hit records a `cache_hit` run and skips both the client call and the budget; a budget block records the blocked run and raises `CostBudgetExceeded`; a client error records a failed run and re-raises; a validation failure returns as data
 - `Job` context manager populates `llm_runs.job_id` via contextvar, so every call inside the `with Job(...)` block is attributed
 - `cache_hit` status excluded from budget aggregation → no double-counting
-- `CostBudgetExceeded` can be caught and handled per item (swap to a cheaper agent, skip, requeue) — service decides
-- `record_blocked_run` writes a zero-cost `llm_runs` row tagged `budget:blocked` so the admin surfaces it
 - `parse_and_validate` emits `llm_run_validations` rows for dashboards
+- `@resilient` + `run_parallel(..., failures=)` isolate per-item failures so the batch continues
 
 ## Variations
 
-**Per-item fallback.** Catch `CostBudgetExceeded` inside `_process_one`, call `get_agent_config(f"{AGENT}_cheap")`, retry with the cheaper config. Link the retry via `llm_run_links.relation="retry_after_budget_block"`.
+**Per-item fallback.** Catch `CostBudgetExceeded` around `llm_step`, retry with `get_agent_config(f"{AGENT}_cheap")`. Link the retry via `llm_run_links.relation="retry_after_budget_block"`.
 
-**Skip on validation fail.** Check the `parse_and_validate` result's `ok` attribute; if false, write an `llm_run_outcomes` row with `outcome_kind="skipped_invalid"` and return early.
+**Skip on validation fail.** Shown above — `result.validation.ok` is data, not an exception; write an `llm_run_outcomes` row with `outcome_kind="skipped_invalid"` if you want it queryable.
 
-**Per-step granularity.** Wrap sub-operations in `with job.step("step_name"):` — `job_steps` rows power resumable workers.
+**No cache / no validation.** Drop the kwarg — each leg is independent (`cache=False` passes, `validate=None` returns raw content as `result.value`).
 
-## Don't abstract this into a base class
+## Don't abstract the batch shell
 
-Three services following this shape explicitly is clearer than a `BatchLlmService` scaffold. The pieces — cache, budget, track, validate — are named and visible. A base class hides the integration and makes it harder to vary any single step.
-
-If the shape changes (e.g. new pf-core primitive lands), all three services update mechanically; this is easier than evolving a scaffold's API.
+The hot path is a named call now; the shell deliberately is not. Job planning, step naming, item shapes, failure collection, and persistence differ per service — a `BatchLlmService` base class would hide exactly the parts you need to vary. Keep the shell explicit; when a new pf-core primitive lands, services update mechanically.

@@ -2,6 +2,11 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.10.0 — 2026-07-19
+
+### Added
+- `pf_core.llm.step.llm_step` — the per-item batch hot path as one call: input-hash → cache lookup (a hit records a `cache_hit` run and returns, budget skipped; with `validate=` the stored raw is re-validated) → budget gate (`BudgetEstimate`; a block records the blocked run and raises) → `tracked_messages_call` (all its kwargs pass through by name) → `parse_and_validate` (a failing result returns, never raises) → cache store (only on valid; raw always, parsed only when dict/list). Returns `StepResult(value, content, run_id, cache_hit, validation)`. The batch shell — Job/steps, `run_parallel`, persistence — stays in the caller; the batch-llm-service recipe now shows the composed form.
+
 ## v0.9.0 — 2026-07-19
 
 ### Added

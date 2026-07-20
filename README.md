@@ -53,7 +53,7 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.9.0"` (picks up `0.9.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.10.0"` (picks up `0.10.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
@@ -111,6 +111,7 @@ python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent 
 - [llm-recording](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-recording.md)
 - [llm-safe-apply](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-safe-apply.md)
 - [llm-schema-validation](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-schema-validation.md)
+- [llm-step](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-step.md)
 - [llm-tracked](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-tracked.md)
 - [llm-tracking](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-tracking.md)
 - [llm-validation](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-validation.md)
