@@ -53,8 +53,10 @@ print(result.written, result.unchanged, result.pruned)
 | Member | Purpose |
 |---|---|
 | `managed_suffixes: tuple[str, ...] = (".md",)` | File suffixes this exporter owns. Only these are eligible for pruning — override to also manage `.json`, etc. |
+| `force_prune_dirs: tuple[str, ...] = ()` | Root-relative directories always in prune scope. Use for stable subdirectories (`("sections",)`) whose orphans must go even when a run yields zero artifacts into them — by default such a directory keeps its orphans forever. |
 | `iter_artifacts() -> Iterator[tuple[str, str]]` | **Subclass responsibility.** Yield `(relative_path, content)`. Paths are POSIX-style, relative to the export root. |
 | `export(root) -> ExportResult` | Write all artifacts incrementally, then prune. Raises `ValueError` if a path is absolute or escapes `root` via `..`. |
+| `check(root) -> list[str]` | Dry run: sorted relative paths `export` would touch — missing, content-stale, and prunable orphans. Empty list ⇒ the tree is exactly what `export` would produce. Writes nothing. |
 
 ### `ExportResult`
 
@@ -90,4 +92,15 @@ Pruning is intentionally narrow to avoid deleting files the exporter doesn't own
 2. it lives directly in a directory that received at least one produced artifact this run, and
 3. it was not itself produced this run.
 
-So a `notes.txt` beside produced `.md` files survives (fails #1), and a `keep.md` in a directory the exporter never wrote into survives (fails #2).
+So a `notes.txt` beside produced `.md` files survives (fails #1), and a `keep.md` in a directory the exporter never wrote into survives (fails #2) — unless that directory is listed in `force_prune_dirs`, which adds it to scope regardless of what this run produced.
+
+## Committed generated trees
+
+When the exported tree is committed (docs generated from data), wire `check` as the freshness gate — pre-commit and CI run it and fail on a non-empty list, so the tree can never drift from its source:
+
+```python
+stale = RecordExporter(rows).check("./export")
+if stale:
+    print("\n".join(stale))
+    raise SystemExit(1)
+```

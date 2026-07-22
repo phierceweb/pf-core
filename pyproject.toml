@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pf-core"
-version = "0.11.0"
-description = "Dependency-light Python foundation (logging, exceptions, config, utils) with LLM clients, anti-slop guards, cost tracking, and an opinionated FastAPI+SQLAlchemy framework available as opt-in extras"
+version = "0.12.0"
+description = "Python foundation for LLM apps whose prompts and spend you can actually see — versioned prompts, every call recorded and replayable, budgets, evals, and resumable jobs on one schema; opt-in LLM, database, and FastAPI layers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -21,6 +21,9 @@ keywords = [
     "cost-tracking",
     "eval",
     "structured-logging",
+    "prompt-versioning",
+    "llm-observability",
+    "background-jobs",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -238,6 +241,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "pf_core" = ["docs/*.md", "docs/recipes/*.md", "py.typed"]
 "pf_core.web.llm_admin" = ["templates/*.html"]
+"pf_core.web.jobs_admin" = ["templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]   # don't collect templates/consumer-*/tests/ (they hold __PKG__ tokens)

@@ -68,11 +68,18 @@ class MarkdownExporter:
     """Base class for incremental, atomic markdown tree exports.
 
     Subclass and implement :meth:`iter_artifacts`. Override
-    :attr:`managed_suffixes` to own more than ``.md`` files for pruning.
+    :attr:`managed_suffixes` to own more than ``.md`` files for pruning, and
+    :attr:`force_prune_dirs` for stable subdirectories whose orphans must be
+    pruned even in a run that yields no artifacts into them.
     """
 
     #: File suffixes this exporter owns — only these are eligible for pruning.
     managed_suffixes: tuple[str, ...] = (".md",)
+
+    #: Root-relative directories always in prune scope. By default a directory
+    #: is pruned only when this run produced into it, so a section that goes
+    #: from N artifacts to zero would keep its orphans forever.
+    force_prune_dirs: tuple[str, ...] = ()
 
     def iter_artifacts(self) -> Iterator[tuple[str, str]]:
         """Yield ``(relative_path, content)`` for every artifact to write.
@@ -117,7 +124,10 @@ class MarkdownExporter:
                 unchanged += 1
 
         produced = {rel for rel, _ in artifacts}
-        pruned = self._prune(root, produced)
+        pruned = 0
+        for orphan in self._orphans(root, produced):
+            orphan.unlink()
+            pruned += 1
 
         return ExportResult(
             written=written,
@@ -125,6 +135,33 @@ class MarkdownExporter:
             pruned=pruned,
             paths=sorted(produced),
         )
+
+    def check(self, root: str | Path) -> list[str]:
+        """Report what :meth:`export` would change, writing nothing.
+
+        Returns the sorted root-relative paths that are out of date: missing
+        files, files whose content differs from what this run would render,
+        and managed-suffix orphans :meth:`export` would prune. An empty list
+        means the tree on disk is exactly what :meth:`export` would produce —
+        the freshness gate for committing generated trees.
+        """
+        root = Path(root)
+        artifacts = [(self._safe_relpath(rel), content)
+                     for rel, content in self.iter_artifacts()]
+
+        stale: set[str] = set()
+        for rel, content in artifacts:
+            target = root / rel
+            try:
+                if target.read_text(encoding="utf-8") != content:
+                    stale.add(rel)
+            except OSError:
+                stale.add(rel)
+
+        produced = {rel for rel, _ in artifacts}
+        for orphan in self._orphans(root, produced):
+            stale.add(orphan.relative_to(root).as_posix())
+        return sorted(stale)
 
     # -- internals ---------------------------------------------------------
 
@@ -142,31 +179,32 @@ class MarkdownExporter:
             raise ValueError(f"artifact path must not contain '..', got {rel!r}")
         return pure.as_posix()
 
-    def _prune(self, root: Path, produced: Iterable[str]) -> int:
-        """Delete managed-suffix orphans in the directories we produced into.
+    def _orphans(self, root: Path, produced: Iterable[str]) -> list[Path]:
+        """Managed-suffix orphans in prune scope, without touching them.
 
         Prune scope is deliberately narrow: only files whose suffix is in
         :attr:`managed_suffixes`, located directly in a directory that received
-        at least one produced artifact, and not themselves produced this run.
+        at least one produced artifact (plus :attr:`force_prune_dirs`), and
+        not themselves produced this run.
         """
         produced = set(produced)
-        produced_dirs = {(root / rel).parent for rel in produced}
+        scope_dirs = {(root / rel).parent for rel in produced}
+        scope_dirs.update(root / d for d in self.force_prune_dirs)
         keep = {(root / rel).resolve() for rel in produced}
 
-        pruned = 0
-        for d in produced_dirs:
+        orphans: list[Path] = []
+        for d in scope_dirs:
             if not d.is_dir():
                 continue
-            for f in d.iterdir():
+            for f in sorted(d.iterdir()):
                 if not f.is_file():
                     continue
                 if f.suffix not in self.managed_suffixes:
                     continue
                 if f.resolve() in keep:
                     continue
-                f.unlink()
-                pruned += 1
-        return pruned
+                orphans.append(f)
+        return orphans
 
 
 # ---------------------------------------------------------------------------

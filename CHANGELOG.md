@@ -2,6 +2,15 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.12.0 — 2026-07-21
+
+### Added
+- `MarkdownExporter.check(root)` — dry-run freshness gate: the sorted relative paths `export` would touch (missing, content-stale, prunable orphans), writing nothing. An empty list means the tree on disk is exactly what `export` would produce — wire it into pre-commit/CI for committed generated trees.
+- `MarkdownExporter.force_prune_dirs` — root-relative directories always in prune scope, so a stable subdirectory that yields zero artifacts in a run still sheds its orphans (default scope only prunes directories the run produced into).
+
+### Fixed
+- The wheel now includes `pf_core/web/jobs_admin/templates/` — 0.11.0's wheel omitted it (package-data declared llm_admin's templates only), so `make_jobs_router` pages failed on wheel installs while working editable. `tests/test_packaging.py` now asserts every shipped `templates/` dir has a package-data entry.
+
 ## v0.11.0 — 2026-07-19
 
 ### Added

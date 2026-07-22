@@ -171,3 +171,80 @@ class TestYamlFrontmatter:
     def test_numeric_string_is_quoted(self) -> None:
         """A string that looks like a number stays a string."""
         assert 'zip: "90210"' in yaml_frontmatter({"zip": "90210"})
+
+
+# ---------------------------------------------------------------------------
+# MarkdownExporter.check — dry-run freshness gate
+# ---------------------------------------------------------------------------
+
+
+class TestCheck:
+    def test_fresh_dir_reports_everything_stale(self, tmp_path: Path) -> None:
+        exp = _FakeExporter([("a.md", "alpha"), ("sub/b.md", "bravo")])
+        assert exp.check(tmp_path) == ["a.md", "sub/b.md"]
+
+    def test_clean_tree_reports_nothing(self, tmp_path: Path) -> None:
+        exp = _FakeExporter([("a.md", "alpha"), ("sub/b.md", "bravo")])
+        exp.export(tmp_path)
+        assert exp.check(tmp_path) == []
+
+    def test_content_drift_and_missing_reported(self, tmp_path: Path) -> None:
+        exp = _FakeExporter([("a.md", "alpha"), ("b.md", "bravo")])
+        exp.export(tmp_path)
+        (tmp_path / "a.md").write_text("edited by hand")
+        (tmp_path / "b.md").unlink()
+        assert exp.check(tmp_path) == ["a.md", "b.md"]
+
+    def test_orphan_reported(self, tmp_path: Path) -> None:
+        exp = _FakeExporter([("a.md", "alpha")])
+        exp.export(tmp_path)
+        (tmp_path / "zombie.md").write_text("orphan")
+        assert exp.check(tmp_path) == ["zombie.md"]
+
+    def test_check_writes_nothing(self, tmp_path: Path) -> None:
+        exp = _FakeExporter([("a.md", "alpha")])
+        exp.export(tmp_path)
+        (tmp_path / "zombie.md").write_text("orphan")
+        before = sorted(p.name for p in tmp_path.iterdir())
+        mtime = (tmp_path / "a.md").stat().st_mtime_ns
+        exp.check(tmp_path)
+        assert sorted(p.name for p in tmp_path.iterdir()) == before
+        assert (tmp_path / "a.md").stat().st_mtime_ns == mtime
+
+    def test_unmanaged_suffix_never_reported(self, tmp_path: Path) -> None:
+        exp = _FakeExporter([("a.md", "alpha")])
+        exp.export(tmp_path)
+        (tmp_path / "notes.txt").write_text("hand-placed")
+        assert exp.check(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# force_prune_dirs — stable subdirectories stay in prune scope
+# ---------------------------------------------------------------------------
+
+
+class _ForceExporter(_FakeExporter):
+    force_prune_dirs = ("sections",)
+
+
+class TestForcePruneDirs:
+    def test_default_keeps_orphans_in_unproduced_dirs(self, tmp_path: Path) -> None:
+        _FakeExporter([("sections/old.md", "x")]).export(tmp_path)
+        result = _FakeExporter([("index.md", "i")]).export(tmp_path)
+        assert result.pruned == 0
+        assert (tmp_path / "sections" / "old.md").exists()
+
+    def test_force_dir_pruned_when_it_yields_nothing(self, tmp_path: Path) -> None:
+        _ForceExporter([("sections/old.md", "x")]).export(tmp_path)
+        result = _ForceExporter([("index.md", "i")]).export(tmp_path)
+        assert result.pruned == 1
+        assert not (tmp_path / "sections" / "old.md").exists()
+
+    def test_missing_force_dir_is_fine(self, tmp_path: Path) -> None:
+        result = _ForceExporter([("index.md", "i")]).export(tmp_path)
+        assert result.pruned == 0
+
+    def test_check_honors_force_dirs(self, tmp_path: Path) -> None:
+        _ForceExporter([("sections/old.md", "x")]).export(tmp_path)
+        exp = _ForceExporter([("index.md", "i")])
+        assert exp.check(tmp_path) == ["index.md", "sections/old.md"]
