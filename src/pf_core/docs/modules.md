@@ -72,6 +72,8 @@ Wrappers for the external services that LLM agents talk to. All clients integrat
 | [Anthropic client](anthropic.md) | Direct wrapper around the official `anthropic` SDK. Multimodal-capable; reports cache + input/output tokens directly. |
 | [Brave search client](brave.md) | Web search for grounding LLM calls in real results. |
 | [Article fetch](article-fetch.md) | Title, body, and publish-date extraction with Wayback Machine fallback for paywalled or blocked URLs. |
+| [Fetch](fetch.md) | Polite stdlib HTTP fetching — SSRF-guarded redirects, status-aware retries, throttling, size caps, conditional GETs. Base install, no extra. |
+| [Fetch: image localizer](fetch-images.md) | Download a document's remote image refs into a local `images/` dir and retarget the refs; deterministic naming, reuse-not-refetch, resumable file mode. |
 
 ## Evaluation
 
@@ -137,6 +139,7 @@ Make architecture violations and bloated files fail the build, not a code review
 | [Exceptions](exceptions.md) | Two-branch hierarchy that keeps expected domain failures separate from unexpected system errors. The web layer maps each branch to the right HTTP status; the logging layer treats each differently. |
 | [Logging](logging.md) | structlog setup with colored console for development and JSON-lines for production ingestion. |
 | [Cache](cache.md) | Redis-backed regions with graceful degradation when Redis is unavailable. |
+| [Reload cache](reload-cache.md) | TTL hot-reload cache for config loaders — double-checked lock, per-call TTL read, key invalidation, optional serve-stale-on-error. |
 | [Project portability](project-portability.md) | The rule that keeps pf-core consumable: zero hardcoded project names, organizations, jurisdictions, or domains in framework code. |
 
 ## Pipeline ergonomics

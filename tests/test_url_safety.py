@@ -44,6 +44,17 @@ class TestAssertPublicUrl:
         with pytest.raises(InvalidInputError):
             assert_public_url("file:///etc/passwd")
 
+    def test_fails_closed_on_unresolvable_host(self, monkeypatch):
+        """A host that won't resolve is blocked, not waved through."""
+        import socket
+
+        def boom(*args, **kwargs):
+            raise socket.gaierror("Name or service not known")
+
+        monkeypatch.setattr(socket, "getaddrinfo", boom)
+        with pytest.raises(InvalidInputError):
+            assert_public_url("http://nonexistent.invalid/figure.png")
+
 
 class _Resp:
     def __init__(self, status_code, location=None):

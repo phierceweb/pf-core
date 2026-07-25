@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from pf_core.utils.io import atomic_write_json, atomic_write_text
+from pf_core.utils.io import atomic_write_bytes, atomic_write_json, atomic_write_text
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +109,79 @@ class TestAtomicWriteText:
         atomic_write_text(target, "hi", mode=0o600)
         mode = stat.S_IMODE(os.stat(target).st_mode)
         assert mode == 0o600
+
+
+# ---------------------------------------------------------------------------
+# atomic_write_bytes
+# ---------------------------------------------------------------------------
+
+
+class TestAtomicWriteBytes:
+    def test_writes_content_to_target(self, tmp_path: Path) -> None:
+        """Binary content (including non-UTF-8 bytes) round-trips exactly."""
+        target = tmp_path / "assets-chart.png"
+        payload = b"\x89PNG\r\n\x1a\n\x00\xfe\xffpayload"
+        atomic_write_bytes(target, payload)
+        assert target.read_bytes() == payload
+
+    def test_overwrites_existing_file(self, tmp_path: Path) -> None:
+        target = tmp_path / "out.bin"
+        target.write_bytes(b"old")
+        atomic_write_bytes(target, b"new")
+        assert target.read_bytes() == b"new"
+
+    def test_accepts_str_path(self, tmp_path: Path) -> None:
+        target = tmp_path / "out.bin"
+        atomic_write_bytes(str(target), b"data")
+        assert target.read_bytes() == b"data"
+
+    def test_no_temp_file_left_behind_on_success(self, tmp_path: Path) -> None:
+        target = tmp_path / "out.bin"
+        atomic_write_bytes(target, b"data")
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["out.bin"]
+
+    def test_existing_file_unchanged_when_write_fails(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        target = tmp_path / "out.bin"
+        target.write_bytes(b"original")
+
+        def boom(*args, **kwargs):
+            raise OSError("simulated rename failure")
+
+        monkeypatch.setattr("pf_core.utils.io.os.replace", boom)
+        with pytest.raises(OSError, match="simulated rename failure"):
+            atomic_write_bytes(target, b"new content")
+        assert target.read_bytes() == b"original"
+
+    def test_temp_file_cleaned_up_when_write_fails(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        target = tmp_path / "out.bin"
+
+        def boom(*args, **kwargs):
+            raise OSError("simulated rename failure")
+
+        monkeypatch.setattr("pf_core.utils.io.os.replace", boom)
+        with pytest.raises(OSError):
+            atomic_write_bytes(target, b"new content")
+        leftovers = [p for p in tmp_path.iterdir() if p.name != "out.bin"]
+        assert leftovers == []
+
+    def test_missing_parent_dir_raises(self, tmp_path: Path) -> None:
+        target = tmp_path / "nonexistent" / "out.bin"
+        with pytest.raises((FileNotFoundError, OSError)):
+            atomic_write_bytes(target, b"data")
+
+    def test_default_mode_is_readable_by_world(self, tmp_path: Path) -> None:
+        target = tmp_path / "out.bin"
+        atomic_write_bytes(target, b"data")
+        assert stat.S_IMODE(os.stat(target).st_mode) == 0o644
+
+    def test_custom_mode(self, tmp_path: Path) -> None:
+        target = tmp_path / "out.bin"
+        atomic_write_bytes(target, b"data", mode=0o600)
+        assert stat.S_IMODE(os.stat(target).st_mode) == 0o600
 
 
 # ---------------------------------------------------------------------------

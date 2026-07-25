@@ -7,7 +7,7 @@ The target file is either the old content or the new content — never a partial
 ## Usage
 
 ```python
-from pf_core.utils.io import atomic_write_text, atomic_write_json
+from pf_core.utils.io import atomic_write_bytes, atomic_write_text, atomic_write_json
 
 # Write a markdown file. Crash partway through → original survives.
 atomic_write_text(Path("./out.md"), "rendered markdown ...")
@@ -45,6 +45,19 @@ atomic_write_text(
 | `content` | required | String content to write. |
 | `encoding` | `"utf-8"` | File encoding. |
 | `mode` | `0o644` | Permission bits applied before the rename — readable by all, writable only by owner. tempfile's default is `0o600`, which surprises consumers expecting the cache file to be readable by other tools. |
+
+### atomic_write_bytes
+
+```python
+atomic_write_bytes(
+    path: Path | str,
+    data: bytes,
+    *,
+    mode: int = 0o644,
+) -> None
+```
+
+Bytes twin of `atomic_write_text` — same tempfile + fsync + chmod + replace pattern, binary write, no encoding. Use for images, archives, and any non-text payload where a torn write would corrupt the file.
 
 ### atomic_write_json
 

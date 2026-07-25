@@ -5,10 +5,10 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from pf_core.web.health import health_router, require_db
+from pf_core.web.health import health_router, require_db, require_db_sync
 
 
 @pytest.fixture()
@@ -117,6 +117,35 @@ class TestRequireDb:
             return {"ok": True}
 
         client = TestClient(app)
+        with patch("pf_core.web.health._check_db", return_value="error: refused"):
+            resp = client.get("/data")
+        assert resp.status_code == 503
+        assert "unavailable" in resp.json()["detail"].lower()
+
+
+class TestRequireDbSync:
+    def test_db_available_returns_none(self):
+        with patch("pf_core.web.health._check_db", return_value="ok"):
+            assert require_db_sync() is None
+
+    def test_db_unavailable_raises(self):
+        with patch("pf_core.web.health._check_db", return_value="error: refused"):
+            with pytest.raises(HTTPException) as exc_info:
+                require_db_sync()
+        assert exc_info.value.status_code == 503
+        assert "unavailable" in exc_info.value.detail.lower()
+
+    def test_depends_integration(self):
+        app = FastAPI()
+
+        @app.get("/data", dependencies=[Depends(require_db_sync)])
+        async def get_data():
+            return {"ok": True}
+
+        client = TestClient(app)
+        with patch("pf_core.web.health._check_db", return_value="ok"):
+            resp = client.get("/data")
+        assert resp.status_code == 200
         with patch("pf_core.web.health._check_db", return_value="error: refused"):
             resp = client.get("/data")
         assert resp.status_code == 503

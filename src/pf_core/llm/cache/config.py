@@ -18,7 +18,6 @@ Usage::
 from __future__ import annotations
 
 import os
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,8 @@ from typing import Any
 import yaml
 
 from pf_core.log import get_logger
+from pf_core.utils.env import resolve_int
+from pf_core.utils.reload_cache import ReloadCache
 
 logger = get_logger(__name__)
 
@@ -55,46 +56,40 @@ _DEFAULTS = AgentCacheConfig()
 # Loader with in-process TTL cache
 # ---------------------------------------------------------------------------
 
-_loaded_at: float = 0.0
-_raw_config: dict[str, Any] = {}
-
 # CACHE_CONFIG values meaning "no cache, no file needed" (test suites,
 # cache-less deploys).
 _DISABLED_SENTINELS = frozenset({"off", "disabled", "none", "0"})
 
 
-def _reload_if_stale() -> None:
-    global _loaded_at, _raw_config
+def _reload_seconds() -> int:
+    return resolve_int(None, "CACHE_CONFIG_RELOAD_SECONDS", default=60)
 
-    reload_ttl = int(os.environ.get("CACHE_CONFIG_RELOAD_SECONDS", "60"))
-    now = time.monotonic()
-    if now - _loaded_at < reload_ttl and _raw_config:
-        return
 
-    config_path = os.environ.get("CACHE_CONFIG", "config/cache.yaml")
+def _load_config(config_path: str) -> dict[str, Any]:
+    """Fail-empty loader: a missing or unparseable config yields ``{}``."""
     if config_path.strip().lower() in _DISABLED_SENTINELS:
-        _raw_config = {"defaults": {"exact": False, "semantic": False}}
-        _loaded_at = now
-        return
+        return {"defaults": {"exact": False, "semantic": False}}
 
     path = Path(config_path)
     if not path.is_absolute():
         path = Path.cwd() / path
 
     if not path.exists():
-        _raw_config = {}
-        _loaded_at = now
-        return
+        return {}
 
     try:
         with open(path) as fh:
-            _raw_config = yaml.safe_load(fh) or {}
-        _loaded_at = now
+            raw = yaml.safe_load(fh) or {}
         logger.debug("cache_config_loaded", path=str(path))
+        return raw
     except Exception as exc:
         logger.warning("cache_config_load_failed", path=str(path), error=str(exc))
-        _raw_config = {}
-        _loaded_at = now
+        return {}
+
+
+_cache: ReloadCache[str, dict[str, Any]] = ReloadCache(
+    loader=_load_config, ttl=_reload_seconds
+)
 
 
 def _build_config(raw: dict[str, Any]) -> AgentCacheConfig:
@@ -130,10 +125,10 @@ def get_agent_cache_config(agent_type: str) -> AgentCacheConfig:
     Returns:
         A frozen :class:`AgentCacheConfig` with all fields populated.
     """
-    _reload_if_stale()
+    raw = _cache.get(os.environ.get("CACHE_CONFIG", "config/cache.yaml"))
 
-    global_defaults = _raw_config.get("defaults", {})
-    agent_overrides = (_raw_config.get("agents") or {}).get(agent_type, {})
+    global_defaults = raw.get("defaults", {})
+    agent_overrides = (raw.get("agents") or {}).get(agent_type, {})
 
     merged = {**global_defaults, **agent_overrides}
     return _build_config(merged)
@@ -141,6 +136,4 @@ def get_agent_cache_config(agent_type: str) -> AgentCacheConfig:
 
 def clear_config_cache() -> None:
     """Reset the in-process config cache (useful for testing)."""
-    global _loaded_at, _raw_config
-    _loaded_at = 0.0
-    _raw_config = {}
+    _cache.clear()

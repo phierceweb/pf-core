@@ -22,7 +22,7 @@ All five land in the same place: one `llm_runs` row per call, plus sidecar table
 
 In a complex data pipeline the stakes are higher, because prompts feed prompts: step 3 consumes what steps 1 and 2 produced, so an upstream prompt or model change ripples through everything downstream. The same tables answer that too. Every call in a pipeline run shares a job id, and every run records the exact prompt version and model it used — so whole pipeline runs can be grouped by their upstream configuration and compared on their downstream results. Concretely: run the pipeline with steps 1 and 2 on prompt v2 and one model, run it again with the same prompts on a different model, leave every later step unchanged, and compare the later steps' validations and metrics between the two groups. The question being answered is not "which prompt is better in isolation" but "which upstream choice produced better results three steps later" — and it's answerable with a query, because everything landed in one schema.
 
-The test suite runs against real Postgres and MySQL databases, not just SQLite, and live smoke tests exercise the real providers. Misconfiguration fails at deploy time: an unresolvable eval judge or an invalid router entry raises `ConfigurationError` rather than silently picking a default.
+Dialect portability is structural rather than incidental: every query is built from SQLAlchemy constructs — no dialect-detection branches, no raw SQL — and MySQL sessions are pinned to UTC with cutoffs computed server-side. CI runs the full suite on SQLite across Python 3.11–3.13, plus a bare-install job that proves the foundation imports with none of the extras present; the MySQL upsert paths have opt-in tests against an ephemeral MySQL container (`[test-containers]` + Docker), and provider clients are tested against mocked transports, not live APIs. Misconfiguration fails at deploy time: an unresolvable eval judge or an invalid router entry raises `ConfigurationError` rather than silently picking a default.
 
 ## One interface over multiple LLM backends — including Claude Code
 
@@ -53,7 +53,7 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.12.0"` (picks up `0.12.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.13.0"` (picks up `0.13.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
@@ -97,6 +97,8 @@ python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent 
 - [eval-harness](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/eval-harness.md)
 - [exceptions](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/exceptions.md)
 - [export](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/export.md)
+- [fetch](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/fetch.md)
+- [fetch-images](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/fetch-images.md)
 - [guards](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/guards.md)
 - [hashing](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/hashing.md)
 - [ids](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/ids.md)
@@ -134,6 +136,7 @@ python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent 
 - [project-portability](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/project-portability.md)
 - [prompts](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/prompts.md)
 - [relative-dates](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/relative-dates.md)
+- [reload-cache](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/reload-cache.md)
 - [scaffold](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/scaffold.md)
 - [services](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/services.md)
 - [similarity](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/similarity.md)

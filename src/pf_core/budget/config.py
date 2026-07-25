@@ -38,13 +38,14 @@ Usage::
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from pf_core.log import get_logger
+from pf_core.utils.env import resolve_int
+from pf_core.utils.reload_cache import ReloadCache
 
 logger = get_logger(__name__)
 
@@ -52,50 +53,42 @@ logger = get_logger(__name__)
 # YAML reader with TTL cache
 # ---------------------------------------------------------------------------
 
-_loaded_at: float = 0.0
-_raw_config: dict[str, Any] = {}
+
+def _reload_seconds() -> int:
+    return resolve_int(None, "BUDGET_CONFIG_RELOAD_SECONDS", default=300)
 
 
-def _reload_if_stale() -> None:
-    global _loaded_at, _raw_config
+def _config_path() -> Path:
+    path = Path(os.environ.get("BUDGET_CONFIG", "config/budgets.yaml"))
+    return path if path.is_absolute() else Path.cwd() / path
 
-    reload_ttl = int(os.environ.get("BUDGET_CONFIG_RELOAD_SECONDS", "300"))
-    now = time.monotonic()
-    if now - _loaded_at < reload_ttl and _raw_config:
-        return
 
-    config_path = os.environ.get("BUDGET_CONFIG", "config/budgets.yaml")
-    path = Path(config_path)
-    if not path.is_absolute():
-        path = Path.cwd() / path
-
+def _read(key: str) -> dict[str, Any]:
+    # Fail-empty: budget sync treats a missing or broken config as "no scopes".
+    path = Path(key)
     if not path.exists():
-        _raw_config = {}
-        _loaded_at = now
-        return
-
+        return {}
     try:
         with open(path) as fh:
-            _raw_config = yaml.safe_load(fh) or {}
-        _loaded_at = now
-        logger.debug("budget_config_loaded", path=str(path))
+            raw = yaml.safe_load(fh) or {}
+        logger.debug("budget_config_loaded", path=key)
+        return raw
     except Exception as exc:
-        logger.warning("budget_config_load_failed", path=str(path), error=str(exc))
-        _raw_config = {}
-        _loaded_at = now
+        logger.warning("budget_config_load_failed", path=key, error=str(exc))
+        return {}
+
+
+_cache: ReloadCache[str, dict[str, Any]] = ReloadCache(_read, ttl=_reload_seconds)
 
 
 def load_yaml() -> dict[str, Any]:
     """Return the parsed YAML config (with in-process TTL caching)."""
-    _reload_if_stale()
-    return dict(_raw_config)
+    return dict(_cache.get(str(_config_path())))
 
 
 def clear_config_cache() -> None:
     """Reset the in-process config cache (useful for testing)."""
-    global _loaded_at, _raw_config
-    _loaded_at = 0.0
-    _raw_config = {}
+    _cache.clear()
 
 
 # ---------------------------------------------------------------------------

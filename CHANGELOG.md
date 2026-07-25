@@ -2,6 +2,21 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.13.0 — 2026-07-24
+
+### Added
+- `pf_core.fetch` — polite stdlib HTTP fetching in the base install (no extra): `Fetcher` (identifying UA with `PF_FETCH_UA` override, per-request `Throttle` pacing, streamed `max_bytes` cap, gzip/deflate decoding) plus module-level `fetch_text`/`fetch_bytes`/`fetch_bytes_meta`. Status-aware retries (permanent 4xx fail fast with zero sleeps; 429 honors a capped Retry-After; 5xx/408/network back off), raw urllib exceptions propagate to callers, and redirects are walked manually with an `assert_public_url` SSRF re-check on every hop; the first return element is always the final post-redirect URL. `not_modified` does one conditional GET (True only on a definitive 304, never raises); `browser_headers()` returns a full browser-fingerprint header set for public pages that 403 the lean default.
+- `pf_core.fetch.images` — remote-image localizer for markdown/HTML-derived documents: downloads `![…](http…)` and `<img src>` refs (plus base_url-resolved relative refs) into a local `images/` dir and retargets them anchor-safely. Deterministic collision-resistant naming (`default_namer`, injectable), magic-byte extension sniffing for extensionless CDN URLs, reuse-not-refetch probing, per-URL failure containment (failed refs stay remote), and a resumable `localize_file` mode where the document is the progress ledger, checkpointed atomically every N images.
+- `pf_core.utils.reload_cache.ReloadCache` — the TTL hot-reload primitive behind config loaders: double-checked lock, per-call TTL read (env changes land without restart), key-change invalidation, `force=`/`clear()`, optional `stale_on=` serve-stale with retry throttling. The model-router, LLM-cache, and budget config loaders now run on it.
+- `pf_core.web.require_db_sync` — plain-function twin of `require_db` for inline guards (calling the async one inline returns an un-awaited coroutine and silently skips the check); also works under `Depends()`.
+- `pf_core.utils.io.atomic_write_bytes` — bytes twin of `atomic_write_text`.
+
+### Fixed
+- Malformed `CACHE_CONFIG_RELOAD_SECONDS` / `BUDGET_CONFIG_RELOAD_SECONDS` values now warn and fall back to their defaults instead of crashing; `CACHE_CONFIG` / `BUDGET_CONFIG` path changes invalidate their caches immediately instead of waiting out the TTL. The LLM-cache config loader also gains the lock the other loaders already had.
+
+### Changed
+- The model-router kept-stale reload warning event is `reload_cache_kept_stale` (was `model_router_reload_failed_keeping_cache`).
+
 ## v0.12.0 — 2026-07-21
 
 ### Added

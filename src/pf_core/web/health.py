@@ -113,3 +113,14 @@ async def require_db() -> None:
     result = _check_db()
     if result != "ok":
         raise HTTPException(status_code=503, detail=f"Database unavailable: {result}")
+
+
+def require_db_sync() -> None:
+    """Sync twin of :func:`require_db` — raises 503 if the database is unreachable.
+
+    Callable inline from sync or async code; under ``Depends()`` FastAPI runs it
+    in a threadpool.
+    """
+    result = _check_db()
+    if result != "ok":
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {result}")

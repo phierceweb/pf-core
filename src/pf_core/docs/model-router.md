@@ -355,7 +355,7 @@ The loader keeps a process-local cache of the parsed YAML.
 - **Subsequent calls within `MODEL_ROUTER_RELOAD_SECONDS`** return the cached dict without touching disk.
 - **After the TTL expires**, the next call re-reads the file under a lock. Concurrent callers wait for the single reload — no thundering herd.
 - **`MODEL_ROUTER_RELOAD_SECONDS=0`** disables the TTL and re-reads every call. Useful in dev loops; avoid in production.
-- **If the reload fails to parse**, the loader logs a warning (`model_router_reload_failed_keeping_cache`) and keeps serving the last-known-good cache. The system does not fail closed — a bad edit should not take down running services. The cache timestamp advances so the next attempt waits another TTL.
+- **If the reload fails to parse**, the loader logs a warning (`reload_cache_kept_stale`) and keeps serving the last-known-good cache. The system does not fail closed — a bad edit should not take down running services. The cache timestamp advances so the next attempt waits another TTL. (The cache is a [`reload-cache`](reload-cache.md) instance; this stale-serving policy is its `stale_on` mode.)
 - **If the reload fails on the very first load** (no prior cache), the `ConfigurationError` propagates. Without a known-good state to fall back to, there is nothing to serve.
 - **Changing `MODEL_ROUTER_CONFIG` at runtime** forces a reload on the next call — the cache is keyed on the resolved path.
 

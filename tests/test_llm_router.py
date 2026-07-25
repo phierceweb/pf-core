@@ -328,17 +328,17 @@ def test_reload_failure_with_no_prior_cache_raises(tmp_path, monkeypatch):
 
 
 def test_clear_cache_resets_module_state(tmp_path, monkeypatch):
-    # Cache state lives in the loader module (router re-exports clear_cache).
+    # Cache state lives in the loader's ReloadCache (router re-exports clear_cache).
     from pf_core.llm import _router_loader as loader
 
     path = _write_yaml(tmp_path, VALID_YAML)
     _point_env_at(monkeypatch, path)
 
     get_agent_config("drafter")
-    assert loader._cache is not None
+    assert loader._cache._key == str(path)
+    assert loader._cache._loaded_at > 0.0
 
     clear_cache()
 
-    assert loader._cache is None
-    assert loader._cache_path is None
-    assert loader._cache_loaded_at == 0.0
+    assert loader._cache._key is None
+    assert loader._cache._loaded_at == 0.0

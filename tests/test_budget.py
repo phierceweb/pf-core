@@ -527,3 +527,32 @@ def test_check_budget_uses_snapshot_plus_delta(budget_db):
     with pytest.raises(CostBudgetExceeded):
         # snapshot(3) + delta(5) + projected(3) = 11 > 10
         check_budget(agent_type="drafter", projected_cost_usd=3.0)
+
+
+# ---------------------------------------------------------------------------
+# Config reload cache
+# ---------------------------------------------------------------------------
+
+
+class TestConfigReloadCache:
+    def test_malformed_reload_ttl_falls_back(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "budgets.yaml"
+        cfg.write_text("global:\n  daily: 5.0\n")
+        monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+        monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "not-a-number")
+        from pf_core.budget.config import load_yaml
+
+        assert load_yaml()["global"]["daily"] == 5.0
+
+    def test_config_path_change_invalidates_immediately(self, tmp_path, monkeypatch):
+        a = tmp_path / "a.yaml"
+        a.write_text("global:\n  daily: 1.0\n")
+        b = tmp_path / "b.yaml"
+        b.write_text("global:\n  daily: 2.0\n")
+        monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "3600")
+        monkeypatch.setenv("BUDGET_CONFIG", str(a))
+        from pf_core.budget.config import load_yaml
+
+        assert load_yaml()["global"]["daily"] == 1.0
+        monkeypatch.setenv("BUDGET_CONFIG", str(b))
+        assert load_yaml()["global"]["daily"] == 2.0

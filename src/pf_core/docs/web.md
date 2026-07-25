@@ -190,6 +190,8 @@ async def get_data():
     ...
 ```
 
+`require_db_sync` is the plain-function twin for guards **called inline** rather than declared as dependencies (`require_db_sync()` as the first statement of a route or helper). Calling the async variant inline would return an un-awaited coroutine and silently skip the check — use the sync twin anywhere you call it yourself. It also works under `Depends()` (FastAPI runs sync dependencies in the threadpool).
+
 ## Safe markdown rendering
 
 Renders a safe markdown subset (bold, italic, links, lists, headings, code) using an escape-first approach. No sanitizer library needed.

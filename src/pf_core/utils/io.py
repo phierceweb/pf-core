@@ -13,7 +13,7 @@ than in ``/tmp``.
 
 Usage::
 
-    from pf_core.utils.io import atomic_write_text, atomic_write_json
+    from pf_core.utils.io import atomic_write_bytes, atomic_write_text, atomic_write_json
 
     atomic_write_json(Path("./manifest.json"), {"step": "extract", "n": 42})
     atomic_write_text(Path("./out.md"), "rendered markdown ...")
@@ -63,6 +63,40 @@ def atomic_write_text(
     try:
         with os.fdopen(fd, "w", encoding=encoding) as f:
             f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp_path, mode)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_bytes(
+    path: Path | str,
+    data: bytes,
+    *,
+    mode: int = DEFAULT_MODE,
+) -> None:
+    """Write ``data`` to ``path`` atomically — bytes twin of :func:`atomic_write_text`.
+
+    Same guarantee and pattern (sibling tempfile, fsync, chmod, ``os.replace``);
+    binary content, so no encoding parameter.
+
+    Args:
+        path: Target file path. Parent directory must exist.
+        data: Byte content to write.
+        mode: File permission bits applied before the rename. Defaults to ``0o644``.
+    """
+    path = Path(path)
+    parent = path.parent
+    fd, tmp_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
             f.flush()
             os.fsync(f.fileno())
         os.chmod(tmp_path, mode)
