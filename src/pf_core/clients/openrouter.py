@@ -187,8 +187,12 @@ class OpenRouterClient:
                 continue
             break  # success or non-retryable failure — fall through
 
-        # Unreachable: every loop path either continues, breaks, or raises.
-        assert resp is not None  # noqa: S101
+        if resp is None:
+            # Only reachable when retry < 0 leaves the attempt loop unentered.
+            raise OpenRouterError(
+                f"no request attempted (retry={self.retry}); retry must be >= 0",
+                context={"model": model, "retry": self.retry},
+            )
 
         if resp.status_code != 200:
             raise OpenRouterError(
@@ -246,13 +250,11 @@ class OpenRouterClient:
             "system_fingerprint": data.get("system_fingerprint"),
         }
 
-        # Perplexity: attach citation URLs if present
+        # Citation URLs (Perplexity routes) ride in usage so content stays
+        # exactly what the model returned (raw_response / cache hold it).
         citations = data.get("citations") or []
         if citations:
-            citation_block = "\n\nCITATIONS:\n" + "\n".join(
-                f"[{i + 1}] {url}" for i, url in enumerate(citations)
-            )
-            content = content + citation_block
+            usage["citations"] = list(citations)
 
         return content, usage
 

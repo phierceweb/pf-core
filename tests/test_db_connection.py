@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+import subprocess
+import sys
+import types
+
 import pytest
 from sqlalchemy import text
 
 from pf_core.db.connection import (
     DatabaseUnavailableError,
+    _install_mysqldb_shim,
     db_url,
     get_engine,
     is_sqlite,
@@ -130,6 +136,91 @@ class TestGetEngine:
 
     def test_caches_engine(self, pf_engine):
         assert get_engine() is get_engine()
+
+
+class TestGetEngineUrlMismatchWarning:
+    def test_differing_url_warns_and_returns_cached(self, pf_engine, caplog):
+        with caplog.at_level(logging.WARNING, logger="pf_core.db.connection"):
+            engine = get_engine("mysql://alice:s3cr3t@db.example.test:3306/other")
+        assert engine is pf_engine
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("get_engine_url_ignored" in m for m in messages)
+        joined = " ".join(messages)
+        assert "s3cr3t" not in joined
+        assert "alice" not in joined
+        assert "db.example.test" in joined
+
+    def test_matching_url_no_warning(self, pf_engine, caplog):
+        url = pf_engine.url.render_as_string(hide_password=False)
+        with caplog.at_level(logging.WARNING, logger="pf_core.db.connection"):
+            engine = get_engine(url)
+        assert engine is pf_engine
+        assert not [r for r in caplog.records if "get_engine_url_ignored" in r.getMessage()]
+
+    def test_none_url_no_warning(self, pf_engine, caplog):
+        with caplog.at_level(logging.WARNING, logger="pf_core.db.connection"):
+            engine = get_engine()
+        assert engine is pf_engine
+        assert not [r for r in caplog.records if "get_engine_url_ignored" in r.getMessage()]
+
+
+class TestMysqldbShim:
+    """The PyMySQL install_as_MySQLdb shim must be an engine-creation concern,
+    never an import side effect. Import-state assertions run in a subprocess
+    because this process's sys.modules is already polluted."""
+
+    def _run(self, code: str) -> None:
+        proc = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        assert proc.returncode == 0, proc.stderr
+
+    def test_import_pf_core_db_does_not_install_shim(self):
+        self._run(
+            "import sys, pf_core.db; "
+            "assert 'MySQLdb' not in sys.modules, 'shim installed at import time'"
+        )
+
+    def test_bare_mysql_url_engine_installs_shim(self):
+        pytest.importorskip("pymysql")
+        self._run(
+            "import sys; "
+            "from pf_core.db.connection import get_engine; "
+            "engine = get_engine('mysql://demo:demo@127.0.0.1:3306/nope'); "
+            "import pymysql; "
+            "assert sys.modules.get('MySQLdb') is pymysql; "
+            "assert engine.dialect.name == 'mysql'"
+        )
+
+    def test_explicit_pymysql_driver_skips_shim(self):
+        pytest.importorskip("pymysql")
+        self._run(
+            "import sys; "
+            "from pf_core.db.connection import get_engine; "
+            "engine = get_engine('mysql+pymysql://demo:demo@127.0.0.1:3306/nope'); "
+            "assert 'MySQLdb' not in sys.modules; "
+            "assert engine.dialect.driver == 'pymysql'"
+        )
+
+    def test_shim_scheme_matrix(self, monkeypatch):
+        calls: list[bool] = []
+        fake = types.ModuleType("pymysql")
+        fake.install_as_MySQLdb = lambda: calls.append(True)
+        monkeypatch.setitem(sys.modules, "pymysql", fake)
+        _install_mysqldb_shim("mysql://u:p@h/db")
+        _install_mysqldb_shim("mariadb://u:p@h/db")
+        assert len(calls) == 2
+        _install_mysqldb_shim("mysql+pymysql://u:p@h/db")
+        _install_mysqldb_shim("sqlite:///x.db")
+        _install_mysqldb_shim("postgresql+psycopg://h/db")
+        assert len(calls) == 2
+
+    def test_shim_missing_pymysql_is_noop(self, monkeypatch):
+        # None in sys.modules makes `import pymysql` raise ModuleNotFoundError.
+        monkeypatch.setitem(sys.modules, "pymysql", None)
+        monkeypatch.delitem(sys.modules, "MySQLdb", raising=False)
+        _install_mysqldb_shim("mysql://u:p@h/db")  # must not raise
+        assert "MySQLdb" not in sys.modules
 
 
 class TestResetEngine:

@@ -19,7 +19,7 @@ LOG_LEVEL=DEBUG
 LOG_FILE=logs/app.jsonl
 ```
 
-`setup_logging()` is idempotent — safe to call multiple times.
+Every explicit `setup_logging()` call reconfigures — it replaces the handlers installed by a previous call, so `main()` can change the level even after a module triggered logging at import time. The implicit setup inside `get_logger()` runs only when nothing is configured yet; it never overrides an explicit configuration.
 
 ### Which loggers are covered
 

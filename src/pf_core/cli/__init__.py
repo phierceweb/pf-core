@@ -20,10 +20,10 @@ Usage::
 
 from __future__ import annotations
 
+import importlib
 import sys
 from typing import Any
 
-import click
 import typer
 from rich.console import Console
 
@@ -33,6 +33,26 @@ from pf_core.log import get_logger, log_exception, setup_logging
 logger = get_logger(__name__)
 
 _stderr = Console(stderr=True)
+
+
+def _exc(module: str, name: str) -> tuple[type[BaseException], ...]:
+    try:
+        return (getattr(importlib.import_module(module), name),)
+    except (ImportError, AttributeError):
+        return ()
+
+
+def _merge(*groups: tuple[type[BaseException], ...]) -> tuple[type[BaseException], ...]:
+    return tuple(dict.fromkeys(exc for group in groups for exc in group))
+
+
+# typer >= 0.26 vendors its own click, so typer.Abort/BadParameter are NOT the
+# installed click's classes. Both hierarchies are live across the typer pin.
+_ABORT = _merge(_exc("typer", "Abort"), _exc("click.exceptions", "Abort"))
+_USAGE = _merge(
+    _exc("typer._click.exceptions", "ClickException"),
+    _exc("click.exceptions", "ClickException"),
+)
 
 
 def create_cli(name: str, *, help: str = "", **kwargs: Any) -> typer.Typer:
@@ -68,9 +88,14 @@ def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
 
     Catches framework exceptions and exits cleanly:
     - ``typer.Exit(N)`` — exits with N (see below).
+    - ``ClickException`` (bad option, missing argument, ``typer.BadParameter``)
+      — shows the usage message, exits with the exception's own ``exit_code``
+      (2 for usage errors, 1 otherwise).
     - ``FlowException`` — prints message to stderr, exits 1.
     - ``AppError`` — logs with traceback, prints message to stderr, exits 1.
-    - ``KeyboardInterrupt`` — exits silently.
+    - ``typer.Abort`` — prints "Interrupted.", exits 130.
+    - ``KeyboardInterrupt`` — exits 130 silently: typer converts it to
+      ``Exit(130)`` before ``run_cli`` sees it, so it arrives as an int return.
 
     With ``standalone_mode=False`` click does not raise for ``typer.Exit`` —
     it RETURNS the exit code from ``app()``. Dropping that return value made
@@ -91,9 +116,12 @@ def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
             sys.exit(rv)
     except SystemExit:
         raise
-    except (KeyboardInterrupt, click.exceptions.Abort):
+    except (KeyboardInterrupt, *_ABORT):
         _stderr.print("\nInterrupted.")
         sys.exit(130)
+    except _USAGE as exc:
+        exc.show()
+        sys.exit(exc.exit_code)
     except FlowException as exc:
         _stderr.print(f"[red]{exc}[/red]")
         sys.exit(1)

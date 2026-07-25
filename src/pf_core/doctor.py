@@ -130,17 +130,18 @@ def check_copy() -> list[CheckResult]:
     version = _installed_version()
     kind = "site-packages" if "site-packages" in str(root) else "editable/source"
     detail = f"{root} ({kind}), version {version}"
-    src_version = _adjacent_pyproject_version()
-    if src_version is not None and src_version != version:
-        return [
-            CheckResult(
-                "copy",
-                "loaded",
-                "WARN",
-                f"{detail} — adjacent pyproject says {src_version}; "
-                "stale editable install? reinstall with pip install -e .",
-            )
-        ]
+    if kind == "editable/source":
+        src_version = _adjacent_pyproject_version()
+        if src_version is not None and src_version != version:
+            return [
+                CheckResult(
+                    "copy",
+                    "loaded",
+                    "WARN",
+                    f"{detail} — adjacent pyproject says {src_version}; "
+                    "stale editable install? reinstall with pip install -e .",
+                )
+            ]
     return [CheckResult("copy", "loaded", "PASS", detail)]
 
 

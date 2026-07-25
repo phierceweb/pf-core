@@ -86,13 +86,47 @@ class TestCheckCopy:
         assert "pf_core" in res.detail
         assert "version" in res.detail
 
-    def test_warns_on_editable_metadata_mismatch(self, monkeypatch):
+    def test_warns_on_editable_metadata_mismatch(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
         monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
         monkeypatch.setattr(doctor, "_adjacent_pyproject_version", lambda: "9.9.9")
         (res,) = check_copy()
         assert res.status == "WARN"
         assert "0.0.1" in res.detail
         assert "9.9.9" in res.detail
+
+    def test_site_packages_never_reads_pyproject(self, monkeypatch, tmp_path):
+        site_root = tmp_path / "venv" / "lib" / "python3.12" / "site-packages" / "pf_core"
+        monkeypatch.setattr(doctor, "_package_root", lambda: site_root)
+        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
+
+        def _boom():
+            raise AssertionError("pyproject read attempted for a site-packages install")
+
+        monkeypatch.setattr(doctor, "_adjacent_pyproject_version", _boom)
+        (res,) = check_copy()
+        assert res.status == "PASS"
+        assert "(site-packages)" in res.detail
+
+    def test_editable_missing_pyproject_passes(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
+        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
+        (res,) = check_copy()
+        assert res.status == "PASS"
+
+    def test_editable_malformed_pyproject_passes(self, monkeypatch, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("not [valid toml")
+        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
+        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
+        (res,) = check_copy()
+        assert res.status == "PASS"
+
+    def test_editable_matching_version_passes(self, monkeypatch, tmp_path):
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.0.1"\n')
+        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
+        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
+        (res,) = check_copy()
+        assert res.status == "PASS"
 
     def test_adjacent_pyproject_version_reads_file(self, tmp_path, monkeypatch):
         (tmp_path / "pyproject.toml").write_text(

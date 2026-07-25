@@ -4,7 +4,7 @@ SQLAlchemy-based database layer supporting SQLite, MySQL/MariaDB, and PostgreSQL
 
 ## Installation
 
-Database support is included in the base `pf-core` install (SQLAlchemy). For MySQL/MariaDB add `pf-core[mysql]` (PyMySQL); for PostgreSQL add `pf-core[postgres]` (psycopg 3 with the binary wheel). SQLite needs no extra.
+Database support is included in the base `pf-core` install (SQLAlchemy). For MySQL/MariaDB add `pf-core[mysql]` (PyMySQL); bare `mysql://` (and `mariadb://`) URLs resolve to PyMySQL at engine creation, so an explicit `mysql+pymysql://` driver suffix is optional. For PostgreSQL add `pf-core[postgres]` (psycopg 3 with the binary wheel). SQLite needs no extra.
 
 ## Engine setup
 
@@ -23,7 +23,7 @@ get_engine()
 get_engine(db_url(fallback_sqlite="app.db"))
 ```
 
-The engine is cached as a module-level singleton — subsequent calls return the same engine.
+The engine is cached as a module-level singleton — subsequent calls return the same engine. A later call passing a different URL still returns the cached engine and logs a `get_engine_url_ignored` warning (URLs credential-redacted); call `pf_core.db.connection.reset_engine()` first to switch databases.
 
 ### URL resolution
 

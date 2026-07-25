@@ -29,6 +29,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from pf_core.exceptions import FlowException
 from pf_core.log import get_logger
 
 logger = get_logger(__name__)
@@ -39,8 +40,11 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class CostBudgetExceeded(Exception):
+class CostBudgetExceeded(FlowException):
     """Raised when a planned call would push a ``block`` scope past its cap.
+
+    A :class:`~pf_core.exceptions.FlowException` — an expected domain
+    failure, not a bug; the web layer maps it to 429.
 
     Attributes:
         scope_kind: ``'global' | 'agent' | 'job_kind' | 'job_id' | 'tag'``

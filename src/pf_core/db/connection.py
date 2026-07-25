@@ -17,20 +17,16 @@ Usage::
 from __future__ import annotations
 
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
-
-try:
-    import pymysql
-    pymysql.install_as_MySQLdb()
-except ModuleNotFoundError:
-    pass
 
 from sqlalchemy import create_engine, event, pool, text
 from sqlalchemy.engine import Connection, Engine
 
 from pf_core.exceptions import ConfigurationError
+from pf_core.log import get_logger
 
 
 class DatabaseUnavailableError(ConfigurationError):
@@ -93,15 +89,42 @@ def dialect_of(url: str | None = None) -> str:
 
 _engine: Engine | None = None
 
+_URL_CREDS = re.compile(r"^([a-z0-9+.-]+://)[^@/]+@", re.IGNORECASE)
+
+
+def _redact_url(url: str) -> str:
+    return _URL_CREDS.sub(r"\1***@", url)
+
+
+def _install_mysqldb_shim(url: str) -> None:
+    """Bare mysql:// / mariadb:// URLs make SQLAlchemy import MySQLdb; provide
+    it via PyMySQL when installed. Idempotent, so safe per engine creation."""
+    if url.split("://", 1)[0].lower() not in ("mysql", "mariadb"):
+        return
+    try:
+        import pymysql
+    except ModuleNotFoundError:
+        return
+    pymysql.install_as_MySQLdb()
+
 
 def get_engine(url: str | None = None) -> Engine:
     """Return (and cache) the SQLAlchemy engine.
 
     Args:
-        url: Database URL. If not provided, resolves from environment.
+        url: Database URL. If not provided, resolves from environment. Once an
+            engine is cached, a differing ``url`` is ignored (a warning is
+            logged); call ``reset_engine()`` first to switch databases.
     """
     global _engine
     if _engine is not None:
+        cached_url = _engine.url.render_as_string(hide_password=False)
+        if url is not None and url != cached_url:
+            get_logger(__name__).warning(
+                "get_engine_url_ignored",
+                requested_url=_redact_url(url),
+                cached_url=_redact_url(cached_url),
+            )
         return _engine
 
     resolved_url = url or db_url()
@@ -122,6 +145,7 @@ def get_engine(url: str | None = None) -> Engine:
             cur.close()
 
     elif dialect == "mysql":
+        _install_mysqldb_shim(resolved_url)
         engine = create_engine(resolved_url)
 
         @event.listens_for(engine, "connect")

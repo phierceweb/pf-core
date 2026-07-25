@@ -148,19 +148,34 @@ class TestOpenRouterClientChat:
         assert "anthropic" in call_body["provider"]["ignore"]
 
     @patch("pf_core.clients.openrouter.httpx.post")
-    def test_citations_appended(self, mock_post):
+    def test_citations_in_usage_not_content(self, mock_post):
+        """Citation URLs ride in usage["citations"]; content stays exactly
+        what the model returned."""
         mock_post.return_value = self._mock_response(
             content="Answer",
             citations=["https://example.com/1", "https://example.com/2"],
         )
         client = OpenRouterClient(api_key="k")
-        content, _ = client.chat(
+        content, usage = client.chat(
             messages=[{"role": "user", "content": "search"}],
             model="perplexity/sonar-pro",
         )
-        assert "CITATIONS:" in content
-        assert "[1] https://example.com/1" in content
-        assert "[2] https://example.com/2" in content
+        assert content == "Answer"
+        assert usage["citations"] == [
+            "https://example.com/1",
+            "https://example.com/2",
+        ]
+
+    @patch("pf_core.clients.openrouter.httpx.post")
+    def test_no_citations_no_usage_key(self, mock_post):
+        mock_post.return_value = self._mock_response(content="Answer")
+        client = OpenRouterClient(api_key="k")
+        content, usage = client.chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            model="test/model",
+        )
+        assert content == "Answer"
+        assert "citations" not in usage
 
     @patch("pf_core.clients.openrouter.httpx.post")
     def test_none_content_returns_empty_string(self, mock_post):
@@ -470,6 +485,17 @@ class TestRetry:
                 messages=[{"role": "user", "content": "x"}], model="m"
             )
         assert mock_post.call_count == 3  # initial + 2 retries
+
+    @patch("pf_core.clients.openrouter.httpx.post")
+    def test_negative_retry_raises_client_error(self, mock_post):
+        """retry < 0 leaves the attempt loop unentered — must raise a real
+        OpenRouterError, not an assert (stripped under python -O)."""
+        client = OpenRouterClient(api_key="k", retry=-1)
+        with pytest.raises(OpenRouterError, match="retry"):
+            client.chat(
+                messages=[{"role": "user", "content": "x"}], model="m"
+            )
+        assert mock_post.call_count == 0
 
     def test_retry_via_get_client(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "k")

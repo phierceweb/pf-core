@@ -86,7 +86,9 @@ section_order = cfg.yaml.get("section_order", [])
 start_date = cfg.yaml.get("start_date")
 ```
 
-YAML values are not auto-mapped to attributes — use `cfg.yaml` for domain-specific config that doesn't map to env vars.
+Top-level YAML keys that exactly match a declared setting name (e.g. `WEB_PORT`) resolve onto the attribute — below env vars, above the class default. String values get the same type coercion as env vars; other values arrive typed from YAML. All other keys (lower-case domain config) are never mapped to attributes — read them via `cfg.yaml`, which always holds the full raw dict, resolved keys included.
+
+A missing `yaml_file` is ignored; a malformed one raises `ConfigurationError` naming the path.
 
 ## Dict-style access
 

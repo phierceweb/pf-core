@@ -33,6 +33,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 
+from pf_core.budget.check import CostBudgetExceeded
 from pf_core.exceptions import (
     ActionNotAllowedError,
     AppError,
@@ -276,6 +277,8 @@ def create_app(
     # --- Error handlers ---
 
     # -- FlowException subclasses: each domain exception → specific HTTP status --
+    # Starlette picks the handler for the most specific class in the
+    # exception's MRO, so these always beat the FlowException catch-all.
 
     @app.exception_handler(NotFoundError)
     async def not_found_handler(request: Request, exc: NotFoundError):
@@ -325,6 +328,16 @@ def create_app(
             request, 500,
             heading=_STATUS_HEADINGS[500],
             message=_STATUS_MESSAGES[500],
+            app=app,
+        )
+
+    @app.exception_handler(CostBudgetExceeded)
+    async def cost_budget_exceeded_handler(request: Request, exc: CostBudgetExceeded):
+        """CostBudgetExceeded → 429 (spend cap hit)."""
+        return _render_error(
+            request, 429,
+            heading=_STATUS_HEADINGS[429],
+            message=str(exc),
             app=app,
         )
 

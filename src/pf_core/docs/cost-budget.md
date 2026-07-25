@@ -106,6 +106,8 @@ Checks in order: **global → agent → job_kind → job_id → tag**. First fai
 
 `CostBudgetExceeded` attributes: `scope_kind`, `scope_value`, `period`, `limit_usd`, `spent_usd`, `projected_usd`.
 
+`CostBudgetExceeded` is a `FlowException` subclass — an expected domain failure, not a bug. In a `create_app()` web app, a budget block that reaches the HTTP boundary renders as a **429** domain response (JSON or HTML per the `Accept` header — see [exceptions.md](exceptions.md)).
+
 ### Spent calculation
 
 Per budget: snapshot value + live delta from `llm_runs` recorded after the snapshot. Runs with `status IN ('cache_hit', 'budget_blocked')` are excluded.

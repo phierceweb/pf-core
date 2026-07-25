@@ -29,11 +29,14 @@ Usage in a project::
 
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+
+from pf_core.exceptions import ConfigurationError
 
 
 def _to_bool(val: str) -> bool:
@@ -86,18 +89,21 @@ class AppConfig:
         if env_file:
             load_dotenv(Path(env_file))
 
-        # 2. Load YAML
+        # 2. Load YAML (missing file is non-fatal; malformed file is a deploy error)
         self.yaml = {}
         if yaml_file:
             yp = Path(yaml_file)
             if yp.exists():
-                try:
-                    import yaml
+                import yaml
 
+                try:
                     with open(yp, encoding="utf-8") as f:
                         self.yaml = yaml.safe_load(f) or {}
+                except yaml.YAMLError as e:
+                    raise ConfigurationError(f"Malformed YAML config file: {yp}") from e
                 except Exception:
                     import warnings
+
                     warnings.warn(f"Failed to load {yp}", stacklevel=2)
 
         # 3. Resolve each declared setting
@@ -109,11 +115,14 @@ class AppConfig:
                 setattr(self, k, v)
 
     def _resolve_all(self) -> None:
-        """Walk class hierarchy, resolve each declared setting from env.
+        """Walk class hierarchy, resolve each declared setting.
 
         Iterates base → subclass so that subclass defaults override parent
-        defaults, and env vars always win over any default.
+        defaults. Per-key priority: env var > top-level YAML key (exact
+        upper-case attr name; lower-case domain keys stay inert) > class
+        default. Mutable values are copied so instances never share state.
         """
+        yaml_map = self.yaml if isinstance(self.yaml, dict) else {}
         for cls in reversed(type(self).__mro__):
             for key, default in vars(cls).items():
                 if key.startswith("_") or callable(default):
@@ -123,8 +132,10 @@ class AppConfig:
                 env_val = os.environ.get(key)
                 if env_val is not None:
                     setattr(self, key, self._coerce(key, env_val, default))
+                elif key.isupper() and key in yaml_map:
+                    setattr(self, key, self._coerce_yaml(key, yaml_map[key], default))
                 else:
-                    setattr(self, key, default)
+                    setattr(self, key, copy.deepcopy(default))
 
     def _coerce(self, key: str, env_val: str, default: Any) -> Any:
         """Coerce an env string to the type implied by the default value."""
@@ -143,6 +154,16 @@ class AppConfig:
         if isinstance(default, list):
             return _to_list(env_val)
         return env_val.strip()
+
+    def _coerce_yaml(self, key: str, val: Any, default: Any) -> Any:
+        """YAML strings take the env coercion path; other values arrive typed."""
+        if isinstance(val, str):
+            return self._coerce(key, val, default)
+        if isinstance(default, bool):
+            return bool(val)
+        if isinstance(default, float) and isinstance(val, int) and not isinstance(val, bool):
+            return float(val)
+        return copy.deepcopy(val)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Dict-style access for optional lookups."""

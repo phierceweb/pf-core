@@ -6,6 +6,7 @@ import logging
 import warnings
 
 import pytest
+import structlog
 
 import pf_core.log as log_mod
 from pf_core.exceptions import (
@@ -22,6 +23,7 @@ def _reset_logging():
     """Reset setup state and isolate handler changes (root + 'app')."""
     log_mod._setup_done = False
     log_mod._app_logger_name = ""
+    log_mod._installed_handlers.clear()
     root = logging.getLogger()
     app = logging.getLogger("app")
     saved = (root.handlers[:], root.level, app.handlers[:])
@@ -30,15 +32,29 @@ def _reset_logging():
     yield
     log_mod._setup_done = False
     log_mod._app_logger_name = ""
+    log_mod._installed_handlers.clear()
     root.handlers[:] = saved[0]
     root.setLevel(saved[1])
     app.handlers[:] = saved[2]
 
 
+def _console_handlers() -> list[logging.Handler]:
+    """This module's console handlers on the root logger (excludes file/pytest)."""
+    return [
+        h
+        for h in logging.getLogger().handlers
+        if isinstance(h.formatter, structlog.stdlib.ProcessorFormatter)
+        and not isinstance(h, logging.FileHandler)
+    ]
+
+
 class TestSetupLogging:
-    def test_idempotent(self):
+    def test_repeated_calls_do_not_stack_handlers(self):
+        # Clear pytest's own root handlers so setup_logging actually installs.
+        logging.getLogger().handlers.clear()
         setup_logging()
-        setup_logging()  # should not raise
+        setup_logging()
+        assert len(_console_handlers()) == 1
 
     def test_respects_level_arg(self):
         setup_logging(level="DEBUG")
@@ -56,6 +72,66 @@ class TestSetupLogging:
 
     def test_no_file_handler_when_empty(self):
         setup_logging(log_file="")
+
+
+class TestExplicitReconfigure:
+    """Explicit setup_logging() replaces prior config; implicit setup via
+    get_logger never overrides an explicit configuration."""
+
+    def test_explicit_call_reconfigures_after_implicit(self):
+        # Clear pytest's own root handlers so setup_logging actually installs.
+        logging.getLogger().handlers.clear()
+        get_logger("boot.module")  # import-time implicit setup
+        setup_logging(level="DEBUG")
+        handlers = _console_handlers()
+        assert len(handlers) == 1
+        assert handlers[0].level == logging.DEBUG
+
+    def test_two_explicit_calls_last_wins(self):
+        logging.getLogger().handlers.clear()
+        setup_logging(level="INFO")
+        setup_logging(level="DEBUG")
+        handlers = _console_handlers()
+        assert len(handlers) == 1
+        assert handlers[0].level == logging.DEBUG
+
+    def test_implicit_does_not_reset_explicit_config(self):
+        logging.getLogger().handlers.clear()
+        setup_logging(level="WARNING")
+        before = _console_handlers()
+        get_logger("some.module")
+        after = _console_handlers()
+        assert after == before
+        assert after[0].level == logging.WARNING
+
+    def test_reconfigure_with_foreign_handler_present_reinstalls(self):
+        # A consumer handler added between explicit calls must not make a
+        # reconfigure remove pf's handlers and then install nothing.
+        root = logging.getLogger()
+        root.handlers.clear()
+        setup_logging(level="INFO")
+        foreign = logging.NullHandler()
+        root.addHandler(foreign)
+        try:
+            setup_logging(level="DEBUG")
+            handlers = _console_handlers()
+            assert len(handlers) == 1
+            assert handlers[0].level == logging.DEBUG
+            assert foreign in root.handlers
+        finally:
+            root.removeHandler(foreign)
+
+    def test_first_setup_respects_preexisting_foreign_handlers(self):
+        root = logging.getLogger()
+        root.handlers.clear()
+        foreign = logging.NullHandler()
+        root.addHandler(foreign)
+        try:
+            setup_logging(level="INFO")
+            assert _console_handlers() == []
+            assert foreign in root.handlers
+        finally:
+            root.removeHandler(foreign)
 
 
 class TestLoggerNameAdoption:
@@ -175,6 +251,16 @@ class TestLogException:
     def test_task_error_with_running_log(self):
         exc = TaskError("failed", context={"task_id": 1}, running_log="step1\nstep2")
         log_exception(exc)
+
+    def test_reserved_context_keys_renamed_not_colliding(self, caplog):
+        exc = AppError("boom", context={"message": "collide", "event": "e", "exc_info": "x"})
+        with caplog.at_level(logging.ERROR):
+            log_exception(exc)  # must not raise TypeError
+        rec = next(r for r in caplog.records if r.name == "exceptions")
+        assert rec.msg["ctx_message"] == "collide"
+        assert rec.msg["ctx_event"] == "e"
+        assert rec.msg["ctx_exc_info"] == "x"
+        assert rec.msg["message"] == "boom"
 
     def test_circular_cause_chain_handled(self):
         """Circular __cause__ chains don't cause infinite loops."""

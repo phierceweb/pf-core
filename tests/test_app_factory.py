@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from pf_core.budget.check import CostBudgetExceeded
 from pf_core.exceptions import (
     ActionNotAllowedError,
     AppError,
@@ -58,6 +59,13 @@ def client():
     async def raise_flow_base():
         raise FlowException("generic domain failure")
 
+    @app.get("/budget-exceeded")
+    async def raise_budget_exceeded():
+        raise CostBudgetExceeded(
+            scope_kind="agent", scope_value="drafter", period="daily",
+            limit_usd=10.0, spent_usd=9.5, projected_usd=1.0,
+        )
+
     @app.get("/app-error")
     async def raise_app_error():
         raise AppError("something exploded", context={"task_id": 7})
@@ -104,6 +112,13 @@ class TestExceptionToHttpMapping:
         assert r.status_code == 400
         assert "generic domain failure" in r.json()["detail"]
 
+    def test_cost_budget_exceeded_returns_429(self, client):
+        """Budget block is a domain response (429), not a 500 — and the
+        dedicated handler beats the FlowException catch-all (400)."""
+        r = client.get("/budget-exceeded")
+        assert r.status_code == 429
+        assert "budget exceeded" in r.json()["detail"]
+
     def test_app_error_returns_500(self, client):
         r = client.get("/app-error")
         assert r.status_code == 500
@@ -138,3 +153,8 @@ class TestHtmlNegotiation:
         r = client.get("/not-allowed", headers={"accept": "text/html"})
         assert r.status_code == 403
         assert "Forbidden" in r.text
+
+    def test_429_html_shows_too_many_requests(self, client):
+        r = client.get("/budget-exceeded", headers={"accept": "text/html"})
+        assert r.status_code == 429
+        assert "Too many requests" in r.text

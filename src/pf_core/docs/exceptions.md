@@ -13,8 +13,9 @@ Exception
 │   ├── InvalidInputError       → 422  bad data from caller
 │   ├── PreconditionError       → 409  state conflict
 │   ├── ActionNotAllowedError   → 403  business rule says no
-│   └── ConfigurationError      → 500  missing config = broken app
-│       └── PipelineNotRegisteredError → 500  validator pipeline not registered
+│   ├── ConfigurationError      → 500  missing config = broken app
+│   │   └── PipelineNotRegisteredError → 500  validator pipeline not registered
+│   └── CostBudgetExceeded      → 429  spend cap hit (lives in pf_core.budget)
 │
 └── AppError                   — actual errors (unexpected failures)
     ├── ClientError             → 500  external API call failed
@@ -53,6 +54,8 @@ raise ConfigurationError("DATABASE_URL not set")
 **Logging**: Flow exceptions log at `WARNING` level, no traceback (these are expected). This includes `ConfigurationError` — `log_exception()` keys off the `FlowException` base class, so every subclass logs at `WARNING` without a traceback.
 
 **HTTP**: Each named subclass above has its own `app_factory` handler mapping it to the status code shown. Any other `FlowException` subclass falls through to a catch-all handler that returns **400**.
+
+`CostBudgetExceeded` is defined in `pf_core.budget` (raised by `check_budget()` — see [cost-budget.md](cost-budget.md)), not `pf_core.exceptions`, but it is a `FlowException` and the web layer maps it to **429**.
 
 ## AppError — actual errors
 

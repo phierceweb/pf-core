@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pf_core.config import AppConfig, _to_bool, _to_list
+from pf_core.exceptions import ConfigurationError
 
 
 class TestToBool:
@@ -122,12 +123,86 @@ class TestAppConfigYaml:
         cfg = AppConfig(yaml_file=tmp_path / "nonexistent.yaml")
         assert cfg.yaml == {}
 
-    def test_invalid_yaml_warns(self, tmp_path):
+    def test_malformed_yaml_raises_configuration_error(self, tmp_path):
         yf = tmp_path / "bad.yaml"
         yf.write_text(":\n  - [\n")
-        with pytest.warns(UserWarning, match="Failed to load"):
-            cfg = AppConfig(yaml_file=yf)
-        assert cfg.yaml == {}
+        with pytest.raises(ConfigurationError, match="bad.yaml"):
+            AppConfig(yaml_file=yf)
+
+
+class TestAppConfigYamlResolution:
+    """Top-level YAML keys matching a declared setting resolve env > yaml > default."""
+
+    @staticmethod
+    def _write(tmp_path, text):
+        yf = tmp_path / "config.yaml"
+        yf.write_text(text)
+        return yf
+
+    def test_yaml_beats_class_default(self, tmp_path):
+        yf = self._write(tmp_path, "APP_NAME: FromYaml\n")
+        cfg = AppConfig(yaml_file=yf)
+        assert cfg.APP_NAME == "FromYaml"
+
+    def test_env_beats_yaml(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("APP_NAME", "FromEnv")
+        yf = self._write(tmp_path, "APP_NAME: FromYaml\n")
+        cfg = AppConfig(yaml_file=yf)
+        assert cfg.APP_NAME == "FromEnv"
+
+    def test_override_beats_yaml(self, tmp_path):
+        yf = self._write(tmp_path, "APP_NAME: FromYaml\n")
+        cfg = AppConfig(yaml_file=yf, overrides={"APP_NAME": "FromOverride"})
+        assert cfg.APP_NAME == "FromOverride"
+
+    def test_typed_yaml_values_pass_through(self, tmp_path):
+        yf = self._write(tmp_path, "WEB_PORT: 9000\nCORS_ORIGINS:\n  - http://a\n")
+        cfg = AppConfig(yaml_file=yf)
+        assert cfg.WEB_PORT == 9000
+        assert cfg.CORS_ORIGINS == ["http://a"]
+
+    def test_yaml_string_coerced_like_env(self, tmp_path):
+        yf = self._write(tmp_path, 'WEB_PORT: "9001"\nCORS_ORIGINS: "a, b"\n')
+        cfg = AppConfig(yaml_file=yf)
+        assert cfg.WEB_PORT == 9001
+        assert cfg.CORS_ORIGINS == ["a", "b"]
+
+    def test_yaml_bool_for_subclass_setting(self, tmp_path):
+        class MyConfig(AppConfig):
+            DEBUG: bool = False
+
+        yf = self._write(tmp_path, "DEBUG: true\n")
+        cfg = MyConfig(yaml_file=yf)
+        assert cfg.DEBUG is True
+
+    def test_non_attr_yaml_keys_stay_inert(self, tmp_path):
+        yf = self._write(tmp_path, "section_order:\n  - intro\n")
+        cfg = AppConfig(yaml_file=yf)
+        assert not hasattr(cfg, "section_order")
+        assert cfg.yaml["section_order"] == ["intro"]
+
+    def test_lowercase_yaml_key_does_not_map_to_upper_attr(self, tmp_path):
+        yf = self._write(tmp_path, "web_port: 9999\n")
+        cfg = AppConfig(yaml_file=yf)
+        assert cfg.WEB_PORT == 8000
+        assert cfg.yaml["web_port"] == 9999
+
+    def test_resolved_keys_remain_in_raw_yaml_dict(self, tmp_path):
+        yf = self._write(tmp_path, "APP_NAME: FromYaml\n")
+        cfg = AppConfig(yaml_file=yf)
+        assert cfg.yaml["APP_NAME"] == "FromYaml"
+
+
+class TestMutableDefaultIsolation:
+    def test_instances_do_not_share_mutable_defaults(self):
+        a = AppConfig()
+        b = AppConfig()
+        a.CORS_ORIGINS.append("http://one")
+        a.OPENROUTER_PROVIDER_IGNORE.append("prov")
+        assert b.CORS_ORIGINS == []
+        assert b.OPENROUTER_PROVIDER_IGNORE == []
+        assert AppConfig.CORS_ORIGINS == []
+        assert AppConfig.OPENROUTER_PROVIDER_IGNORE == []
 
 
 class TestAppConfigSubclass:

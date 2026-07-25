@@ -2,11 +2,12 @@
 
 from unittest.mock import patch
 
+import click
 import pytest
 import typer
 from typer.testing import CliRunner
 
-from pf_core.cli import create_cli, run_cli
+from pf_core.cli import _ABORT, _USAGE, _exc, _merge, create_cli, run_cli
 from pf_core.exceptions import (
     ClientError,
     ConfigurationError,
@@ -132,3 +133,117 @@ class TestRunCli:
 
         app = self._make_app(ok)
         run_cli(app, args=["ok"])  # must not raise
+
+
+class TestRunCliUsageErrors:
+    """Usage errors must print a short message, not a traceback.
+
+    ``CliRunner`` invokes in standalone mode and never reaches ``run_cli``, so
+    these drive ``run_cli`` directly.
+    """
+
+    def _make_app(self, command_fn):
+        app = create_cli("test")
+        app.command()(command_fn)
+        return app
+
+    def _run(self, app, args, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            run_cli(app, args=args)
+        captured = capsys.readouterr()
+        return exc_info.value.code, captured.err
+
+    def test_unknown_option_exits_2_without_traceback(self, capsys):
+        def run():
+            print("should not run")
+
+        code, err = self._run(self._make_app(run), ["--bogus"], capsys)
+        assert code == 2
+        assert "No such option" in err
+        assert "Traceback" not in err
+        assert len(err.strip().splitlines()) <= 5
+
+    def test_missing_required_argument_exits_2_without_traceback(self, capsys):
+        def run(name: str = typer.Argument(...)):
+            print(name)
+
+        code, err = self._run(self._make_app(run), ["run"], capsys)
+        assert code == 2
+        assert "Traceback" not in err
+        assert len(err.strip().splitlines()) <= 5
+
+    def test_bad_parameter_from_command_body_exits_2(self, capsys):
+        def run():
+            raise typer.BadParameter("count must be non-zero")
+
+        code, err = self._run(self._make_app(run), ["run"], capsys)
+        assert code == 2
+        assert "count must be non-zero" in err
+        assert "Traceback" not in err
+
+    def test_plain_click_exception_uses_its_own_exit_code(self, capsys):
+        def run():
+            raise click.ClickException("plain failure")
+
+        code, err = self._run(self._make_app(run), ["run"], capsys)
+        assert code == 1
+        assert "plain failure" in err
+        assert "Traceback" not in err
+
+    def test_abort_exits_130(self):
+        def run():
+            raise typer.Abort()
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_cli(self._make_app(run), args=["run"])
+        assert exc_info.value.code == 130
+
+    def test_keyboard_interrupt_exits_130(self):
+        def run():
+            raise KeyboardInterrupt
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_cli(self._make_app(run), args=["run"])
+        assert exc_info.value.code == 130
+
+    def test_interrupted_banner_is_abort_only(self, capsys):
+        """typer.core converts KeyboardInterrupt to Exit(130) before run_cli can
+        catch it, so 130 arrives via the int-return path and prints nothing."""
+
+        def kb():
+            raise KeyboardInterrupt
+
+        code, err = self._run(self._make_app(kb), ["kb"], capsys)
+        assert code == 130
+        assert "Interrupted." not in err
+
+        def abort():
+            raise typer.Abort()
+
+        code, err = self._run(self._make_app(abort), ["abort"], capsys)
+        assert code == 130
+        assert "Interrupted." in err
+
+    def test_unrelated_exception_still_propagates(self):
+        def run():
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            run_cli(self._make_app(run), args=["run"])
+
+
+class TestExceptionResolution:
+    def test_missing_module_or_attr_resolves_empty(self):
+        assert _exc("pf_core_no_such_module", "Abort") == ()
+        assert _exc("typer", "NoSuchException") == ()
+
+    def test_duplicate_classes_collapse(self):
+        """Pre-vendoring typer re-exported click's classes — same object twice."""
+        group = _exc("click.exceptions", "Abort")
+        assert _merge(group, group) == group
+
+    def test_installed_typer_and_click_are_both_covered(self):
+        assert typer.Abort in _ABORT
+        assert click.exceptions.Abort in _ABORT
+        assert issubclass(typer.BadParameter, _USAGE)
+        assert issubclass(click.exceptions.UsageError, _USAGE)

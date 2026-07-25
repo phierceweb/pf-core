@@ -2,6 +2,27 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.14.0 — 2026-07-25
+
+### Fixed
+- `run_cli` no longer lets CLI usage errors escape as tracebacks. typer ≥ 0.26 vendors its own copy of click, so `typer.BadParameter` and friends are not instances of the installed `click`'s `ClickException` — `run_cli` caught neither, and an unknown option, a missing argument, or a `typer.BadParameter` raised in a command body printed ~50 lines of framework internals and exited 1. It now shows the usage message and exits with the exception's own code (2 for usage errors, 1 for a plain `ClickException`). Both hierarchies are resolved at import time, so this holds across the whole supported typer range.
+- `typer.Abort` now reaches its handler: the existing clause caught the installed `click`'s `Abort`, which is a different class under a vendoring typer, so Ctrl-C at a prompt fell through to a traceback instead of exiting 130.
+- `AppConfig` resolves the YAML tier its docs always promised: an UPPER-CASE key in the `yaml_file` document now resolves onto the matching attribute, below env vars and above class defaults. Non-attribute keys are untouched and stay available via `cfg.yaml`.
+- `AppConfig` mutable class defaults (e.g. `CORS_ORIGINS`) are copied per instance — appending to one instance no longer pollutes every other instance and the class default.
+- An explicit `setup_logging()` call now reconfigures — previously the first import-time `get_logger()` won and `main()` could not change the log level. Implicit setup still never overrides explicit configuration, and a consumer's own handlers are still respected on first setup.
+- `log_exception` no longer raises `TypeError` from inside the error logger when caller context carries a reserved key (`message`, `event`, `exc_info`) — such keys are logged under a `ctx_` prefix.
+- A malformed `AppConfig` YAML file raises `ConfigurationError` naming the path instead of degrading silently to `{}`. A missing file is still non-fatal.
+- `OpenRouterClient` no longer guards an internal invariant with a bare `assert` (stripped under `python -O`); it raises a real error.
+
+### Changed
+- A malformed invocation of a `run_cli` CLI now exits **2** instead of 1. Domain errors are unaffected — `FlowException`/`AppError` still exit 1, and `typer.Exit(N)` still propagates `N`. Consumers asserting exit 1 for a *malformed* invocation need updating; consumers asserting exit 1 for domain failures do not.
+- `CostBudgetExceeded` is now a `FlowException` subclass (was a bare `Exception`), and `create_app()` maps it to **429** with the standard domain-error rendering — a budget block from a route was previously an unhandled 500. By-name catches keep working; its constructor and attributes are unchanged.
+- Perplexity citations are no longer appended to `content` as a synthetic `CITATIONS` block; they are returned in `usage["citations"]` (list of URLs, present only when the provider sent them). Recorded `raw_response` and cache entries now hold exactly what the model returned.
+- `pymysql.install_as_MySQLdb()` no longer runs as an import side effect of `pf_core.db`; it runs at engine creation, only for bare `mysql://`/`mariadb://` URLs (which need it). `mysql+pymysql://` URLs never trigger it.
+- `get_engine(url)` logs a `get_engine_url_ignored` warning (credentials redacted) when called with a URL that differs from the cached engine's — previously the argument was silently discarded.
+- `pf-doctor`'s `copy.loaded` check reads the adjacent `pyproject.toml` only for editable/source-tree installs when comparing against installed metadata (the stale-editable-version warning).
+- `docs/cli.md` and the `run_cli` docstring now distinguish `typer.Abort` (prints "Interrupted.", exits 130) from `KeyboardInterrupt` (exits 130 silently — typer converts it to `Exit(130)` before `run_cli` sees it).
+
 ## v0.13.0 — 2026-07-24
 
 ### Added

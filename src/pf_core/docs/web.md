@@ -52,6 +52,7 @@ Exceptions are mapped to HTTP responses automatically. Each `FlowException` subc
 | `PreconditionError` | 409 | Clean message shown to user |
 | `ActionNotAllowedError` | 403 | Clean message shown to user |
 | `ConfigurationError` | 500 | Logged with traceback; generic message shown |
+| `CostBudgetExceeded` (from `pf_core.budget`) | 429 | Clean message shown to user |
 | `FlowException` (catch-all) | 400 | Clean message shown to user |
 | `AppError` | 500 | Logged with traceback; generic message shown to user |
 | `HTTPException` | Status from exception | Standard FastAPI behavior |

@@ -74,7 +74,7 @@ Test fixture data — `entities`, `URLs`, `names` — should use generic values 
 
 ### 4. One-off scripts may inline project values; long-running pipeline code may not
 
-A throwaway audit script under `.ai/scripts/` can hardcode `"the Acme Corporation"` in a query string for the duration of its life. It must not edit `app/` or `config/prompts/` files to embed that literal — those are pipeline files, governed by rules 1–3.
+A throwaway audit script — scratch tooling outside the shipped `app/` and `config/` trees — can hardcode `"the Acme Corporation"` in a query string for the duration of its life. It must not edit `app/` or `config/prompts/` files to embed that literal — those are pipeline files, governed by rules 1–3.
 
 ## How to add a new placeholder
 
@@ -116,7 +116,7 @@ A content-aggregation consumer ships with `project.yaml` as its project config l
 | Category vocabulary | `project.yaml:categories` |
 | Scope filter entity names | `project.yaml:scope_filters` |
 
-The consumer-side rule that codifies these bindings — and links to this doc as the source of the principle — lives at `.ai/rules/no-hardcoded-project-values.md` in the consumer's repo.
+Projects scaffolded by pf-core's `bin/new-consumer` carry a rule codifying these bindings (`no-hardcoded-project-values`) in their own rules directory, linking back to this doc as the source of the principle.
 
 ## See also
 

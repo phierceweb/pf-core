@@ -54,15 +54,7 @@ content, usage = client.chat(
 
 ### Return values
 
-**content** (`str`): The assistant's response text. For Perplexity models, citation URLs are appended automatically:
-
-```
-The policy was enacted in January 2025.
-
-CITATIONS:
-[1] https://example.com/article1
-[2] https://example.com/article2
-```
+**content** (`str`): The assistant's response text, exactly as returned by the model — nothing is appended.
 
 **usage** (`dict`): Token counts and cost. Carries the same key set as [`AnthropicClient.chat`](anthropic.md) and [`ClaudeCodeClient.chat`](claude-code.md):
 
@@ -80,6 +72,12 @@ CITATIONS:
 ```
 
 `cost_usd` is OpenRouter's own reported cost for the call (the `usage.cost` field) — not a local estimate.
+
+For routes that return citations (e.g. Perplexity models), `usage` additionally carries a `citations` key — a plain list of URL strings. The key is present only when the response includes citations:
+
+```python
+usage["citations"]  # ["https://example.com/article1", "https://example.com/article2"]
+```
 
 ## Provider routing
 

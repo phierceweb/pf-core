@@ -34,6 +34,10 @@ _setup_done = False
 # "" means the root logger (the default). log_exception() logs under it.
 _app_logger_name = ""
 
+# Handlers this module installed, so an explicit reconfigure replaces them
+# (from whichever logger they sit on) instead of stacking duplicates.
+_installed_handlers: list[logging.Handler] = []
+
 _shared_processors: list = [
     structlog.contextvars.merge_contextvars,
     structlog.stdlib.add_log_level,
@@ -54,7 +58,12 @@ def setup_logging(
     log_file: str | None = None,
     app_logger_name: str | None = None,
 ) -> None:
-    """Configure structlog + stdlib handlers. Safe to call multiple times.
+    """Configure structlog + stdlib handlers.
+
+    Every explicit call reconfigures: handlers installed by a previous call
+    are replaced, so ``main()`` can change the level even after import-time
+    logging. The implicit call inside :func:`get_logger` runs only when
+    nothing is configured yet and never overrides an explicit configuration.
 
     Args:
         level: Console log level. Falls back to LOG_LEVEL env var, then "INFO".
@@ -67,8 +76,13 @@ def setup_logging(
             scope handlers to that one logger instead.
     """
     global _setup_done, _app_logger_name
-    if _setup_done:
-        return
+    reconfiguring = bool(_installed_handlers)
+    if reconfiguring:
+        prev_log = logging.getLogger(_app_logger_name)
+        for h in _installed_handlers:
+            prev_log.removeHandler(h)
+            h.close()
+        _installed_handlers.clear()
     _setup_done = True
 
     level_name = (level or os.environ.get("LOG_LEVEL", "INFO")).upper()
@@ -87,7 +101,9 @@ def setup_logging(
     app_log = logging.getLogger(_app_logger_name)
     app_log.setLevel(logging.DEBUG)
 
-    if app_log.handlers:
+    # Respect a consumer's own handlers on FIRST setup only. On reconfigure we
+    # just removed ours — bailing here would leave zero pf handlers installed.
+    if app_log.handlers and not reconfiguring:
         return
 
     # Console handler with colored output
@@ -100,6 +116,7 @@ def setup_logging(
         )
     )
     app_log.addHandler(ch)
+    _installed_handlers.append(ch)
 
     # JSON-lines file handler (always at DEBUG)
     file_path = log_file if log_file is not None else os.environ.get("LOG_FILE", "")
@@ -127,11 +144,18 @@ def setup_logging(
             )
         )
         app_log.addHandler(fh)
+        _installed_handlers.append(fh)
+
+
+def _ensure_setup() -> None:
+    """Implicit setup: first call wins, never overrides an explicit config."""
+    if not _setup_done:
+        setup_logging()
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
-    """Return a structlog logger, calling setup_logging() if needed."""
-    setup_logging()
+    """Return a structlog logger, configuring logging on first use."""
+    _ensure_setup()
     return structlog.get_logger(name)
 
 
@@ -185,7 +209,7 @@ def log_exception(
     """
     from pf_core.exceptions import AppError, FlowException
 
-    setup_logging()
+    _ensure_setup()
     # Log under the configured app-logger tree so the record reaches the same
     # handlers (root by default) — not a hardcoded "app.exceptions" that a
     # non-"app" consumer's logging tree never sees.
@@ -234,6 +258,12 @@ def log_exception(
 
     # Full traceback only for AppError
     exc_info: BaseException | bool = exc if isinstance(exc, AppError) else False
+
+    # These keys belong to the log call itself; colliding caller context would
+    # raise TypeError from inside the error logger.
+    for reserved in ("event", "message", "exc_info"):
+        if reserved in ctx:
+            ctx[f"ctx_{reserved}"] = ctx.pop(reserved)
 
     log_fn = getattr(logger, log_level, logger.error)
     log_fn(event, message=message, exc_info=exc_info, **ctx)

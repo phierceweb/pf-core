@@ -274,6 +274,40 @@ def test_project_cost_no_data_returns_zero(budget_db):
 # ---------------------------------------------------------------------------
 
 
+def test_cost_budget_exceeded_is_flow_exception():
+    from pf_core.exceptions import FlowException
+
+    exc = CostBudgetExceeded(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_usd=10.0,
+        spent_usd=9.5,
+        projected_usd=1.0,
+    )
+    assert isinstance(exc, FlowException)
+    # Public shape unchanged: attributes + message survive the re-parenting
+    assert exc.scope_kind == "agent"
+    assert exc.scope_value == "drafter"
+    assert exc.period == "daily"
+    assert exc.limit_usd == 10.0
+    assert exc.spent_usd == 9.5
+    assert exc.projected_usd == 1.0
+    assert "budget exceeded: agent:drafter (daily)" in str(exc)
+
+
+def test_cost_budget_exceeded_caught_by_name():
+    with pytest.raises(CostBudgetExceeded):
+        raise CostBudgetExceeded(
+            scope_kind="global",
+            scope_value=None,
+            period="monthly",
+            limit_usd=100.0,
+            spent_usd=99.0,
+            projected_usd=2.0,
+        )
+
+
 def test_check_budget_passes_when_no_budgets(budget_db):
     check_budget(agent_type="drafter", projected_cost_usd=5.00)  # no raise
 
