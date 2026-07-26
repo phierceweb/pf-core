@@ -93,8 +93,9 @@ def test_llm_extra_composes_validate_http_and_retry() -> None:
         # ONLY because [tracking] pulls [llm]. This is the load-bearing
         # invariant.
         ("tracking", "pf-core[db,llm]"),
-        # [full] must pull both new extras so [full] consumers are unaffected.
-        ("jobs", "pf-core[db,cli]"),
+        # [jobs] must pull [tracking]: jobs._schema imports llm.tracking.schema at
+        # module scope, so without it `import pf_core.jobs` raises ImportError.
+        ("jobs", "pf-core[db,cli,tracking]"),
     ],
 )
 def test_extra_references_required_subextra(extra: str, must_reference: str) -> None:

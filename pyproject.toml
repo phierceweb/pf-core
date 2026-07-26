@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pf-core"
-version = "0.14.0"
+version = "0.14.1"
 description = "Python foundation for LLM apps whose prompts and spend you can actually see — versioned prompts, every call recorded and replayable, budgets, evals, and resumable jobs on one schema; opt-in LLM, database, and FastAPI layers"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -116,7 +116,10 @@ web = [
 # Job tracker: pf_core.jobs.* (state machine, step history, worker leases)
 # and the pf-jobs CLI. Requires [db] for persistence and [cli] for the CLI;
 # pydantic backs job-argument schema validation in pf_core.jobs.registry.
-jobs = ["pf-core[db,cli]", "pydantic>=2.0"]
+# [tracking] is required, not optional: jobs._schema imports
+# llm.tracking.schema at module scope so job-attribution FKs land on the shared
+# metadata, so pf_core.jobs cannot import without it.
+jobs = ["pf-core[db,cli,tracking]", "pydantic>=2.0"]
 
 # DB-backed LLM run tracking: pf_core.llm.tracking.* and pf_core.llm.cache.*
 # (one row per call with prompts, tokens, cost, validations, job

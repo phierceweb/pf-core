@@ -79,10 +79,12 @@ Each unlocks one tier of pf-core's framework surface. They compose orthogonally 
 | `[cli]` | `typer`, `click` | `pf_core.cli.create_cli` — Typer command scaffolding |
 | `[db]` | `sqlalchemy`, `alembic` | `pf_core.db.*`, `pf_core.alembic`, fully-functional DB-backed cost guards (`BudgetRepo`, `CostRateRepo`) |
 | `[web]` | `fastapi`, `jinja2`, `uvicorn[standard]` | `pf_core.web.app_factory`, error pages, markdown, pagination, templates |
-| `[jobs]` | (depends on `[db,cli]` + `pydantic`) | `pf_core.jobs.*` — state machine, step history, worker leases, `pf-jobs` CLI |
+| `[jobs]` | (depends on `[db,cli,tracking]` + `pydantic`) | `pf_core.jobs.*` — state machine, step history, worker leases, `pf-jobs` CLI. `[tracking]` is not optional: the jobs schema shares metadata with the tracking tables so job-attribution foreign keys resolve. |
 | `[tracking]` | (depends on `[db,llm]`) | `pf_core.llm.tracking.*`, `pf_core.llm.cache.*` — one DB row per LLM call, cache hit-rate analytics |
 | `[admin]` | (depends on `[web,tracking]`) | `pf_core.web.llm_admin` — mountable admin dashboard |
 | `[eval]` | (depends on `[tracking,jobs]`) | `pf_core.eval.*` — golden-set replay, comparators (Python API) |
+
+**This table is enforced, not aspirational.** `pf_core._extras.required_extra()` records which extra each module needs in order to import, and `tests/test_extras_tiers.py` walks the source tree asserting no module-scope import escapes its own extra's closure (the closure is computed from the extras declared in `pyproject.toml`). A module that quietly reaches into a higher tier fails the build here rather than failing on a consumer's install, where the maintainer would never see it — a dev checkout has every extra. Note the map records each module's *minimum* import tier, which is occasionally lower than the extra you'd install for the feature: every `pf_core.jobs` module imports under `[tracking]`, and only the `pf-jobs` CLI needs `[cli]`.
 
 ### Tier 2 — driver and feature extras
 

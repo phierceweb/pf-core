@@ -41,6 +41,58 @@ _INSTALL: dict[str, str] = {
 }
 
 
+# Module prefix -> the extra needed to import it. Longest prefix wins, so a
+# subpackage may sit above its parent. Unlisted means base install: no extras.
+# Enforced against the source tree by tests/test_extras_tiers.py.
+_MODULE_EXTRA: dict[str, str] = {
+    "pf_core.alembic": "db",
+    "pf_core.budget._schema": "tracking",
+    "pf_core.budget.audit": "tracking",
+    "pf_core.budget.repo": "tracking",
+    "pf_core.budget.scheduler": "tracking",
+    "pf_core.budget.snapshot_job": "tracking",
+    "pf_core.cli": "cli",
+    "pf_core.cli.jobs": "jobs",
+    "pf_core.clients.anthropic": "anthropic",
+    "pf_core.clients.brave": "llm",
+    "pf_core.clients.openrouter": "llm",
+    "pf_core.db": "db",
+    "pf_core.eval": "eval",
+    # Minimum tier to import, not the extra you'd install for the feature:
+    # jobs modules import under [tracking]; only the CLI needs typer.
+    "pf_core.jobs": "tracking",
+    "pf_core.llm.cache": "tracking",
+    "pf_core.llm.parse": "validate",
+    "pf_core.llm.step": "tracking",
+    "pf_core.llm.tracked": "tracking",
+    "pf_core.llm.tracking": "tracking",
+    "pf_core.llm.validate": "validate",
+    # [crawl] = [http,articles]: article_fetch imports utils.urls, which needs httpx.
+    "pf_core.utils.article_fetch": "crawl",
+    "pf_core.utils.phash": "image-phash",
+    "pf_core.utils.url_liveness": "http",
+    "pf_core.utils.urls": "http",
+    "pf_core.web": "web",
+    # Both dashboards need [web] + a DB tier; [admin] supplies both.
+    "pf_core.web.jobs_admin": "admin",
+    "pf_core.web.llm_admin": "admin",
+}
+
+
+def required_extra(module: str) -> str | None:
+    """The extra needed to import *module*, or ``None`` if it is base-install.
+
+    Longest matching prefix wins, so ``pf_core.llm.tracking.repo`` resolves to
+    ``tracking`` rather than to whatever ``pf_core.llm`` would give.
+    """
+    best: str | None = None
+    best_len = -1
+    for prefix, extra in _MODULE_EXTRA.items():
+        if (module == prefix or module.startswith(prefix + ".")) and len(prefix) > best_len:
+            best, best_len = extra, len(prefix)
+    return best
+
+
 def install_target(extra: str) -> str:
     """Return the ``pip install`` target for an extra (e.g. ``pf-core[llm]``)."""
     return _INSTALL.get(extra, f"pf-core[{extra}]")

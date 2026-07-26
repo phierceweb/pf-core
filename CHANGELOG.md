@@ -2,6 +2,15 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.14.1 — 2026-07-25
+
+### Fixed
+- **`pip install pf-core[jobs]` produced an unusable install.** `[jobs]` declared `[db] + [cli] + pydantic`, but `jobs/_schema` imports `llm.tracking.schema` at module scope so job-attribution foreign keys land on the shared metadata — so `import pf_core.jobs` raised `ImportError: pf_core.llm.tracking requires the 'tracking' extra`. `[jobs]` now includes `[tracking]`. Consumers on `[full]` were unaffected (it already pulled both).
+- `pf_core.llm.step` raised a raw `ModuleNotFoundError: No module named 'sqlalchemy'` instead of the friendly extra error its siblings raise; it now names the `tracking` extra and the pip command. A nested gate's own message (e.g. `[validate]`) still propagates unchanged, being more precise.
+
+### Added
+- `pf_core._extras.required_extra(module)` and its backing `_MODULE_EXTRA` map — the declarative form of the tier contract `docs/INSTALLATION.md` states in prose: which extra each module needs to import. `tests/test_extras_tiers.py` enforces it against the source tree, so a module-scope import that escapes its extra's closure fails the build instead of failing in a consumer's install. The extras DAG is read from pyproject, and the cross-tier exemption list ships empty with a staleness ratchet.
+
 ## v0.14.0 — 2026-07-25
 
 ### Fixed

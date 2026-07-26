@@ -23,10 +23,20 @@ from pf_core.budget import (
     project_cost,
     record_blocked_run,
 )
-from pf_core.llm.cache import cache_lookup, cache_store, record_cache_hit
-from pf_core.llm.tracked import tracked_messages_call
-from pf_core.llm.tracking import compute_input_hash
-from pf_core.llm.validate import ValidationResult, parse_and_validate
+
+try:
+    from pf_core.llm.cache import cache_lookup, cache_store, record_cache_hit
+    from pf_core.llm.tracked import tracked_messages_call
+    from pf_core.llm.tracking import compute_input_hash
+    from pf_core.llm.validate import ValidationResult, parse_and_validate
+except ModuleNotFoundError as e:  # pragma: no cover - exercised by the extra matrix
+    # Only raw third-party absence is wrapped; a nested gate's own friendly
+    # ImportError is more precise, so it propagates untouched.
+    from pf_core._extras import extra_import_error
+
+    raise extra_import_error(
+        "tracking", e.name or "sqlalchemy", feature="pf_core.llm.step"
+    ) from e
 
 __all__ = ["BudgetEstimate", "StepResult", "llm_step"]
 
