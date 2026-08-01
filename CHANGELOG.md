@@ -2,6 +2,28 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.15.1 — 2026-08-01
+
+### Security
+- **Removed the TLS chain-recovery path that shipped in 0.15.0** (`pf_core.utils.tls_chain`, wired into `Fetcher._attempt`). On a certificate-verification failure it fetched the certificates named in the leaf's Authority Information Access `caIssuers` URL and passed them to `ssl.SSLContext.load_verify_locations`, which installs certificates as **trust anchors** — so its check that the completed chain reached a trusted root was satisfied by the certificate it had just downloaded. An on-path attacker could present any leaf, point its `caIssuers` at their own CA over plain HTTP, and have `Fetcher` accept the connection; the result was then cached per host for the life of the process. This affected `pf_core.fetch`, which is in the base install, and was on by default with no opt-out.
+- **0.15.0 is yanked — upgrade to 0.15.1.** Only an unpinned install could reach it: a `~=0.14.0` or lower compatible-release pin cannot resolve to 0.15.0.
+
+## v0.15.0 — 2026-07-30 [YANKED]
+
+### Added
+- `pf_core.utils.env.resolve_float` — the `resolve_int` contract for fractional values. `nan`/`inf` are rejected like any other malformed env value; they'd otherwise silently disable a bound instead of falling back to it.
+
+### Fixed
+- `brave.get_client()` raised `ValueError` out of client construction when `BRAVE_REQUEST_TIMEOUT` or `BRAVE_COST_PER_CALL_USD` held a non-numeric value — a typo in `.env` took down the client instead of falling back. Both now resolve through `utils.env`, warning and using the default. `BRAVE_BASE_URL` moved to the same path.
+- `get_client(request_timeout=0)` is now honored; the previous truthiness check discarded an explicit `0` in favor of the env var.
+- Scaffolded projects' `bin/run` now resolves pf-core's console scripts from the venv, so `bin/run pf-doctor` works as `docs/doctor.md` documents it. Both templates previously dispatched sibling `bin/` scripts and then fell straight through to the project's own entry point, so every `pf-*` command exited 2 with "No such command". Dispatch is limited to the `pf-` prefix, so an installed script cannot shadow a command the project owns.
+
+### Changed
+- Both templates' `bin/setup` now closes with `bin/run pf-doctor` alongside the layout's day-1 slice, and the lib template marks that slice as demo code to replace.
+
+### Documentation
+- `docs/fetch.md` documents that `timeout_s` is per-read and bounds no request as a whole — a dribbling server resets it indefinitely and the call never returns. The `[http]` (httpx) tier has the same gap. No total-request bound exists in either; the section covers what a caller must do instead.
+
 ## v0.14.1 — 2026-07-25
 
 ### Fixed

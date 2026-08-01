@@ -148,6 +148,8 @@ Brave free tier is **1 query per second**. The client never auto-sleeps — call
 | `BRAVE_REQUEST_TIMEOUT` | `30` | Per-request socket timeout (seconds) |
 | `BRAVE_COST_PER_CALL_USD` | `0.005` | Logged cost per call |
 
+Resolved through [`utils.env`](env.md): an explicit `get_client(...)` argument wins over the env var, which wins over the default. A malformed value warns and falls back to the default rather than raising.
+
 ## See also
 
 - `pf_core.utils.article_fetch` — the natural pairing: Brave gives you URLs, article_fetch turns them into structured content

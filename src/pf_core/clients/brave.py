@@ -50,6 +50,7 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
     raise extra_import_error("llm", "httpx", feature="pf_core.clients.brave") from e
 
 from pf_core.exceptions import ClientError
+from pf_core.utils.env import resolve_float, resolve_int, resolve_str
 
 
 class BraveSearchError(ClientError):
@@ -264,19 +265,17 @@ def get_client(
     if _client is None:
         _client = BraveSearchClient(
             api_key=api_key or os.environ.get("BRAVE_API_KEY", ""),
-            base_url=base_url or os.environ.get(
-                "BRAVE_BASE_URL", _DEFAULT_BASE_URL,
+            base_url=(
+                resolve_str(base_url, "BRAVE_BASE_URL", default=_DEFAULT_BASE_URL)
+                or _DEFAULT_BASE_URL
             ),
-            request_timeout=request_timeout or int(
-                os.environ.get("BRAVE_REQUEST_TIMEOUT", str(_DEFAULT_TIMEOUT))
+            request_timeout=resolve_int(
+                request_timeout, "BRAVE_REQUEST_TIMEOUT", default=_DEFAULT_TIMEOUT
             ),
-            cost_per_call_usd=(
-                cost_per_call_usd
-                if cost_per_call_usd is not None
-                else float(os.environ.get(
-                    "BRAVE_COST_PER_CALL_USD",
-                    str(_DEFAULT_COST_PER_CALL_USD),
-                ))
+            cost_per_call_usd=resolve_float(
+                cost_per_call_usd,
+                "BRAVE_COST_PER_CALL_USD",
+                default=_DEFAULT_COST_PER_CALL_USD,
             ),
         )
     return _client

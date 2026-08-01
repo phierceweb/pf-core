@@ -3,6 +3,7 @@
 #
 #   bin/run --help
 #   bin/run hello Ada
+#   bin/run pf-doctor     # pf-core console script, from the venv
 #   bin/run test          # delegates to bin/test
 #   bin/run lint          # delegates to bin/lint
 set -euo pipefail
@@ -13,6 +14,12 @@ cd "$ROOT"
 if [[ "$#" -gt 0 && "$1" != "run" && -x "$ROOT/bin/$1" ]]; then
   CMD="$1"; shift
   exec "$ROOT/bin/$CMD" "$@"
+fi
+
+# pf-core's console scripts live in the venv; the pf- prefix can't collide with an app command.
+if [[ "$#" -gt 0 && "$1" == pf-* && -x "$ROOT/.venv/bin/$1" ]]; then
+  CMD="$1"; shift
+  exec "$ROOT/.venv/bin/$CMD" "$@"
 fi
 
 if [[ ! -x "$ROOT/.venv/bin/python" ]]; then

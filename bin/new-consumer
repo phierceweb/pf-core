@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\nNext:")
     print(f"  cd {dest}")
     print("  bin/setup")
-    print("  bin/run hello" if args.layout == "lib" else "  bin/run")
+    print("  bin/run pf-doctor")
     return 0
 
 

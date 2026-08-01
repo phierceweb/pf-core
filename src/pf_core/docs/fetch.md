@@ -52,6 +52,19 @@ Constructor knobs (all keyword-only):
 
 `get_text` decodes with `encoding` kwarg > Content-Type charset > utf-8, always with replacement. `get_bytes` defaults to a longer timeout than `get_text` (binary payloads run large on slow CDNs); both take a per-call `timeout_s`. Responses with `Content-Encoding: gzip`/`deflate` are decoded transparently; the default request headers advertise no `Accept-Encoding`, so servers send identity unless you opt in via headers.
 
+### `timeout_s` does not bound a request
+
+`timeout_s` is the socket timeout and applies **per read**, not to the request as a whole. A server that dribbles a few bytes at a time resets it on every read, so the call never returns and no amount of lowering `timeout_s` ends it. There is currently **no total-request bound** — a hung fetch hangs until the peer gives up.
+
+This is not theoretical. A crawl has sat blocked for over half an hour in `_ssl__SSLSocket_read` with `timeout_s=30` in force; a stack sample put it in `_buffered_readline` — reading the status line, before any body byte arrived.
+
+Two consequences worth designing around:
+
+- **A long crawl needs its own liveness check.** Watch progress externally (pages fetched, bytes written) and abort on a flatline; do not assume a fetch call returns.
+- **A body-read ceiling would not have caught the case above.** The stall was in the header phase, inside `opener.open()`. Any real fix has to cover connect, handshake, headers, and body — which urllib cannot express directly, so it needs the request run under a watchdog that can close the socket out from under it.
+
+The `[http]` tier (`utils/urls.py`, `article_fetch`, `url_liveness`, the API clients) uses **httpx**, not this `Fetcher`, and has the same gap — httpx's `timeout=` is likewise per-operation with no whole-request bound.
+
 TLS verification follows `URL_CHECK_VERIFY_TLS` (default on), the same policy as the `[http]` tier.
 
 ## Retry contract

@@ -28,6 +28,11 @@ The console script lands with the install; on an editable checkout that
 predates it, `bin/run pip install -e .` once (or use the always-available
 `bin/run python -m pf_core.doctor`).
 
+A project scaffolded before the venv-dispatch fix has a `bin/run` that only
+reaches sibling `bin/` scripts and its own CLI, so `pf-doctor` exits 2 there.
+Either run `.venv/bin/pf-doctor` directly, or copy the `pf-*` dispatch block
+from `templates/consumer-lib/bin/run`.
+
 Exit code: `0` when no check FAILs (WARNs don't flip it), `1` otherwise.
 
 ## Core checks (always on)

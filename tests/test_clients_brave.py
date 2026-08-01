@@ -243,3 +243,30 @@ class TestGetClientSingleton:
         monkeypatch.setenv("BRAVE_COST_PER_CALL_USD", "0.01")
         c = get_client()
         assert c.cost_per_call_usd == 0.01
+
+    def test_env_timeout_override(self, monkeypatch):
+        monkeypatch.setenv("BRAVE_API_KEY", "k")
+        monkeypatch.setenv("BRAVE_REQUEST_TIMEOUT", "5")
+        assert get_client().request_timeout == 5
+
+    @pytest.mark.parametrize(
+        "var,attr,expected",
+        [
+            ("BRAVE_COST_PER_CALL_USD", "cost_per_call_usd", 0.005),
+            ("BRAVE_REQUEST_TIMEOUT", "request_timeout", 30),
+        ],
+    )
+    def test_malformed_env_falls_back_instead_of_crashing(
+        self, monkeypatch, var, attr, expected
+    ):
+        """An operator typo used to raise ValueError out of get_client, taking
+        down construction; the resolvers warn and use the default."""
+        monkeypatch.setenv("BRAVE_API_KEY", "k")
+        monkeypatch.setenv(var, "not-a-number")
+        assert getattr(get_client(), attr) == expected
+
+    def test_explicit_zero_timeout_beats_env(self, monkeypatch):
+        """``0`` is a real explicit value; truthiness-based fallback lost it."""
+        monkeypatch.setenv("BRAVE_API_KEY", "k")
+        monkeypatch.setenv("BRAVE_REQUEST_TIMEOUT", "99")
+        assert get_client(request_timeout=0).request_timeout == 0

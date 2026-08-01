@@ -74,4 +74,6 @@ else
 fi
 
 echo
-echo "Setup complete. Try: bin/run hello"
+echo "Setup complete."
+echo "  bin/run pf-doctor   # attest the install"
+echo "  bin/run hello       # the demo slice — replace it with your own commands"

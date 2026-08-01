@@ -1,6 +1,6 @@
 # Env-Var Resolver Helpers
 
-`resolve_int`, `resolve_str`, and `resolve_bool` codify the resolution pattern that the project's `config-driven` rule prescribes: **explicit argument → environment variable → default.** Malformed env values fall back to the default and emit a structured warning so operators don't silently lose their intended override.
+`resolve_int`, `resolve_float`, `resolve_str`, and `resolve_bool` codify the resolution pattern that the project's `config-driven` rule prescribes: **explicit argument → environment variable → default.** Malformed env values fall back to the default and emit a structured warning so operators don't silently lose their intended override.
 
 ## Usage
 
@@ -36,6 +36,25 @@ resolve_int(None, "MAX_PER_PAGE", default=200)     # 200 (env unset, default)
 resolve_int(None, "MAX_PER_PAGE", default=200)     # 50  (env wins)
 # $MAX_PER_PAGE=garbage:
 resolve_int(None, "MAX_PER_PAGE", default=200)     # 200 (warn + default)
+```
+
+## resolve_float
+
+```python
+resolve_float(arg: float | None, env_var: str, *, default: float) -> float
+```
+
+The `resolve_int` contract for fractional values — durations, rates, thresholds. Same resolution order; `0.0` is a real explicit value, only `None` falls through.
+
+`nan`, `inf`, and `-inf` parse as floats but are rejected like any other malformed value: they satisfy or defeat every comparison a caller writes against the resolved value, so an operator typo would silently disable a bound rather than fall back to it.
+
+```python
+resolve_float(2.5, "FOO_TIMEOUT_S", default=30.0)     # 2.5  (explicit wins)
+resolve_float(None, "FOO_TIMEOUT_S", default=30.0)    # 30.0 (env unset, default)
+# $FOO_TIMEOUT_S=7.5:
+resolve_float(None, "FOO_TIMEOUT_S", default=30.0)    # 7.5  (env wins)
+# $FOO_TIMEOUT_S=inf:
+resolve_float(None, "FOO_TIMEOUT_S", default=30.0)    # 30.0 (warn + default)
 ```
 
 ## resolve_str

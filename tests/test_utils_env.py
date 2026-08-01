@@ -8,6 +8,7 @@ import pytest
 
 from pf_core.utils.env import (
     resolve_bool,
+    resolve_float,
     resolve_int,
     resolve_positive_int,
     resolve_str,
@@ -69,6 +70,60 @@ class TestResolveInt:
         (especially via CI / shell substitution). Strip before parsing."""
         monkeypatch.setenv("MY_VAR", "  42  ")
         assert resolve_int(None, "MY_VAR", default=1) == 42
+
+
+# ---------------------------------------------------------------------------
+# resolve_float
+# ---------------------------------------------------------------------------
+
+
+class TestResolveFloat:
+    def test_explicit_arg_wins_over_env(self, monkeypatch):
+        monkeypatch.setenv("MY_VAR", "99.5")
+        assert resolve_float(7.5, "MY_VAR", default=1.0) == 7.5
+
+    def test_explicit_arg_wins_even_if_zero(self, monkeypatch):
+        monkeypatch.setenv("MY_VAR", "99.5")
+        assert resolve_float(0.0, "MY_VAR", default=1.0) == 0.0
+
+    def test_env_used_when_arg_is_none(self, monkeypatch):
+        monkeypatch.setenv("MY_VAR", "42.25")
+        assert resolve_float(None, "MY_VAR", default=1.0) == 42.25
+
+    def test_default_used_when_neither_set(self, monkeypatch):
+        monkeypatch.delenv("MY_VAR", raising=False)
+        assert resolve_float(None, "MY_VAR", default=5.5) == 5.5
+
+    def test_integer_string_in_env_parses(self, monkeypatch):
+        monkeypatch.setenv("MY_VAR", "30")
+        assert resolve_float(None, "MY_VAR", default=1.0) == 30.0
+
+    def test_whitespace_in_env_stripped_before_parse(self, monkeypatch):
+        monkeypatch.setenv("MY_VAR", "  2.5  ")
+        assert resolve_float(None, "MY_VAR", default=1.0) == 2.5
+
+    def test_malformed_env_falls_back_to_default(self, monkeypatch, caplog):
+        monkeypatch.setenv("MY_VAR", "not-a-float")
+        with caplog.at_level(logging.WARNING, logger="pf_core.utils.env"):
+            assert resolve_float(None, "MY_VAR", default=4.5) == 4.5
+        assert any(
+            "env_var_malformed" in r.getMessage() and "MY_VAR" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_empty_string_env_falls_back_to_default(self, monkeypatch, caplog):
+        monkeypatch.setenv("MY_VAR", "")
+        with caplog.at_level(logging.WARNING, logger="pf_core.utils.env"):
+            assert resolve_float(None, "MY_VAR", default=7.0) == 7.0
+        assert any("env_var_malformed" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.parametrize("raw", ["nan", "inf", "-inf", "Infinity"])
+    def test_non_finite_env_falls_back_to_default(self, monkeypatch, caplog, raw):
+        """``float()`` accepts these; a bound compared against one never trips."""
+        monkeypatch.setenv("MY_VAR", raw)
+        with caplog.at_level(logging.WARNING, logger="pf_core.utils.env"):
+            assert resolve_float(None, "MY_VAR", default=3.0) == 3.0
+        assert any("env_var_malformed" in r.getMessage() for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

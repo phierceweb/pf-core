@@ -10,6 +10,7 @@ import importlib
 import importlib.machinery
 import importlib.util
 import os
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -111,6 +112,39 @@ def test_scaffolded_lib_cli_actually_runs(tmp_path):
         sys.path.remove(src)
         for m in [k for k in sys.modules if k.startswith("runnable_demo")]:
             del sys.modules[m]
+
+
+def _fake_console_script(proj: Path, name: str, marker: str) -> None:
+    vbin = proj / ".venv" / "bin"
+    vbin.mkdir(parents=True, exist_ok=True)
+    script = vbin / name
+    script.write_text(f"#!/bin/sh\necho {marker}\n")
+    script.chmod(0o755)
+
+
+@pytest.mark.parametrize("layout", ["lib", "app"])
+def test_scaffolded_run_dispatches_venv_console_scripts(tmp_path, layout):
+    """docs/doctor.md tells consumers to run `bin/run pf-doctor`; it has to reach the venv."""
+    gen = _load_generator()
+    gen.main(["dispatch-demo", "--layout", layout, "--dest", str(tmp_path)])
+    proj = tmp_path / "dispatch-demo"
+    _fake_console_script(proj, "pf-doctor", "RAN_PF_DOCTOR")
+
+    out = subprocess.run([str(proj / "bin" / "run"), "pf-doctor"],
+                         capture_output=True, text=True)
+    assert "RAN_PF_DOCTOR" in out.stdout
+
+
+def test_scaffolded_run_venv_dispatch_is_pf_prefixed_only(tmp_path):
+    """A venv console script must never hijack a command name the app owns."""
+    gen = _load_generator()
+    gen.main(["shadow-demo", "--layout", "lib", "--dest", str(tmp_path)])
+    proj = tmp_path / "shadow-demo"
+    _fake_console_script(proj, "hello", "VENV_HELLO_RAN")
+
+    out = subprocess.run([str(proj / "bin" / "run"), "hello"],
+                         capture_output=True, text=True)
+    assert "VENV_HELLO_RAN" not in out.stdout
 
 
 def test_scaffolded_app_serves_index(tmp_path):

@@ -5,8 +5,9 @@ A pf-core library / tool (src-layout — no web or database layers).
 ## Setup
 
 ```bash
-bin/setup        # venv (3.11+) + editable install + .env
-bin/run hello    # the day-1 vertical slice
+bin/setup          # venv (3.11+) + editable install + .env
+bin/run pf-doctor  # attest the install
+bin/run hello      # the day-1 vertical slice — replace it with your own commands
 ```
 
 ## Commands

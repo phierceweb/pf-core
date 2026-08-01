@@ -68,6 +68,52 @@ def resolve_int(arg: int | None, env_var: str, *, default: int) -> int:
         return default
 
 
+def resolve_float(arg: float | None, env_var: str, *, default: float) -> float:
+    """Resolve a float from an explicit arg, then env var, then default.
+
+    The :func:`resolve_int` contract for fractional values — durations,
+    rates, thresholds. Resolution order (first non-None wins):
+
+    1. ``arg`` — explicit value passed by the caller. ``0.0`` counts as
+       a real value (not "unset"); only ``None`` falls through.
+    2. ``$env_var`` — string env var, parsed as float. Whitespace is
+       stripped before parsing. Malformed values (non-numeric, empty
+       string) emit an ``env_var_malformed`` warning and fall through
+       to the default rather than raising. ``nan`` / ``inf`` parse as
+       floats but are rejected the same way — they would silently
+       disable a caller's bound instead of falling back to it.
+    3. ``default`` — required.
+
+    Args:
+        arg: Explicit value, or ``None`` to defer to env / default.
+        env_var: Name of the environment variable to consult.
+        default: Value to return when neither ``arg`` nor ``$env_var``
+            is set (or env value is malformed).
+
+    Returns:
+        The resolved float.
+    """
+    if arg is not None:
+        return arg
+    raw = os.environ.get(env_var)
+    if raw is None:
+        return default
+    try:
+        value = float(raw.strip())
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("non-finite")
+    except ValueError:
+        _log.warning(
+            "env_var_malformed",
+            var=env_var,
+            value=raw,
+            expected="float",
+            falling_back_to=default,
+        )
+        return default
+    return value
+
+
 def resolve_str(
     arg: str | None,
     env_var: str,

@@ -73,4 +73,6 @@ else
 fi
 
 echo
-echo "Setup complete. Try: bin/web   (then open http://127.0.0.1:8000/)"
+echo "Setup complete."
+echo "  bin/run pf-doctor   # attest the install"
+echo "  bin/web             # start the server, then open http://127.0.0.1:8000/"

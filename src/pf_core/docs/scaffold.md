@@ -17,6 +17,7 @@ bin/new-consumer <name> --layout {lib|app} [--extras cli,llm] [--dest DIR]
 bin/new-consumer my-tool --layout lib
 cd ./my-tool        # created under --dest (default: cwd)
 bin/setup
+bin/run pf-doctor   # attest the install
 bin/run hello       # the day-1 slice
 ```
 
