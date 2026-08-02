@@ -2,6 +2,20 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.16.0 — 2026-08-02
+
+### Added
+- `article_fetch.FETCH_STATUSES` — the `fetch_status` vocabulary as a frozenset, for consumers that branch on status values.
+- `article_fetch.looks_binary(text)` — magic-byte detection on a decoded response body; returns a format label or `None`.
+- `PF_ARTICLE_EXTRACTOR_LOG_LEVEL` — caps the `trafilatura` and `htmldate` loggers, which emit `ERROR` for ordinary unparseable bodies. Defaults to `CRITICAL`; an unrecognized level warns and falls back.
+
+### Changed
+- `fetch_article` no longer reports `ok` for a 2xx it could not extract. A binary body gets `unsupported_content_type` (detected before extraction; skips the Wayback fallback). HTML that yields no text gets `no_content` (still attempts Wayback, and keeps any `title` / `date_published` extraction recovered). Callers branching on `ok` must handle both.
+- `FETCHER_VERSION` 3 → 4 — both statuses reclassify rows that previously cached as `ok`.
+
+### Fixed
+- A Wayback snapshot that extracts to nothing no longer replaces the live status.
+
 ## v0.15.1 — 2026-08-01
 
 ### Security

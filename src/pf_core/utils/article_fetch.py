@@ -6,8 +6,12 @@ Fetch one URL, extract title + body + publish date into a typed
 errored. Never raises — every failure maps to a ``fetch_status``:
 ``ok`` | ``paywalled`` (401/403 or short body + CTA markers) |
 ``not_found`` (404/410 — final, no Wayback) | ``blocked`` | ``timeout``
-| ``error``. One URL per call; callers parallelize. The extraction
-chain lives in ``_article_extract``.
+| ``error`` | ``unsupported_content_type`` (a 2xx whose body is binary,
+e.g. a PDF — final, no Wayback, since the archive replays the same
+bytes) | ``no_content`` (a 2xx HTML page the extractor could not pull a
+body from — JS-rendered shells, interstitials). :data:`FETCH_STATUSES`
+is the machine-readable set. One URL per call; callers parallelize. The
+extraction chain lives in ``_article_extract``.
 
 Requires the ``articles`` extra (``pip install 'pf-core[articles]'``);
 without it the import works and :func:`fetch_article` raises a helpful
@@ -41,11 +45,13 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
 from pf_core.log import get_logger
 from pf_core.utils._article_extract import (  # noqa: F401 — helpers re-exported
+    FETCH_STATUSES,
     FETCHER_VERSION,
     FetchedArticle,
     _extract_from_html,
     _first_str,
     _parse_iso_date,
+    looks_binary,
 )
 from pf_core.utils._article_extract import _HAS_DEPS as _EXTRACT_HAS_DEPS
 from pf_core.utils.urls import (
@@ -59,9 +65,11 @@ logger = get_logger(__name__)
 
 
 __all__ = [
+    "FETCH_STATUSES",
     "FETCHER_VERSION",
     "FetchedArticle",
     "fetch_article",
+    "looks_binary",
 ]
 
 
@@ -150,6 +158,10 @@ def fetch_article(
     # ── live fetch with retry ──
     fetch_status, body_text = _live_fetch_with_retry(url)
 
+    # Set when extraction ran but the result wasn't returned outright, so the
+    # no-Wayback exit can hand back the title/date it recovered.
+    live_article: FetchedArticle | None = None
+
     if fetch_status == "ok" and body_text:
         article = _extract_from_html(
             url=url,
@@ -159,7 +171,11 @@ def fetch_article(
             outlet=outlet,
             canon=canon,
         )
-        if _looks_paywalled(article.body):
+        if article.fetch_status == "no_content":
+            fetch_status = "no_content"
+            live_article = article
+            # Fall through to Wayback attempt.
+        elif _looks_paywalled(article.body):
             article.fetch_status = "paywalled"
             fetch_status = "paywalled"
             # Fall through to Wayback attempt.
@@ -167,16 +183,21 @@ def fetch_article(
             return article
 
     # ── Wayback fallback for recoverable failures ──
-    # Don't waste time on 404/410 — those URLs genuinely don't exist on the
-    # live web and Wayback rarely has them either. paywalled / forbidden /
-    # timeout / error / blocked are all worth one CDX lookup.
-    if wayback_fallback and fetch_status not in ("not_found",):
+    # 404/410 genuinely don't exist on the live web and Wayback rarely has
+    # them; unsupported_content_type is replayed byte-for-byte, so a PDF is
+    # still a PDF. Everything else is worth one CDX lookup.
+    if fetch_status in ("not_found", "unsupported_content_type"):
+        wayback_fallback = False
+    if wayback_fallback:
         wb_result = _try_wayback(url, event_date=event_date)
         if wb_result is not None:
             wb_result.url = url
             wb_result.outlet = outlet
             wb_result.canonical_url = canon
             return wb_result
+
+    if live_article is not None:
+        return live_article
 
     return FetchedArticle(
         url=url,
@@ -208,6 +229,11 @@ def _live_fetch_with_retry(url: str) -> tuple[str, str]:
         if 200 <= code < 300:
             if not text:
                 raise _TransientFetchError("empty body on 2xx")
+            kind = looks_binary(text)
+            if kind:
+                logger.debug("article_unsupported_content_type",
+                             url=url, kind=kind)
+                return "unsupported_content_type", ""
             return "ok", text
         if code == 401 or category == "forbidden":
             return "paywalled", ""
@@ -263,6 +289,11 @@ def _try_wayback(
         outlet=domain_of(url),
         canon=canonical_url(url) or url,
     )
+    if article.fetch_status == "no_content":
+        # Returning it would overwrite a more specific live status
+        # (paywalled, blocked) with a vaguer one.
+        logger.debug("wayback_extract_empty", url=url, snapshot=snapshot)
+        return None
     # Don't re-classify Wayback content as paywalled — if Wayback
     # captured it, we got SOMETHING; the caller decides if it's actionable.
     return article

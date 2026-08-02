@@ -105,6 +105,22 @@ log_verbose(logger, "summarized text", verbose=verbose, tokens=1200)
 # verbose=False → logger.debug(...)
 ```
 
+## Third-party log levels
+
+`setup_logging` attaches its handlers to the **root** logger, so records from
+any library propagate into your output.
+
+The `articles` extra caps `trafilatura` and `htmldate` at `CRITICAL` when
+`pf_core.utils.article_fetch` imports them. Both emit `ERROR` records for the
+ordinary "this isn't parseable HTML" case — a PDF or a JS-rendered page — which
+otherwise reads as an application failure in every consumer's logs.
+
+Override with `PF_ARTICLE_EXTRACTOR_LOG_LEVEL` when debugging extraction:
+
+```bash
+PF_ARTICLE_EXTRACTOR_LOG_LEVEL=DEBUG bin/run my-command
+```
+
 ## Output formats
 
 **Console** (development): colored, human-readable via `structlog.dev.ConsoleRenderer`.

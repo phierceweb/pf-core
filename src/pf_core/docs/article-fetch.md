@@ -46,7 +46,7 @@ elif art.fetch_status == "not_found":
 
 ### Wayback fallback
 
-By default, `fetch_article` falls back to the Wayback Machine for recoverable failures (paywalled, blocked, timeout, error — but NOT 404/410, since those rarely have captures and aren't worth the latency). Disable globally via env:
+By default, `fetch_article` falls back to the Wayback Machine for recoverable failures: `paywalled`, `blocked`, `timeout`, `error`, `no_content`. Two statuses are final and skip the lookup — `not_found` (404/410 rarely have captures) and `unsupported_content_type` (the archive replays the original bytes, so a PDF is still a PDF). Disable globally via env:
 
 ```bash
 PF_ARTICLE_WAYBACK_FALLBACK=0
@@ -58,7 +58,9 @@ Or per-call:
 art = fetch_article(url, wayback_fallback=False)
 ```
 
-When the Wayback fetch succeeds, `art.used_wayback=True` and `art.final_url` is the `web.archive.org` URL. The `art.url` and `art.canonical_url` always reflect what the caller passed.
+When the Wayback fetch succeeds, `art.used_wayback=True` and `art.final_url` is the `web.archive.org` URL. The `art.url` and `art.canonical_url` always reflect what the caller passed. A snapshot that extracts to nothing is discarded rather than returned, so it can't overwrite a more specific live status.
+
+When the fallback finds nothing and the live fetch was `no_content`, you still get whatever extraction recovered — `title` and `date_published` are frequently present on a JS-rendered shell even with no body.
 
 ### Date hint for Wayback snapshot selection
 
@@ -81,7 +83,9 @@ art = fetch_article(
 class FetchedArticle:
     url: str                              # original URL caller passed
     final_url: str                        # what we actually fetched
-    fetch_status: str                     # ok | paywalled | not_found | blocked | timeout | error
+    fetch_status: str                     # see FETCH_STATUSES — ok | paywalled | not_found |
+                                          # blocked | timeout | error |
+                                          # unsupported_content_type | no_content
     used_wayback: bool                    # True if content came from web.archive.org
     title: str                            # extracted title or ""
     date_published: date | None           # extracted publication date
@@ -101,6 +105,21 @@ class FetchedArticle:
 | `blocked` | Other non-2xx (429, 500, etc.) |
 | `timeout` | Request timed out after 3 retries |
 | `error` | Transport error after 3 retries |
+| `unsupported_content_type` | 2xx whose body is binary (PDF, Office doc, image) — detected by magic-byte prefix before extraction. Final: Wayback is NOT attempted, since the archive replays the same bytes |
+| `no_content` | 2xx HTML the extractor chain could not pull a body from — JS-rendered shells, consent interstitials, non-article pages. Wayback IS attempted |
+
+`FETCH_STATUSES` is the machine-readable set. Assert against it in a consumer test if you branch on status values — the set grows between releases, and an allowlist that silently drops an unrecognized status is the failure mode it exists to catch.
+
+Detection of binary bodies runs on the **decoded** response text, so only signatures that survive a lossy UTF-8 decode are matched. JPEG and gzip decode to bare U+FFFD runs and are deliberately not claimed; they reach the extractor and land on `no_content`.
+
+`looks_binary(text)` is exported for callers doing their own fetching — it returns a format label (`"pdf"`, `"zip/ooxml"`, `"postscript"`, `"gif"`, `"png"`) or `None`. Pass it the decoded body, not bytes.
+
+```python
+from pf_core.utils.article_fetch import looks_binary
+
+if looks_binary(resp.text):
+    ...  # don't hand it to an extractor
+```
 
 ## Extractor chain
 
@@ -112,6 +131,14 @@ The body/title/date extraction runs a fallback chain:
 4. **URL path date** (`/YYYY/MM/DD/` pattern) — last resort for sites that bury the date in metadata.
 
 Body is trimmed to 8000 characters by default (enough for downstream content matching; fewer tokens for LLM consumers).
+
+`trafilatura` and `htmldate` both log `ERROR` for the ordinary unparseable-body case, so pf-core caps them at `CRITICAL` when the extractor imports. Raise it when debugging extraction:
+
+```bash
+PF_ARTICLE_EXTRACTOR_LOG_LEVEL=DEBUG bin/run my-command
+```
+
+An unrecognized level warns and falls back to `CRITICAL`. See [logging.md](logging.md).
 
 ## Paywall detection
 
@@ -148,7 +175,8 @@ def cached_fetch(url: str, *, event_date=None, use_cache=True):
 
     art = fetch_article(url, event_date=event_date)
 
-    # Cache terminal states (ok, paywalled, not_found, blocked).
+    # Cache terminal states (ok, paywalled, unsupported_content_type are
+    # permanent; not_found, blocked, no_content are worth re-checking later).
     # Don't cache transient errors (timeout, error) — they may recover.
     if use_cache and art.fetch_status not in ("timeout", "error"):
         my_db.upsert_cached_article(art, fetcher_version=FETCHER_VERSION)

@@ -6,6 +6,8 @@ gated on the deps being importable.
 """
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from pf_core.utils import article_fetch as af
@@ -321,3 +323,226 @@ class TestFetchArticleWaybackFlag:
     def test_non_string_returns_error_stub(self, monkeypatch):
         result = af.fetch_article(None)  # type: ignore[arg-type]
         assert result.fetch_status == "error"
+
+
+def _as_transport_text(raw: bytes) -> str:
+    """Decode ``raw`` exactly as the HTTP layer hands it to us.
+
+    Detection runs on ``resp.text``, never on bytes, so a test that feeds a
+    str literal built from the raw signature proves nothing — non-ASCII
+    signature bytes have already become U+FFFD by the time we see them.
+    """
+    import httpx
+
+    return httpx.Response(200, content=raw).text
+
+
+class TestLooksBinary:
+    """Magic-byte detection on the already-decoded response text."""
+
+    @pytest.mark.parametrize("raw,label", [
+        (b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj", "pdf"),
+        (b"PK\x03\x04\x14\x00\x06\x00", "zip/ooxml"),
+        (b"%!PS-Adobe-3.0", "postscript"),
+        (b"GIF89a\x01\x00", "gif"),
+        (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", "png"),
+    ])
+    def test_known_signatures_survive_transport_decode(self, raw, label):
+        assert af.looks_binary(_as_transport_text(raw)) == label
+
+    @pytest.mark.parametrize("raw", [
+        b"\xff\xd8\xff\xe0\x00\x10JFIF",  # jpeg
+        b"\x1f\x8b\x08\x00",               # gzip
+    ])
+    def test_replacement_char_only_signatures_are_not_claimed(self, raw):
+        # These decode to bare U+FFFD runs, which are too weak to match on.
+        # They must fall through to the extractor and land on `no_content`
+        # rather than being falsely detected here.
+        assert af.looks_binary(_as_transport_text(raw)) is None
+
+    @pytest.mark.parametrize("payload", [
+        "",
+        "<html><body>Real article</body></html>",
+        "﻿<!DOCTYPE html><html></html>",       # BOM-prefixed HTML
+        "\n\n  <html>indented</html>",              # leading whitespace
+        "Plain text with no markup at all.",
+        "The report (%PDF- format) was released.",  # signature not at offset 0
+    ])
+    def test_non_binary_not_detected(self, payload):
+        assert af.looks_binary(payload) is None
+
+    def test_only_the_head_is_scanned(self):
+        # A signature buried past the window must not trip detection.
+        assert af.looks_binary("<html>" + "x" * 5000 + "%PDF-") is None
+
+
+class TestFetchStatusVocabulary:
+    def test_exported_set_is_complete(self):
+        assert af.FETCH_STATUSES == frozenset({
+            "ok", "paywalled", "not_found", "blocked", "timeout", "error",
+            "unsupported_content_type", "no_content",
+        })
+
+    def test_fetcher_version_bumped_for_new_statuses(self):
+        # The two new statuses reclassify previously-"ok" cache rows, so
+        # consumers must be forced to re-read.
+        assert FETCHER_VERSION >= 4
+
+
+class TestBinaryBodyRejection:
+    """A 2xx carrying binary must never reach the extractor."""
+
+    def test_pdf_body_returns_unsupported_content_type(self, monkeypatch):
+        pdf_text = _as_transport_text(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj")
+        monkeypatch.setattr(
+            af, "fetch_url_content", lambda url: (200, "ok", pdf_text),
+        )
+        status, body = _live_fetch_with_retry("https://example.com/report.pdf")
+        assert status == "unsupported_content_type"
+        assert body == ""  # mojibake discarded, never cached
+
+    def test_html_body_still_ok(self, monkeypatch):
+        monkeypatch.setattr(
+            af, "fetch_url_content",
+            lambda url: (200, "ok", "<html><body>hi</body></html>"),
+        )
+        status, _ = _live_fetch_with_retry("https://example.com/x")
+        assert status == "ok"
+
+    def test_unsupported_content_type_skips_wayback(self, monkeypatch):
+        wb_calls = []
+        monkeypatch.setattr(
+            af, "fetch_url_content", lambda url: (200, "ok", "%PDF-1.4 junk"),
+        )
+        monkeypatch.setattr(
+            af, "wayback_exists_at",
+            lambda url, **kw: (wb_calls.append(url) or (False, None)),
+        )
+        result = af.fetch_article("https://example.com/a.pdf")
+        assert result.fetch_status == "unsupported_content_type"
+        assert result.body == ""
+        # The archive replays the same bytes — a PDF is still a PDF.
+        assert wb_calls == []
+
+
+@pytest.mark.skipif(not HAS_DEPS, reason="requires the 'articles' extra")
+class TestNoContent:
+    """A 2xx whose body the extractor cannot recover is not a success."""
+
+    def test_unextractable_html_is_no_content(self):
+        art = af._extract_from_html(
+            url="https://example.com/x",
+            final_url="https://example.com/x",
+            html="<html><head><title>t</title></head><body></body></html>",
+            used_wayback=False,
+            outlet="example.com",
+            canon="https://example.com/x",
+        )
+        assert art.fetch_status == "no_content"
+        assert art.body == ""
+
+    def test_real_article_is_ok(self):
+        html = (
+            "<html><body><article><p>"
+            + ("Substantive reporting text. " * 20)
+            + "</p></article></body></html>"
+        )
+        art = af._extract_from_html(
+            url="https://example.com/x",
+            final_url="https://example.com/x",
+            html=html,
+            used_wayback=False,
+            outlet="example.com",
+            canon="https://example.com/x",
+        )
+        assert art.fetch_status == "ok"
+        assert art.body
+
+    def test_no_content_falls_through_to_wayback(self, monkeypatch):
+        wb_calls = []
+        monkeypatch.setattr(
+            af, "fetch_url_content",
+            lambda url: (200, "ok", "<html><body></body></html>"),
+        )
+        monkeypatch.setattr(
+            af, "wayback_exists_at",
+            lambda url, **kw: (wb_calls.append(url) or (False, None)),
+        )
+        result = af.fetch_article("https://example.com/js-only")
+        assert result.fetch_status == "no_content"
+        assert wb_calls == ["https://example.com/js-only"]
+
+    def test_no_content_keeps_metadata_the_extractor_recovered(self, monkeypatch):
+        # A JS-rendered shell still carries a publish date. Downgrading the
+        # status must not also drop what extraction did find.
+        html = (
+            '<html><head><title>Council approves budget</title>'
+            '<meta property="article:published_time" content="2026-03-04">'
+            '</head><body><div id="root"></div></body></html>'
+        )
+        monkeypatch.setattr(
+            af, "fetch_url_content", lambda url: (200, "ok", html),
+        )
+        monkeypatch.setattr(
+            af, "wayback_exists_at", lambda url, **kw: (False, None),
+        )
+        result = af.fetch_article("https://example.com/js-only")
+        assert result.fetch_status == "no_content"
+        assert result.body == ""
+        assert result.date_published == datetime.date(2026, 3, 4)
+
+    def test_empty_wayback_snapshot_does_not_mask_live_status(self, monkeypatch):
+        def fake_fetch(url):
+            if "web.archive.org" in url:
+                return 200, "ok", "<html><body></body></html>"
+            return 403, "forbidden", ""
+
+        monkeypatch.setattr(af, "fetch_url_content", fake_fetch)
+        monkeypatch.setattr(
+            af, "wayback_exists_at",
+            lambda url, **kw: (True, "https://web.archive.org/web/1/" + url),
+        )
+        result = af.fetch_article("https://example.com/x")
+        # The live verdict (paywalled) is more specific than the snapshot's.
+        assert result.fetch_status == "paywalled"
+
+
+class TestExtractorLoggersQuieted:
+    def test_trafilatura_and_htmldate_are_capped(self):
+        import logging
+
+        from pf_core.utils import _article_extract
+
+        if not _article_extract._HAS_DEPS:
+            pytest.skip("requires the 'articles' extra")
+        for name in ("trafilatura", "htmldate"):
+            assert logging.getLogger(name).level >= logging.CRITICAL
+
+    def test_env_var_overrides_level(self, monkeypatch):
+        import logging
+
+        from pf_core.utils import _article_extract
+
+        monkeypatch.setenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", "DEBUG")
+        try:
+            _article_extract._quiet_extractor_loggers()
+            assert logging.getLogger("trafilatura").level == logging.DEBUG
+        finally:
+            monkeypatch.delenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", raising=False)
+            _article_extract._quiet_extractor_loggers()
+
+    @pytest.mark.parametrize("bogus", ["nonsense", "BASIC_FORMAT", ""])
+    def test_malformed_level_falls_back_instead_of_raising(
+        self, monkeypatch, bogus,
+    ):
+        import logging
+
+        from pf_core.utils import _article_extract
+
+        monkeypatch.setenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", bogus)
+        try:
+            _article_extract._quiet_extractor_loggers()
+            assert logging.getLogger("trafilatura").level == logging.CRITICAL
+        finally:
+            monkeypatch.delenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", raising=False)
+            _article_extract._quiet_extractor_loggers()

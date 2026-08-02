@@ -9,14 +9,44 @@ public module.
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from pf_core.log import get_logger
+from pf_core.utils.env import resolve_str
 from pf_core.utils.url_parse import extract_path_date
 
 logger = get_logger(__name__)
+
+_EXTRACTOR_LOG_LEVEL_ENV = "PF_ARTICLE_EXTRACTOR_LOG_LEVEL"
+_EXTRACTOR_LOG_LEVEL_DEFAULT = "CRITICAL"
+
+
+def _quiet_extractor_loggers() -> None:
+    """Cap trafilatura/htmldate log level.
+
+    Both emit ERROR for the ordinary unparseable-body case, and
+    ``setup_logging`` binds handlers to the root logger, so those records
+    surface in every consumer's output as if the app had failed.
+    """
+    name = resolve_str(
+        None, _EXTRACTOR_LOG_LEVEL_ENV, default=_EXTRACTOR_LOG_LEVEL_DEFAULT,
+    ) or _EXTRACTOR_LOG_LEVEL_DEFAULT
+    level = logging.getLevelNamesMapping().get(name.strip().upper())
+    if level is None:
+        logger.warning(
+            "env_var_malformed",
+            var=_EXTRACTOR_LOG_LEVEL_ENV,
+            value=name,
+            expected="log level name",
+            falling_back_to=_EXTRACTOR_LOG_LEVEL_DEFAULT,
+        )
+        level = logging.CRITICAL
+    for logger_name in ("trafilatura", "htmldate"):
+        logging.getLogger(logger_name).setLevel(level)
+
 
 # Lazy import of optional heavy deps. We want `from pf_core.utils.article_fetch
 # import fetch_article` to succeed at import time even when the extras aren't
@@ -25,6 +55,7 @@ try:
     import trafilatura  # type: ignore
     import htmldate  # type: ignore
     _HAS_DEPS = True
+    _quiet_extractor_loggers()
 except ImportError:
     trafilatura = None  # type: ignore
     htmldate = None  # type: ignore
@@ -35,7 +66,42 @@ except ImportError:
 # existing cached results. Consumers reading project-side cache rows
 # stamped with a different version should treat them as misses — a code
 # bump triggers refetch without a data migration.
-FETCHER_VERSION = 3
+FETCHER_VERSION = 4
+
+# The complete `FetchedArticle.fetch_status` vocabulary. Exported so a
+# consumer can assert mechanically that it still handles every value.
+FETCH_STATUSES: frozenset[str] = frozenset({
+    "ok",
+    "paywalled",
+    "not_found",
+    "blocked",
+    "timeout",
+    "error",
+    "unsupported_content_type",
+    "no_content",
+})
+
+# POST-DECODE form — the transport hands us ``resp.text``, so a non-ASCII
+# signature byte has already collapsed to U+FFFD. JPEG/gzip decode to bare
+# U+FFFD runs, too weak to match; they land on ``no_content``.
+_BINARY_SIGNATURES: tuple[tuple[str, str], ...] = (
+    ("%PDF-", "pdf"),
+    ("PK\x03\x04", "zip/ooxml"),
+    ("%!PS", "postscript"),
+    ("GIF8", "gif"),
+    ("�PNG\r\n\x1a\n", "png"),
+)
+
+
+def looks_binary(text: str) -> str | None:
+    """Return a format label when ``text`` opens with a known binary signature."""
+    if not text:
+        return None
+    head = text[:1024].lstrip("﻿ \t\r\n")
+    for prefix, label in _BINARY_SIGNATURES:
+        if head.startswith(prefix):
+            return label
+    return None
 
 # Upper bound on the extracted body we keep. Trim saves tokens for
 # downstream LLM consumers; raise it project-side if you need full text.
@@ -52,7 +118,9 @@ class FetchedArticle:
             when the Wayback fallback fired — then this is the
             ``web.archive.org`` URL).
         fetch_status: one of ``ok`` / ``paywalled`` / ``not_found`` /
-            ``blocked`` / ``timeout`` / ``error``.
+            ``blocked`` / ``timeout`` / ``error`` /
+            ``unsupported_content_type`` / ``no_content``. See
+            :data:`FETCH_STATUSES`.
         used_wayback: True when content came from the Wayback Machine.
         title: extracted article title (empty string if none found).
         date_published: extracted publication date or None.
@@ -146,15 +214,18 @@ def _extract_from_html(
 
     if body and len(body) > _BODY_MAX_CHARS:
         body = body[:_BODY_MAX_CHARS]
+    body = body.strip()
 
     return FetchedArticle(
         url=url,
         final_url=final_url,
-        fetch_status="ok",
+        # `ok` with an empty body is indistinguishable from a real empty
+        # article, and consumers cache it as a permanent success.
+        fetch_status="ok" if body else "no_content",
         used_wayback=used_wayback,
         title=title.strip(),
         date_published=date_published,
-        body=body.strip(),
+        body=body,
         outlet=outlet,
         canonical_url=canon,
         raw_meta=meta,
