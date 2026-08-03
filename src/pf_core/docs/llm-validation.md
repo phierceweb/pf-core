@@ -92,5 +92,5 @@ Returns `list[tuple[str, bool, str | None]]`.
 
 ## Related
 
-- [URL Utilities](urls.md) — `domain_of`, `archive_timestamp_is_round` (general-purpose URL helpers that consumer rules commonly wrap)
+- [URL Utilities](urls.md) — `domain_of`, `archive_timestamp_is_round` (general-purpose URL helpers that consumer rules commonly wrap; no extra required)
 - [LLM Schema Validation](llm-schema-validation.md) — for the `url_sanity` semantic validator integration

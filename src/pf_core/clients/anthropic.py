@@ -42,6 +42,7 @@ from typing import Any
 from pf_core.exceptions import ClientError
 from pf_core.log import get_logger
 from pf_core.pricing import estimate_cost
+from pf_core.utils.env import resolve_int
 
 _log = get_logger(__name__)
 
@@ -432,8 +433,9 @@ def new_client(
     return AnthropicClient(
         api_key=resolved_key,
         model=model or os.environ.get("ANTHROPIC_MODEL") or None,
-        request_timeout=request_timeout
-        or int(os.environ.get("REQUEST_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS))),
+        request_timeout=resolve_int(
+            request_timeout, "REQUEST_TIMEOUT", default=DEFAULT_TIMEOUT_SECONDS
+        ),
         retry=retry,
     )
 

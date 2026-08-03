@@ -7,7 +7,7 @@ mounted into a consumer app with one call::
     from pf_core.web.jobs_admin import make_jobs_router
 
     app.include_router(make_jobs_router(
-        auth_dep=require_admin,
+        auth_dep=require_admin,            # required; allow_unauthenticated=True to run open
         kind_labels={"grading_pass": "grade"},
         describe=lambda job: {"label": short_scope(job), "href": section_url(job)},
         terminate_hook=terminate_job,      # subprocess-mode consumers only
@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from pf_core.exceptions import PreconditionError
+from pf_core.exceptions import ConfigurationError, PreconditionError
 from pf_core.jobs.repo import JobRepo
 from pf_core.web.json import safe_json_response
 from pf_core.web.pagination import paginate_params
@@ -59,11 +59,18 @@ def make_jobs_router(
     terminate_hook: Callable[[int], bool] | None = None,
     templates: Jinja2Templates | None = None,
     prefix: str = "/jobs",
+    allow_unauthenticated: bool = False,
 ) -> APIRouter:
     """Build the jobs dashboard router.
 
+    The dashboard surfaces job inputs and errors and a state-changing
+    ``POST {prefix}/api/{id}/cancel`` — which, with a ``terminate_hook``, kills
+    the worker's process group. So it requires auth. Pass an ``auth_dep``; to
+    run it open (local dev only) you must opt in with
+    ``allow_unauthenticated=True``.
+
     Args:
-        auth_dep: FastAPI dependency guarding every route (``None`` = open).
+        auth_dep: FastAPI dependency that protects every route.
         kind_labels: kind → human action label for the list/detail pages.
         describe: ``job_row -> {"label": str, "href": str} | None`` — the
             consumer's scope link (a section, a document, …).
@@ -73,7 +80,20 @@ def make_jobs_router(
         templates: Override the self-contained default templates.
         prefix: Mount prefix for pages (``{prefix}``, ``{prefix}/{id}``) and
             API (``{prefix}/api/...``).
+        allow_unauthenticated: Explicit opt-in to mount with no ``auth_dep``
+            (dev only). Default ``False``.
+
+    Raises:
+        ConfigurationError: If ``auth_dep`` is ``None`` and
+            ``allow_unauthenticated`` was not set — refuses to mount an
+            unauthenticated dashboard by accident.
     """
+    if auth_dep is None and not allow_unauthenticated:
+        raise ConfigurationError(
+            "make_jobs_router requires auth_dep; the dashboard exposes job "
+            "inputs and errors and a state-changing cancel POST. Pass auth_dep, "
+            "or set allow_unauthenticated=True to run it open (dev only)."
+        )
     labels = kind_labels or {}
     if templates is None:
         templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))

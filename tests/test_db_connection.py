@@ -233,10 +233,28 @@ class TestResetEngine:
 
 
 class TestTransaction:
-    def test_commits_on_success(self, pf_tables, pf_connection):
-        # Use the test engine's transaction directly
+    @staticmethod
+    def _count(name: str) -> int:
+        # Read back through a NEW transaction: pf_connection holds its own open
+        # one, so a commit here is not reliably visible on it.
         with transaction() as conn:
-            conn.execute(text("INSERT INTO items (name) VALUES (:name)"), {"name": "tx_test"})
+            return conn.execute(
+                text("SELECT COUNT(*) FROM items WHERE name = :name"), {"name": name}
+            ).scalar()
+
+    def test_commits_on_success(self, pf_tables, pf_connection):
+        with transaction() as conn:
+            conn.execute(text("INSERT INTO items (name) VALUES (:name)"), {"name": "tx_commit"})
+        assert self._count("tx_commit") == 1
+
+    def test_rolls_back_on_exception(self, pf_tables, pf_connection):
+        with pytest.raises(RuntimeError, match="boom"):
+            with transaction() as conn:
+                conn.execute(
+                    text("INSERT INTO items (name) VALUES (:name)"), {"name": "tx_rollback"}
+                )
+                raise RuntimeError("boom")
+        assert self._count("tx_rollback") == 0
 
     def test_yields_connection(self, pf_tables, pf_connection):
         with transaction() as conn:

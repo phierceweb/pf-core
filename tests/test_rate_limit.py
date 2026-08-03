@@ -9,6 +9,11 @@ from httpx import ASGITransport, AsyncClient
 from pf_core.web.rate_limit import setup_rate_limit
 
 
+def _default_limits(limiter) -> list[str]:
+    """slowapi exposes no public accessor for the configured default limits."""
+    return [str(limit.limit) for group in limiter._default_limits for limit in group]
+
+
 @pytest.fixture()
 def app():
     """Bare FastAPI app for testing."""
@@ -33,7 +38,17 @@ class TestSetupRateLimit:
     def test_reads_env_var(self, app, monkeypatch):
         monkeypatch.setenv("API_RATE_LIMIT_PER_MINUTE", "42")
         limiter = setup_rate_limit(app)
-        assert limiter is not None
+        assert _default_limits(limiter) == ["42 per 1 minute"]
+
+    def test_default_when_env_unset(self, app, monkeypatch):
+        monkeypatch.delenv("API_RATE_LIMIT_PER_MINUTE", raising=False)
+        limiter = setup_rate_limit(app)
+        assert _default_limits(limiter) == ["60 per 1 minute"]
+
+    def test_malformed_env_falls_back_to_default(self, app, monkeypatch):
+        monkeypatch.setenv("API_RATE_LIMIT_PER_MINUTE", "sixty")
+        limiter = setup_rate_limit(app)
+        assert _default_limits(limiter) == ["60 per 1 minute"]
 
     def test_memory_backend_when_no_redis(self, app):
         limiter = setup_rate_limit(app)

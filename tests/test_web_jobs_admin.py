@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from pf_core.exceptions import ConfigurationError
 from pf_core.jobs import JobRepo
 from pf_core.jobs.registry import register_kind
 from pf_core.web.jobs_admin import make_jobs_router
@@ -27,6 +28,9 @@ def _kind(pf_tables):
 
 def _client(**router_kwargs) -> TestClient:
     app = FastAPI()
+    # These route tests exercise the dashboard open; opt into that explicitly
+    # (make_jobs_router now refuses to mount unauthenticated by default).
+    router_kwargs.setdefault("allow_unauthenticated", True)
     app.include_router(make_jobs_router(**router_kwargs))
     return TestClient(app)
 
@@ -131,6 +135,21 @@ class TestFindPage:
 
 
 class TestAuth:
+    def test_refuses_unauthenticated_by_default(self):
+        with pytest.raises(ConfigurationError):
+            make_jobs_router()
+
+    def test_explicit_auth_dep_none_still_refuses(self):
+        # The shape a consumer writes when deferring auth — it must not mount.
+        with pytest.raises(ConfigurationError):
+            make_jobs_router(auth_dep=None, prefix="/jobs")
+
+    def test_auth_dep_satisfies_requirement(self):
+        make_jobs_router(auth_dep=lambda: None)  # no opt-in flag needed
+
+    def test_allow_unauthenticated_opt_in(self):
+        make_jobs_router(allow_unauthenticated=True)
+
     def test_auth_dep_guards_every_route(self):
         def deny():
             raise HTTPException(403, "no")

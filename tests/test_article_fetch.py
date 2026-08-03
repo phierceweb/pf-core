@@ -326,11 +326,14 @@ class TestFetchArticleWaybackFlag:
 
 
 def _as_transport_text(raw: bytes) -> str:
-    """Decode ``raw`` exactly as the HTTP layer hands it to us.
+    """Decode ``raw`` the way the HTTP layer does.
 
-    Detection runs on ``resp.text``, never on bytes, so a test that feeds a
-    str literal built from the raw signature proves nothing — non-ASCII
-    signature bytes have already become U+FFFD by the time we see them.
+    Detection runs on decoded text, never on bytes, so a test that feeds a str
+    literal built from the raw signature proves nothing — non-ASCII signature
+    bytes have already become U+FFFD by the time we see them.
+
+    This mirrors ``fetch_url_content`` rather than defining it;
+    ``TestBinaryDetectionOverRealTransport`` is what pins the two together.
     """
     import httpx
 
@@ -374,6 +377,42 @@ class TestLooksBinary:
     def test_only_the_head_is_scanned(self):
         # A signature buried past the window must not trip detection.
         assert af.looks_binary("<html>" + "x" * 5000 + "%PDF-") is None
+
+
+class TestBinaryDetectionOverRealTransport:
+    """`looks_binary` must fire on what `fetch_url_content` actually returns.
+
+    The two are coupled through the body's decode-error mode: a signature byte
+    outside ASCII survives as U+FFFD under ``replace`` but vanishes under
+    ``ignore``. Every other test in this file feeds `looks_binary` a hand-decoded
+    string, so only this one notices if the fetch path's decoding drifts.
+    """
+
+    @pytest.mark.parametrize("raw,label", [
+        (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", "png"),
+        (b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj", "pdf"),
+        (b"GIF89a\x01\x00", "gif"),
+        (b"PK\x03\x04\x14\x00\x06\x00", "zip/ooxml"),
+    ])
+    def test_signature_survives_the_real_fetch_path(self, monkeypatch, raw, label):
+        import httpx
+
+        from pf_core.utils import urls as urls_mod
+
+        def handler(request):
+            return httpx.Response(200, content=raw)
+
+        real_client = httpx.Client
+
+        def mock_client(**kwargs):
+            kwargs.pop("verify", None)
+            return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+        monkeypatch.setattr(urls_mod.httpx, "Client", mock_client)
+        code, category, body = urls_mod.fetch_url_content("https://example.com/f")
+
+        assert (code, category) == (200, "ok")
+        assert af.looks_binary(body) == label
 
 
 class TestFetchStatusVocabulary:

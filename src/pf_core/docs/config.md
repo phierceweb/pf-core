@@ -39,7 +39,7 @@ These are declared on `AppConfig` and available to every project:
 | `OPENROUTER_PROVIDER_IGNORE` | `list[str]` | `[]` | Providers to exclude from routing |
 | `WEB_HOST` | `str` | `"127.0.0.1"` | Web server bind address |
 | `WEB_PORT` | `int` | `8000` | Web server bind port |
-| `CORS_ORIGINS` | `list[str]` | `[]` | Allowed CORS origins |
+| `CORS_ORIGINS` | `list[str]` | `[]` | Allowed CORS origins, comma-separated. A `*` entry is refused at app startup — see [web](web.md#cors) |
 | `LOG_LEVEL` | `str` | `"INFO"` | Console log level |
 | `LOG_FILE` | `str` | `""` | JSON-lines log file path (empty = disabled) |
 | `APP_NAME` | `str` | `"App"` | Application name (sent in API headers) |

@@ -9,19 +9,19 @@ propagate so callers can branch on ``HTTPError.code``.
 
 from __future__ import annotations
 
-import gzip
+import http.client
 import ssl
 import time
 import urllib.error
 import urllib.request
-import zlib
 from email.message import Message
 from typing import Any, TypedDict
 from urllib.parse import urljoin
 
 from pf_core.exceptions import ClientError
+from pf_core.fetch._decode import decode_body
 from pf_core.utils.env import resolve_str
-from pf_core.utils.http_tls import verify_tls
+from pf_core.utils.http_tls import verify_tls as _resolve_verify_tls
 from pf_core.utils.throttle import Throttle
 from pf_core.utils.url_safety import _REDIRECT_CODES, assert_public_url
 
@@ -66,9 +66,9 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _build_opener() -> urllib.request.OpenerDirector:
+def _build_opener(verify: bool | None = None) -> urllib.request.OpenerDirector:
     ctx = ssl.create_default_context()
-    if not verify_tls():
+    if not _resolve_verify_tls(verify):
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
     return urllib.request.build_opener(
@@ -84,18 +84,6 @@ def _retry_after(exc: urllib.error.HTTPError, attempt: int) -> float:
         return 0.5 * (attempt + 1)
 
 
-def _decode_body(data: bytes, headers: Message) -> bytes:
-    encoding = (headers.get("Content-Encoding") or "").strip().lower()
-    if encoding == "gzip":
-        return gzip.decompress(data)
-    if encoding == "deflate":
-        try:
-            return zlib.decompress(data)
-        except zlib.error:
-            return zlib.decompress(data, -15)  # raw deflate — servers that skip the zlib wrapper
-    return data
-
-
 class Fetcher:
     """Configured GET client; build one per source/policy and reuse it.
 
@@ -107,10 +95,15 @@ class Fetcher:
         retries: Re-attempts after the first request (``2`` → up to 3 attempts).
         throttle: Optional :class:`~pf_core.utils.throttle.Throttle`, acquired
             before every request — including retries and redirect hops.
-        max_bytes: Response-size cap; overrun raises :class:`ClientError`.
-            ``None`` = unlimited.
+        max_bytes: Response-size cap, applied to the wire read *and* to the
+            decoded body so a compression bomb can't slip past it. Overrun —
+            and a malformed or truncated body — raises :class:`ClientError`.
+            ``None`` = unlimited, in both directions.
         require_public: Run the SSRF guard on the URL and every redirect hop.
         max_redirects: Hops to follow before re-raising the last 3xx.
+        verify_tls: TLS certificate verification; ``None`` reads
+            ``PF_VERIFY_TLS`` (then legacy ``URL_CHECK_VERIFY_TLS``), default
+            on. Resolved once here and frozen into this Fetcher's opener.
     """
 
     def __init__(
@@ -123,6 +116,7 @@ class Fetcher:
         max_bytes: int | None = None,
         require_public: bool = True,
         max_redirects: int = 5,
+        verify_tls: bool | None = None,
     ) -> None:
         self._user_agent = user_agent
         self._headers = dict(headers or {})
@@ -131,7 +125,7 @@ class Fetcher:
         self._max_bytes = max_bytes
         self._require_public = require_public
         self._max_redirects = max_redirects
-        self._opener = _build_opener()
+        self._opener = _build_opener(verify_tls)
 
     def get_text(
         self, url: str, *, timeout_s: float = 30.0, encoding: str | None = None
@@ -261,16 +255,23 @@ class Fetcher:
             return cur, body, resp.headers
 
     def _read_body(self, resp: Any, url: str) -> bytes:
-        if self._max_bytes is None:
-            data = resp.read()
-        else:
-            data = resp.read(self._max_bytes + 1)
-            if len(data) > self._max_bytes:
-                raise ClientError(
-                    "response exceeded max_bytes",
-                    context={"url": url, "max_bytes": self._max_bytes},
-                )
-        return _decode_body(data, resp.headers)
+        try:
+            if self._max_bytes is None:
+                data = resp.read()
+            else:
+                data = resp.read(self._max_bytes + 1)
+        except http.client.IncompleteRead as exc:
+            raise ClientError(
+                "truncated response body",
+                context={"url": url, "read": len(exc.partial)},
+                cause=exc,
+            ) from exc
+        if self._max_bytes is not None and len(data) > self._max_bytes:
+            raise ClientError(
+                "response exceeded max_bytes",
+                context={"url": url, "max_bytes": self._max_bytes},
+            )
+        return decode_body(data, resp.headers, self._max_bytes, url)
 
 
 def fetch_text(

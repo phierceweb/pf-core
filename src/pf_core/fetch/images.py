@@ -8,7 +8,9 @@ doc still renders; naming is injectable, with a deterministic default.
 
 from __future__ import annotations
 
+import http.client
 import re
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,10 +33,17 @@ __all__ = [
     "sniff_image_ext",
 ]
 
-_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")
+_IMAGE_EXTENSIONS = (
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".avif", ".heic", ".bmp", ".tiff", ".ico", ".jxl",
+)
 
 _DEFAULT_MAX_BYTES = 25 * 1024 * 1024
 _DEFAULT_TIMEOUT_S = 30.0
+
+# How far into an XML body to look for the <svg> root. Generous enough to clear
+# a DOCTYPE plus an embedded license header.
+_SVG_SCAN_BYTES = 4096
 
 # Remote refs only — local paths and other schemes (data:, file:) never match.
 _MD_REMOTE_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
@@ -46,7 +55,16 @@ _MD_RELATIVE_RE = re.compile(r"!\[[^\]]*\]\((?!https?://|images/|/|data:)([^)\s]
 _HTML_REMOTE_RE = re.compile(r"""<img\b[^>]*?\bsrc=["'](https?://[^"']+)["']""", re.IGNORECASE)
 
 # OSError covers urllib's HTTPError/URLError (subclasses) plus disk-write errors.
-_PER_URL_FAILURES = (OSError, InvalidInputError, ClientError)
+# The rest are what a malformed body raises through an *injected* fetcher —
+# pf_core.fetch normalizes those to ClientError, a third-party one won't.
+_PER_URL_FAILURES = (
+    OSError,
+    InvalidInputError,
+    ClientError,
+    zlib.error,
+    EOFError,
+    http.client.HTTPException,
+)
 
 
 class _BytesFetcher(Protocol):
@@ -77,8 +95,9 @@ def default_namer(url: str) -> str:
     return name.replace("/", "-")
 
 
-def sniff_image_ext(data: bytes) -> str:
-    """Image extension from magic bytes (png/jpg/gif/webp/svg); ``.png`` when unrecognized."""
+def sniff_image_ext(data: bytes) -> str | None:
+    """Image extension from magic bytes; ``None`` when the body is not a
+    recognized image — an HTML interstitial, a JSON error, a login page."""
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return ".png"
     if data[:3] == b"\xff\xd8\xff":
@@ -87,10 +106,26 @@ def sniff_image_ext(data: bytes) -> str:
         return ".gif"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
-    head = data[:512].lstrip().lower()
-    if head.startswith(b"<svg") or head.startswith(b"<?xml"):
+    if data[:2] == b"BM":
+        return ".bmp"
+    if data[:4] in (b"II*\x00", b"MM\x00*"):
+        return ".tiff"
+    if data[:4] == b"\x00\x00\x01\x00":
+        return ".ico"
+    if data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand in (b"avif", b"avis"):
+            return ".avif"
+        if brand in (b"heic", b"heix", b"mif1", b"msf1"):
+            return ".heic"
+    if data[:2] == b"\xff\x0a" or data[:12] == b"\x00\x00\x00\x0cJXL \r\n\x87\n":
+        return ".jxl"
+    head = data[:_SVG_SCAN_BYTES].lstrip().lower()
+    # A bare <?xml prolog is as likely an error document as an SVG, so the root
+    # tag must actually appear — past a DOCTYPE, comments, or a license header.
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head):
         return ".svg"
-    return ".png"
+    return None
 
 
 def count_remote_images(text: str) -> int:
@@ -265,7 +300,15 @@ def _localize_one(
             return existing
     try:
         _final, data = fetcher.get_bytes(fetch_url, timeout_s=_DEFAULT_TIMEOUT_S)
-        name = base if has_ext else base + sniff_image_ext(data)
+        sniffed = sniff_image_ext(data)
+        if sniffed is None:
+            # Checked even when the URL declares an extension — a CDN path
+            # ending .png can still 200 with a login page.
+            raise ClientError(
+                "response body is not a recognized image",
+                context={"url": fetch_url, "bytes": len(data)},
+            )
+        name = base if has_ext else base + sniffed
         if not reuse_existing:
             name = _claim_name(name, used)
         atomic_write_bytes(images_dir / name, data)

@@ -2,6 +2,33 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.17.0 — 2026-08-02
+
+### Security
+- `Fetcher`'s `max_bytes` bounds the **decoded** body, not just the wire read. An over-budget body raises `ClientError` mid-inflate.
+- `fetch_url_content` streams its body, stops at its size cap, and requests `Accept-Encoding: identity`. A server that sends `gzip` anyway is bounded by one httpx read chunk rather than by the cap (see `docs/urls.md`).
+- `make_jobs_router` raises `ConfigurationError` without `auth_dep` unless `allow_unauthenticated=True`, matching `llm_admin.make_admin_router`. **Breaking:** an explicit `auth_dep=None` now raises — pass `allow_unauthenticated=True` or wire a dependency.
+- `create_app` raises `ConfigurationError` when `cors_origins` contains `*` and credentials are enabled. Membership is what counts: `["*", "https://ok.example"]` is refused too.
+- The SSRF guard blocks `100.64.0.0/10` (RFC 6598 shared address space). **Breaking** for anyone deliberately fetching that range — set `URL_FETCH_ALLOW_PRIVATE=1`.
+
+### Added
+- `create_app(cors_allow_credentials=...)` — default `True`. Set `False` to serve a public read-only API with `cors_origins=["*"]`.
+- `Fetcher(verify_tls=...)` — per-instance TLS-verification override, resolved once at construction.
+- `PF_VERIFY_TLS` supersedes `URL_CHECK_VERIFY_TLS`, which is still honored; the new name wins when both are set. The switch was never scoped to the `[http]` tier its old name implied — it governs every `Fetcher` in the process too.
+- `URL_LIVENESS_TTL_SECONDS`, `URL_LIVENESS_NEGATIVE_TTL_SECONDS`, and `check_url_cached(negative_cache_ttl_seconds=...)`.
+- `url_safety.guarded_stream` — the streaming counterpart of `guarded_get`, re-validating every redirect hop.
+- `pf_core.utils` re-exports `domain_of`, `archive_timestamp_is_round`, `canonical_url`, `extract_path_date`, and `extract_article_metadata` without the `[http]` extra; `fetch_url_content` and `wayback_exists_at` join the lazy map.
+- `sniff_image_ext` recognizes avif, heic, bmp, tiff, ico, and jxl; those extensions are localizable. The generic HEIF brands (`mif1`, `msf1`) label as `.heic`.
+- `pf-doctor` reports `PF_VERIFY_TLS`, `URL_CHECK_VERIFY_TLS`, and `URL_FETCH_ALLOW_PRIVATE`.
+
+### Changed
+- `check_url_cached` gives transient verdicts — `timeout`, `error`, and 408/425/429/5xx — a short negative TTL instead of the full one, so a brief outage no longer marks every URL checked in that window dead for a day. Both TTLs are env-tunable; `cache_ttl_seconds` is now `int | None`.
+- `ExactCacheRepo.store` uses the portable `upsert` helper. The hand-rolled INSERT-then-SELECT recovery raised `InFailedSqlTransaction` on PostgreSQL for any duplicate `input_hash`. A re-store now refreshes the row in place — same id, `created_at`, and hit counters — instead of returning a possibly-expired one.
+- **Breaking:** `sniff_image_ext` returns `str | None`, giving `None` for unrecognized bodies instead of `.png` — a caller doing `base + sniff_image_ext(data)` now raises `TypeError`. `localize_images` treats `None` as a per-URL failure and keeps the ref remote; the check applies to extensioned URLs too. An XML body is claimed as SVG only when `<svg` appears in the first 4 KiB.
+- Malformed or truncated `gzip`/`deflate` bodies and truncated transfers raise `ClientError` instead of escaping as `gzip.BadGzipFile` / `zlib.error` / `EOFError` / `http.client.IncompleteRead`. A corrupt gzip previously surfaced as an `OSError`. These are raised outside the retry loop and are not retried.
+- `localize_images` / `localize_file` contain those per-URL rather than aborting the run.
+- `API_RATE_LIMIT_PER_MINUTE`, `MAX_PER_PAGE`, `URL_CHECK_TIMEOUT`, `WAYBACK_TIMEOUT`, and `REQUEST_TIMEOUT` resolve through `utils.env` — a malformed value warns and falls back instead of raising `ValueError`. `get_client(request_timeout=0)` is now honored.
+
 ## v0.16.0 — 2026-08-02
 
 ### Added

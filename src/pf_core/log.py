@@ -236,7 +236,8 @@ def log_exception(
             ancestors.append(chain)
         chain = chain.__cause__ or chain.__context__
 
-    # Lowest priority: oldest ancestor context
+    # Lowest priority: ancestors fill gaps only, and the furthest one sets a
+    # key first — so among ancestors the oldest wins.
     for ancestor in reversed(ancestors):
         for k, v in ancestor.context.items():
             ctx.setdefault(k, v)

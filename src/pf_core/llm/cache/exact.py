@@ -34,6 +34,8 @@ from typing import Any
 from sqlalchemy import func, select, update
 
 from pf_core.db.repository import Repository
+from pf_core.db.upsert import upsert
+from pf_core.exceptions import DataError
 from pf_core.llm.cache._schema import llm_cache_entries
 from pf_core.llm.tracking._resolvers import (
     resolve_agent_type_id,
@@ -95,7 +97,12 @@ class ExactCacheRepo(Repository):
         raw_response: str | None = None,
         ttl_seconds: int = 0,
     ) -> int:
-        """Insert a cache entry, ignoring conflicts (concurrent identical requests).
+        """Insert a cache entry, refreshing it in place on a conflict.
+
+        ``input_hash`` covers model, rendered prompts, sampling, and configs, so
+        a conflicting row is the same logical request — a re-store overwrites
+        the response and expiry (keeping the row's id, age, and hit counters)
+        rather than returning a possibly-expired existing row.
 
         Args:
             input_hash: SHA256 key (64 hex chars).
@@ -107,7 +114,7 @@ class ExactCacheRepo(Repository):
             ttl_seconds: Seconds until expiry. ``0`` means no TTL (permanent).
 
         Returns:
-            The ``llm_cache_entries.id`` of the stored (or pre-existing) row.
+            The ``llm_cache_entries.id`` of the stored (or refreshed) row.
         """
         agent_type_id = resolve_agent_type_id(agent_type)
         model_id = resolve_llm_model_id(model)
@@ -119,31 +126,40 @@ class ExactCacheRepo(Repository):
             )
 
         with self._tx() as conn:
-            # Use INSERT OR IGNORE (SQLite) / INSERT IGNORE (MySQL) pattern:
-            # attempt insert; if unique constraint fires, fetch the existing row.
-            try:
-                result = conn.execute(
-                    llm_cache_entries.insert().values(
-                        input_hash=input_hash,
-                        agent_type_id=agent_type_id,
-                        model_id=model_id,
-                        source_run_id=source_run_id,
-                        parsed_output=parsed_output,
-                        raw_response=raw_response,
-                        expires_at=expires_at,
-                    )
+            upsert(
+                conn,
+                llm_cache_entries,
+                {
+                    "input_hash": input_hash,
+                    "agent_type_id": agent_type_id,
+                    "model_id": model_id,
+                    "source_run_id": source_run_id,
+                    "parsed_output": parsed_output,
+                    "raw_response": raw_response,
+                    "expires_at": expires_at,
+                },
+                conflict=["input_hash"],
+                # created_at, hit_count and last_hit_at are omitted so a refresh
+                # keeps the entry's age and its hit counters.
+                update=[
+                    "agent_type_id",
+                    "model_id",
+                    "source_run_id",
+                    "parsed_output",
+                    "raw_response",
+                    "expires_at",
+                ],
+            )
+            row = conn.execute(
+                select(llm_cache_entries.c.id).where(
+                    llm_cache_entries.c.input_hash == input_hash
                 )
-                return int(result.inserted_primary_key[0])
-            except Exception:
-                # Unique constraint on input_hash — fetch the existing entry id
-                row = conn.execute(
-                    select(llm_cache_entries.c.id).where(
-                        llm_cache_entries.c.input_hash == input_hash
-                    )
-                ).fetchone()
-                if row:
-                    return int(row[0])
-                raise
+            ).fetchone()
+        if row is None:
+            raise DataError(
+                "cache entry missing after upsert", context={"input_hash": input_hash}
+            )
+        return int(row[0])
 
     def bump_hit(self, *, entry_id: int) -> None:
         """Increment ``hit_count`` and update ``last_hit_at`` for *entry_id*."""

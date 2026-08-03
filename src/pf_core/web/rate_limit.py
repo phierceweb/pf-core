@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from pf_core.log import get_logger
+from pf_core.utils.env import resolve_positive_int
 
 logger = get_logger(__name__)
 
@@ -67,7 +68,7 @@ def setup_rate_limit(
         logger.warning("rate_limit_skipped", reason="slowapi not installed")
         return None
 
-    rpm = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", "60"))
+    rpm = resolve_positive_int(None, "API_RATE_LIMIT_PER_MINUTE", default=60)
     default_limit = f"{rpm}/minute"
 
     url = redis_url or os.environ.get("REDIS_URL", "").strip() or "memory://"

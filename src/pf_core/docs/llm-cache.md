@@ -158,7 +158,7 @@ cache_store(
 )
 ```
 
-No-op when exact caching is disabled for the agent. Silently skips duplicate entries (concurrent identical requests may both attempt to store; only one wins via the `UNIQUE` constraint).
+No-op when exact caching is disabled for the agent. A store over an existing `input_hash` — a concurrent identical request, or a re-store after the entry expired — refreshes that row in place through the portable [`upsert`](db-upsert.md) helper: same id, same `created_at`, same `hit_count`/`last_hit_at`, new response and expiry. Since `input_hash` covers model, rendered prompts, sampling, and configs, a conflicting row is the same logical request.
 
 ## record_cache_hit()
 

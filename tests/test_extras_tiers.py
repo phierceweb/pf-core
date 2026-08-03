@@ -9,6 +9,7 @@ Imports nested in a function are the deliberate lazy-gate pattern and are ignore
 from __future__ import annotations
 
 import ast
+import importlib
 import tomllib
 from pathlib import Path
 
@@ -145,3 +146,38 @@ def test_every_mapped_module_exists() -> None:
 )
 def test_required_extra_resolution(module: str, expected: str | None) -> None:
     assert required_extra(module) == expected
+
+
+# ---------------------------------------------------------------------------
+# Lazy-facade routing
+#
+# A PEP 562 ``_LAZY`` map defers an import that needs an extra. Routing an
+# entry through a re-exporting module in a *higher* tier than the one that
+# defines it gates a helper behind a dependency it never needed — the base
+# install then raises ImportError for a function that would have worked.
+# Naming a same-tier public facade over private submodules is fine.
+# ---------------------------------------------------------------------------
+
+_LAZY_FACADES = ("pf_core.utils", "pf_core.llm", "pf_core.budget")
+
+
+@pytest.mark.parametrize("package", _LAZY_FACADES)
+def test_lazy_entries_do_not_overgate(package: str) -> None:
+    lazy = importlib.import_module(package)._LAZY
+    overgated = []
+    for name, target in lazy.items():
+        module, attr = target if isinstance(target, tuple) else (target, name)
+        obj = getattr(importlib.import_module(module), attr)
+        defining = getattr(obj, "__module__", None)
+        # Data objects (SQLAlchemy Tables, typing constructs) report their
+        # library's module, not pf-core's — only code has a meaningful origin.
+        if defining is None or not defining.startswith("pf_core."):
+            continue
+        declared_extra = required_extra(module)
+        if declared_extra is not None and required_extra(defining) is None:
+            overgated.append(f"{name}: routed via {module} [{declared_extra}], defined in {defining}")
+    assert not overgated, (
+        f"{package}._LAZY routes names through a module that needs an extra their "
+        f"defining module does not: {overgated} — point the entry at the definition, "
+        "or import it eagerly"
+    )

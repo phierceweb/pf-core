@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import dataclasses
 import socket
+import http.client
 import urllib.error
+import zlib
 from email.message import Message
 
 import pytest
@@ -17,6 +19,7 @@ from pf_core.exceptions import ClientError, InvalidInputError
 from pf_core.fetch import Fetcher
 from pf_core.fetch import images as images_mod
 from pf_core.fetch.images import (
+    _IMAGE_EXTENSIONS,
     LocalizeResult,
     count_remote_images,
     default_namer,
@@ -104,11 +107,51 @@ class TestSniffImageExt:
             (WEBP, ".webp"),
             (SVG, ".svg"),
             (b'  <?xml version="1.0"?><svg/>', ".svg"),
-            (b"unrecognized-bytes", ".png"),
+            (b"BM\x36\x00", ".bmp"),
+            (b"II*\x00rest", ".tiff"),
+            (b"MM\x00*rest", ".tiff"),
+            (b"\x00\x00\x01\x00rest", ".ico"),
+            (bytes(4) + b"ftypavif", ".avif"),
+            (bytes(4) + b"ftypavis", ".avif"),
+            (bytes(4) + b"ftypheic", ".heic"),
+            (bytes(4) + b"ftypheix", ".heic"),
+            (bytes(4) + b"ftypmif1", ".heic"),
+            (bytes(4) + b"ftypmsf1", ".heic"),
+            (b"\xff\x0apayload", ".jxl"),
         ],
     )
     def test_magic_bytes(self, data, ext):
         assert sniff_image_ext(data) == ext
+
+    def test_every_sniffable_ext_is_localizable(self):
+        # A sniffed extension the ref-matcher won't accept would be written to
+        # disk and then skipped on the next pass.
+        sniffable = {
+            sniff_image_ext(d)
+            for d in (PNG, JPG, GIF, WEBP, SVG, b"BM\x36\x00", b"II*\x00rest",
+                      b"\x00\x00\x01\x00rest", bytes(4) + b"ftypavif",
+                      bytes(4) + b"ftypheic", b"\xff\x0apayload")
+        }
+        assert sniffable <= set(_IMAGE_EXTENSIONS)
+
+    @pytest.mark.parametrize("preamble_len,expected", [
+        (100, ".svg"), (600, ".svg"), (3000, ".svg"), (5000, None),
+    ])
+    def test_svg_root_is_found_past_a_preamble(self, preamble_len, expected):
+        # A DOCTYPE plus an embedded license header pushes <svg> well past the
+        # first 512 bytes; only an implausibly long preamble gives up.
+        data = b'<?xml version="1.0"?>\n<!--' + b"x" * preamble_len + b"-->\n<svg/>"
+        assert sniff_image_ext(data) == expected
+
+    @pytest.mark.parametrize("data", [
+        b"unrecognized-bytes",
+        b"<!DOCTYPE html><html><body>Login required</body></html>",
+        b'{"error": "forbidden"}',
+        b'<?xml version="1.0"?><error>nope</error>',   # xml prolog alone isn't an SVG
+        b"",
+    ])
+    def test_non_image_bodies_are_unrecognized(self, data):
+        assert sniff_image_ext(data) is None
 
 
 class TestLocalizeImages:
@@ -472,3 +515,103 @@ class TestLocalizeFile:
         assert localize_file(doc, images_dir) == 0
         assert doc.read_text(encoding="utf-8") == original
         assert not images_dir.exists()
+
+
+class TestMalformedBodyContainment:
+    """A corrupt or truncated body is one URL's problem. Before these, a
+    ``zlib.error`` / ``EOFError`` / ``IncompleteRead`` from any fetcher escaped
+    ``_PER_URL_FAILURES`` and aborted the whole run."""
+
+    FAILURES = [
+        zlib.error("Error -3 while decompressing data"),
+        EOFError("Compressed file ended before the end-of-stream marker"),
+        http.client.IncompleteRead(b"abc", 9),
+        ClientError("undecodable Content-Encoding", context={"url": "x"}),
+    ]
+
+    @pytest.mark.parametrize("failure", FAILURES, ids=lambda e: type(e).__name__)
+    def test_localize_images_contains_it(self, tmp_path, failure):
+        bad = "https://example.com/images/b/two.png"
+        markdown = (
+            "![a](https://example.com/images/a/one.png)\n"
+            f"![b]({bad})\n"
+            "![c](https://example.com/images/c/three.png)\n"
+        )
+        result = localize_images(
+            markdown, tmp_path / "images", fetcher=FakeFetcher(responses={bad: failure})
+        )
+        assert result.failed == 1
+        assert len(result.saved) == 2
+        assert bad in result.markdown  # the failed ref stays remote
+        assert count_remote_images(result.markdown) == 1
+
+    @pytest.mark.parametrize("failure", FAILURES, ids=lambda e: type(e).__name__)
+    def test_localize_file_keeps_progress(self, tmp_path, failure):
+        urls = [f"https://example.com/images/a/fig-{i}.png" for i in range(5)]
+        bad = urls[2]
+        doc = tmp_path / "guide.md"
+        doc.write_text(
+            "\n".join(f"![f{i}]({url})" for i, url in enumerate(urls)), encoding="utf-8"
+        )
+        # Default checkpoint_every=50: nothing is written before the failure, so
+        # only the final write can preserve the four successes.
+        saved = localize_file(
+            doc, tmp_path / "images", fetcher=FakeFetcher(responses={bad: failure})
+        )
+        assert saved == 4
+        assert count_remote_images(doc.read_text(encoding="utf-8")) == 1
+
+
+class TestNonImageBodies:
+    """A CDN URL that 200s with an HTML interstitial or a JSON error used to be
+    written as `<name>.png`, retargeted in the document, and counted in
+    `result.saved` — a silent success for content that isn't an image."""
+
+    HTML = b"<!DOCTYPE html><html><body>Sign in to continue</body></html>"
+
+    def test_extensionless_url_serving_html_fails(self, tmp_path):
+        url = "https://cdn.example.com/assets/v2/chart0042"
+        result = localize_images(
+            f"![c]({url})", tmp_path / "images", fetcher=FakeFetcher(default=self.HTML)
+        )
+        assert result.failed == 1
+        assert result.saved == []
+        assert result.markdown == f"![c]({url})"
+        assert list((tmp_path / "images").iterdir()) == []
+
+    def test_extensioned_url_serving_html_fails(self, tmp_path):
+        # The declared .png is not taken on trust — this is the more common case.
+        url = "https://example.com/images/a/one.png"
+        result = localize_images(
+            f"![a]({url})", tmp_path / "images", fetcher=FakeFetcher(default=self.HTML)
+        )
+        assert result.failed == 1
+        assert result.saved == []
+        assert list((tmp_path / "images").iterdir()) == []
+
+    def test_real_image_at_extensioned_url_still_saves(self, tmp_path):
+        url = "https://example.com/images/a/one.png"
+        result = localize_images(
+            f"![a]({url})", tmp_path / "images", fetcher=FakeFetcher(default=PNG)
+        )
+        assert result.failed == 0
+        assert [p.name for p in result.saved] == ["a-one.png"]
+
+    def test_localize_file_leaves_the_ref_remote(self, tmp_path):
+        doc = tmp_path / "guide.md"
+        doc.write_text("![c](https://cdn.example.com/assets/v2/x)\n", encoding="utf-8")
+        saved = localize_file(
+            doc, tmp_path / "images", fetcher=FakeFetcher(default=self.HTML)
+        )
+        assert saved == 0
+        assert count_remote_images(doc.read_text(encoding="utf-8")) == 1
+
+    def test_avif_body_is_saved_not_rejected(self, tmp_path):
+        avif = bytes(4) + b"ftypavif" + b"payload"
+        result = localize_images(
+            "![c](https://cdn.example.com/assets/v2/chart)",
+            tmp_path / "images",
+            fetcher=FakeFetcher(default=avif),
+        )
+        assert result.failed == 0
+        assert [p.name for p in result.saved] == ["v2-chart.avif"]

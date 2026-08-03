@@ -1,16 +1,20 @@
 # URL Utilities
 
-General-purpose URL parsing and inspection helpers. Import everything from
-`pf_core.utils.urls` (requires the `[http]` extra). The pure halves also
-import directly with **no extra at all**: `pf_core.utils.url_parse`
-(`domain_of`, `canonical_url`, `archive_timestamp_is_round`,
-`extract_path_date`) and `pf_core.utils.url_html`
-(`extract_article_metadata`).
+General-purpose URL parsing and inspection helpers.
+
+The pure parsing helpers — `domain_of`, `canonical_url`,
+`archive_timestamp_is_round`, `extract_path_date`, `extract_article_metadata` —
+need **no extra at all**. Import them from `pf_core.utils`, or directly from
+`pf_core.utils.url_parse` / `pf_core.utils.url_html`.
+
+The helpers that make requests — `check_url`, `fetch_url_content`,
+`wayback_exists_at`, `check_url_cached` — live in `pf_core.utils.urls` /
+`pf_core.utils.url_liveness` and require the `[http]` extra.
 
 ## Domain extraction
 
 ```python
-from pf_core.utils.urls import domain_of
+from pf_core.utils import domain_of
 
 domain_of("https://www.example.com/page")   # "example.com"
 domain_of("https://blog.example.com/page")  # "blog.example.com"
@@ -22,7 +26,7 @@ Strips `www.` prefix and lowercases the hostname. Returns empty string for unpar
 ## URL canonicalization (for deduplication)
 
 ```python
-from pf_core.utils.urls import canonical_url
+from pf_core.utils import canonical_url
 
 canonical_url("https://www.example.com/story?utm_source=newsletter&utm_medium=email")
 # "https://example.com/story"
@@ -65,7 +69,7 @@ Returns `str` — canonical URL, or `""` if the input is empty, non-string, non-
 ## Archive timestamp detection
 
 ```python
-from pf_core.utils.urls import archive_timestamp_is_round
+from pf_core.utils import archive_timestamp_is_round
 
 archive_timestamp_is_round(
     "https://web.archive.org/web/20250101000000/https://example.com"
@@ -106,11 +110,15 @@ HEAD request with GET fallback on 405 or transport error. Browser-like User-Agen
 
 ### TLS verification
 
-Every outbound request in this module (`check_url`, `fetch_url_content`, `wayback_exists_at`, and the `url_liveness` GET fallback) **verifies TLS certificates by default**. Set `URL_CHECK_VERIFY_TLS=0` to disable verification — but only for deliberately probing hosts with known-broken certs. Disabling removes MITM protection, and since `fetch_url_content`'s body flows to downstream LLMs, a MITM could inject content. Resolved via `pf_core.utils.http_tls.verify_tls()` (reads the env var per call, default `True`).
+Every outbound request in this module (`check_url`, `fetch_url_content`, `wayback_exists_at`, and the `url_liveness` GET fallback) **verifies TLS certificates by default**. Set `PF_VERIFY_TLS=0` to disable verification — but only for deliberately probing hosts with known-broken certs. Disabling removes MITM protection, and since `fetch_url_content`'s body flows to downstream LLMs, a MITM could inject content.
+
+The switch is **process-wide, not module-scoped**: it also disables verification for [`pf_core.fetch`](fetch.md), the base-install download path. To turn it off for one client only, use that module's per-`Fetcher` `verify_tls=False`.
+
+`URL_CHECK_VERIFY_TLS` is still honored as a legacy alias; `PF_VERIFY_TLS` wins when both are set. Resolved via `pf_core.utils.http_tls.verify_tls()`, which this module reads per call.
 
 ### SSRF protection
 
-`check_url` and `fetch_url_content` accept caller-influenced URLs, so they are guarded against server-side request forgery: the target — and every redirect hop — must use an http/https scheme and resolve to a **public** address. A URL that resolves to loopback, link-local (incl. `169.254.169.254` cloud metadata), private, reserved, or multicast space is refused, and the call returns its normal failure tuple (`(0, "error")` / `(0, "error", "")`) with an `ssrf_blocked` warning logged. Set `URL_FETCH_ALLOW_PRIVATE=1` to allow internal targets (service mesh, dev) — the http/https scheme requirement still applies. Implemented in `pf_core.utils.url_safety`.
+`check_url` and `fetch_url_content` accept caller-influenced URLs, so they are guarded against server-side request forgery: the target — and every redirect hop — must use an http/https scheme and resolve to a **public** address. A URL that resolves to loopback, link-local (incl. `169.254.169.254` cloud metadata), private, reserved, multicast, or carrier-grade-NAT shared space (`100.64.0.0/10` — where EKS/GKE pod addresses live) is refused, and the call returns its normal failure tuple (`(0, "error")` / `(0, "error", "")`) with an `ssrf_blocked` warning logged. Set `URL_FETCH_ALLOW_PRIVATE=1` to allow internal targets (service mesh, dev) — the http/https scheme requirement still applies. Implemented in `pf_core.utils.url_safety`.
 
 ### check_url
 
@@ -139,6 +147,7 @@ check_url_cached(
     cache=r,
     cache_key_prefix="myapp:url_liveness:",
     cache_ttl_seconds=86400,
+    negative_cache_ttl_seconds=300,   # timeouts/5xx expire fast, not tomorrow
 )
 
 # Operator kill switch — caller derives the boolean however it wants
@@ -149,7 +158,7 @@ check_url_cached(url, disabled=os.environ.get("URL_LIVENESS_DISABLED") == "1")
 ### What this adds over `check_url`
 
 - **403/401 fallback.** Many real sites return 403 to bare HEAD even though their content is real. `check_url_cached` re-issues the request as GET with a browser User-Agent and `follow_redirects=True`, so a 200 via GET correctly downgrades the verdict from "forbidden" to "ok". Distinguishes a real bot-block from a dead link.
-- **Caching.** Result cached at `cache_key_prefix + url` for `cache_ttl_seconds` (default 24h). Cache failures (corrupt value, backend exception) silently fall through to a fresh network check — never throws.
+- **Two-tier caching.** Result cached at `cache_key_prefix + url`. A stable verdict (`ok`, `not_found`, `gone`, `forbidden`) keeps `cache_ttl_seconds` — `None` reads `URL_LIVENESS_TTL_SECONDS`, default 24h. A **transient** verdict — `timeout`, `error`, or a retryable status (408, 425, 429, 5xx) — gets `negative_cache_ttl_seconds` instead: `None` reads `URL_LIVENESS_NEGATIVE_TTL_SECONDS`, default 300s. Without the split, a 30-second network interruption marks every URL checked in that window dead for a day. Transient verdicts are still cached, not skipped, so a hard-down host stays throttled. Cache failures (corrupt value, backend exception) silently fall through to a fresh network check — never throws.
 - **Kill switch.** `disabled=True` returns `(0, "disabled")` with no network or cache activity. Useful during incidents.
 
 ### CacheBackend protocol
@@ -179,7 +188,8 @@ A "trusted domain" short-circuit (skipping liveness for known-good trusted sites
 |-----------|------|---------|-------------|
 | `url` | `str` | *(required)* | HTTP(S) URL to check. Empty string returns `(0, "error")`. |
 | `cache` | `CacheBackend \| None` | `None` | Optional cache backend. `None` disables caching. |
-| `cache_ttl_seconds` | `int` | `86400` | TTL for cached entries. |
+| `cache_ttl_seconds` | `int \| None` | `None` | TTL for stable verdicts. `None` reads `URL_LIVENESS_TTL_SECONDS` (default `86400`). |
+| `negative_cache_ttl_seconds` | `int \| None` | `None` | TTL for transient verdicts (`timeout`, `error`, 408/425/429/5xx). `None` reads `URL_LIVENESS_NEGATIVE_TTL_SECONDS` (default `300`). |
 | `cache_key_prefix` | `str` | `"url_liveness:"` | Prefix prepended to URL to form the cache key. |
 | `disabled` | `bool` | `False` | When `True`, returns `(0, "disabled")` without network or cache activity. |
 
@@ -189,7 +199,7 @@ Returns `(status_code, category)`. Categories include all of `check_url`'s plus 
 
 ```python
 import datetime
-from pf_core.utils.urls import extract_path_date
+from pf_core.utils import extract_path_date
 
 extract_path_date("https://www.example.com/2025/03/15/section/story.html")
 # datetime.date(2025, 3, 15)
@@ -253,7 +263,13 @@ code, category, body = fetch_url_content("https://paywalled.example/article")
 # (403, "forbidden", "")
 ```
 
-Same semantics as `check_url` but always does GET and returns the body on 2xx. Body is truncated at 512 KB to protect downstream token budgets. Empty body on any non-2xx or error — callers should branch on `category`.
+Same semantics as `check_url` but always does GET and returns the body on 2xx. Empty body on any non-2xx or error — callers should branch on `category`.
+
+The body is **streamed** and the read stops at 512 KB, so the cap bounds what is pulled into memory rather than being applied after the fact. The request asks for `Accept-Encoding: identity`: at that cap compression saves almost nothing on the wire, and asking for identity keeps a compressed response from inflating inside httpx's decoder before the cap can apply.
+
+A server that sends `Content-Encoding: gzip` regardless is not fully bounded — httpx decodes a whole network chunk before the loop sees it, so peak memory is one chunk's worth of inflated output rather than 512 KB. It is bounded, not unbounded, but the ceiling is set by the chunk size and the payload's compression ratio rather than by the cap. For untrusted hosts, prefer `pf_core.fetch.Fetcher` with `max_bytes`, which bounds the decoded body directly.
+
+Bytes are decoded with the response charset (utf-8 when unset) and **error replacement**, so an undecodable byte becomes U+FFFD rather than disappearing. Callers that sniff magic bytes on the returned text — `article_fetch.looks_binary` does — depend on that: dropping the byte instead would make a PNG read as ordinary markup.
 
 ### fetch_url_content
 
@@ -267,7 +283,7 @@ Returns `(status_code, category, body)` where category matches `check_url` and b
 ## Extracting article metadata
 
 ```python
-from pf_core.utils.urls import extract_article_metadata
+from pf_core.utils import extract_article_metadata
 
 html = "<html><head><title>Quarterly Results Announced</title>..."
 metadata = extract_article_metadata(html)
@@ -307,7 +323,7 @@ def domain_of(url): ...
 def archive_timestamp_is_round(url): ...
 
 # After
-from pf_core.utils.urls import archive_timestamp_is_round, domain_of  # noqa: F401
+from pf_core.utils import archive_timestamp_is_round, domain_of  # noqa: F401
 ```
 
 No downstream caller changes needed — all callers import from `app.utils.sources`.

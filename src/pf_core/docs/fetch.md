@@ -46,11 +46,14 @@ Constructor knobs (all keyword-only):
 | `headers` | `None` | Merged over the default UA/Accept/Accept-Language set. |
 | `retries` | `2` | Re-attempts after the first try. |
 | `throttle` | `None` | A [`Throttle`](throttle.md); acquired before **every** request, including retries and redirect hops. |
-| `max_bytes` | `None` | Streamed size cap; overrun raises `ClientError`. |
+| `max_bytes` | `None` | Size cap on the wire read **and** the decoded body; overrun raises `ClientError`. `None` leaves both unbounded. |
 | `require_public` | `True` | SSRF guard — see below. |
 | `max_redirects` | `5` | Hop budget for the manual redirect walk. |
+| `verify_tls` | kwarg > `PF_VERIFY_TLS` env > legacy `URL_CHECK_VERIFY_TLS` > on | Frozen at construction — see below. |
 
 `get_text` decodes with `encoding` kwarg > Content-Type charset > utf-8, always with replacement. `get_bytes` defaults to a longer timeout than `get_text` (binary payloads run large on slow CDNs); both take a per-call `timeout_s`. Responses with `Content-Encoding: gzip`/`deflate` are decoded transparently; the default request headers advertise no `Accept-Encoding`, so servers send identity unless you opt in via headers.
+
+Decoding runs against `max_bytes`, not just the wire read — a cap that bounded only the compressed bytes would leave a compressed response free to exhaust memory as it inflated. A body that exceeds the budget while inflating raises `ClientError` mid-decode, and one that cannot be decoded at all (bad magic, corrupt payload, truncated stream) raises `ClientError` rather than escaping as `gzip.BadGzipFile` / `zlib.error` / `EOFError`. **Set `max_bytes` on any fetcher pointed at URLs you don't control** — the default is unlimited in both directions.
 
 ### `timeout_s` does not bound a request
 
@@ -65,7 +68,13 @@ Two consequences worth designing around:
 
 The `[http]` tier (`utils/urls.py`, `article_fetch`, `url_liveness`, the API clients) uses **httpx**, not this `Fetcher`, and has the same gap — httpx's `timeout=` is likewise per-operation with no whole-request bound.
 
-TLS verification follows `URL_CHECK_VERIFY_TLS` (default on), the same policy as the `[http]` tier.
+### TLS verification
+
+Certificates are verified by default. Resolution is `verify_tls=` kwarg > `PF_VERIFY_TLS` > legacy `URL_CHECK_VERIFY_TLS` > on. An unrecognized value falls back to on.
+
+`PF_VERIFY_TLS=0` disables verification for **every** outbound path in the process — this `Fetcher` tier and the `[http]` tier both. It is not scoped to URL inspection despite the legacy name; pass `verify_tls=False` to one `Fetcher` instead of reaching for the env var when only one client needs it.
+
+Unlike the `[http]` tier, which re-reads the setting per request, a `Fetcher` resolves it **once at construction** and freezes it into its opener — rebuild the `Fetcher` to change policy. The module-level `fetch_text` / `fetch_bytes` / `fetch_bytes_meta` helpers build a fresh `Fetcher` per call, so they pick up env changes immediately.
 
 ## Retry contract
 
@@ -74,11 +83,11 @@ Ported intact from a proven crawl implementation; callers rely on every clause:
 - **Permanent client errors (4xx except 408) raise immediately, with zero sleeps.** Callers implement their own 403 cooldowns and 404 fallbacks — an internal retry would double-pace them.
 - **429 honors `Retry-After`**, capped at 30 s so a server can't park a crawl; malformed values fall back to the standard backoff.
 - **5xx / 408 / network errors** back off `0.5 * (attempt + 1)` between attempts.
-- **Exhausted retries re-raise the last exception raw.** `pf_core.fetch` never wraps transport errors: you get real `urllib.error.HTTPError` (branch on `.code`) and `URLError`. The only exceptions it *originates* are `InvalidInputError` (SSRF block) and `ClientError` (size cap).
+- **Exhausted retries re-raise the last exception raw.** `pf_core.fetch` never wraps transport errors: you get real `urllib.error.HTTPError` (branch on `.code`) and `URLError`. The only exceptions it *originates* are `InvalidInputError` (SSRF block) and `ClientError` (size cap, undecodable `Content-Encoding`, truncated body). Body-level `ClientError`s are raised **outside** the retry loop and are not retried — a malformed encoding is a server defect, and re-pulling the body cannot fix it.
 
 ## Safety: SSRF guard and redirects
 
-Redirects are walked manually: each 3xx hop's `Location` is resolved and — when `require_public` is on — re-validated with [`url_safety.assert_public_url`](urls.md) before it is followed, so a public URL cannot bounce the fetch onto localhost, a private range, or a cloud-metadata endpoint. Blocked targets raise `InvalidInputError`; unresolvable hosts fail closed. Exceeding `max_redirects` raises the last 3xx `HTTPError`.
+Redirects are walked manually: each 3xx hop's `Location` is resolved and — when `require_public` is on — re-validated with [`url_safety.assert_public_url`](urls.md) before it is followed, so a public URL cannot bounce the fetch onto localhost, a private range, carrier-grade-NAT shared space (`100.64.0.0/10`, i.e. cloud pod networks), or a cloud-metadata endpoint. Blocked targets raise `InvalidInputError`; unresolvable hosts fail closed. Exceeding `max_redirects` raises the last 3xx `HTTPError`.
 
 `URL_FETCH_ALLOW_PRIVATE=1` opts out of the address check (dev, local mirrors); pass `require_public=False` when a specific client legitimately targets private hosts.
 

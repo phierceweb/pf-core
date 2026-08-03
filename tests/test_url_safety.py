@@ -18,14 +18,39 @@ class TestAssertPublicUrl:
         "http://192.168.1.1/",
         "http://[::1]/",
         "http://0.0.0.0/",
+        "http://100.64.0.1/",           # RFC 6598 shared address space, low edge
+        "http://100.100.100.200/",      # mid-range — EKS/GKE pod addresses live here
+        "http://100.127.255.254/",      # high edge
     ])
     def test_blocks_non_public(self, url):
         with pytest.raises(InvalidInputError):
             assert_public_url(url)
 
-    @pytest.mark.parametrize("url", ["http://1.1.1.1/", "https://8.8.8.8/path"])
+    @pytest.mark.parametrize("url", [
+        "http://1.1.1.1/",
+        "https://8.8.8.8/path",
+        "http://100.63.255.255/",       # last address below the shared-space block
+        "http://100.128.0.1/",          # first address above it
+    ])
     def test_allows_public_ip(self, url):
         assert_public_url(url)  # no raise
+
+    @pytest.mark.parametrize("url", [
+        "http://[64:ff9b::7f00:1]/",    # NAT64 of 127.0.0.1  — is_reserved only
+        "http://[64:ff9b::a00:1]/",     # NAT64 of 10.0.0.1   — is_reserved only
+        "http://[5f00::1]/",            # SRv6 5f00::/16      — is_reserved only
+        "http://224.0.0.1/",            # IPv4 multicast      — is_multicast only
+        "http://[ff02::1]/",            # IPv6 multicast      — is_multicast only
+    ])
+    def test_blocks_addresses_only_the_enumerated_flags_catch(self, url):
+        """These all report is_global=True. Rewriting _ip_is_blocked as a bare
+        ``not addr.is_global`` would unblock every one of them."""
+        with pytest.raises(InvalidInputError):
+            assert_public_url(url)
+
+    def test_blocks_ipv4_mapped_shared_space(self):
+        assert url_safety._ip_is_blocked("::ffff:100.64.0.1") is True
+        assert url_safety._ip_is_blocked("::ffff:8.8.8.8") is False
 
     @pytest.mark.parametrize("url", [
         "file:///etc/passwd",

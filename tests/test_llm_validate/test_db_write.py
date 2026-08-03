@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from pf_core.llm.tracking import LlmRunRepo
 from pf_core.llm.tracking import schema as ts
@@ -90,3 +91,58 @@ def test_pipeline_no_pipeline_fallback_with_run_id_does_not_write(tracking_db):
             )
         ).mappings().fetchall()
     assert rows == []
+
+
+def _events(caplog) -> list[str]:
+    return [r.msg for r in caplog.records if isinstance(r.msg, str)] + [
+        r.msg.get("event") for r in caplog.records if isinstance(r.msg, dict)
+    ]
+
+
+def test_db_write_failure_is_logged_and_swallowed(pf_engine, caplog):
+    """No llm_* tables exist, so every DB write fails. The docs promise the
+    pipeline never raises on DB issues — the validation result still returns."""
+    register(agent_type="dbfail", shape=PydOk, schema_version=5)
+    with caplog.at_level(logging.DEBUG):
+        res = parse_and_validate(
+            json.dumps({"headline": "hi", "score": 1}),
+            agent_type="dbfail",
+            run_id=4242,
+        )
+    assert res.ok is True
+    assert res.value.headline == "hi"
+    events = _events(caplog)
+    assert "validation_record_failed" in events
+    assert "validation_tag_write_failed" in events
+
+
+def test_tag_write_failure_does_not_lose_validation_rows(tracking_db, monkeypatch, caplog):
+    """The tag write and the signal writes fail independently."""
+    import pf_core.db as db_mod
+
+    register(agent_type="tagfail", shape=PydOk)
+    run_id = LlmRunRepo().record(agent_type="tagfail", model="claude-opus-4-7")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("tag write down")
+
+    # _write_signals_to_db imports transaction inside the function, so the
+    # patch has to land on pf_core.db, not on the pipeline module.
+    monkeypatch.setattr(db_mod, "transaction", _boom)
+
+    with caplog.at_level(logging.DEBUG):
+        res = parse_and_validate(
+            json.dumps({"headline": "hi", "score": 1}),
+            agent_type="tagfail",
+            run_id=run_id,
+        )
+    assert res.ok is True
+    assert "validation_tag_write_failed" in _events(caplog)
+
+    with tracking_db.connect() as conn:
+        rows = conn.execute(
+            ts.llm_run_validations.select().where(
+                ts.llm_run_validations.c.llm_run_id == run_id
+            )
+        ).mappings().fetchall()
+    assert [r["validator"] for r in rows] == ["tagfail_shape"]

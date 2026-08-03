@@ -21,7 +21,8 @@ app = create_app(
 |-----------|------|---------|-------------|
 | `title` | `str` | `"App"` | Application title |
 | `version` | `str` | `"0.1.0"` | Application version |
-| `cors_origins` | `list[str]` | `None` | Allowed CORS origins (empty = no CORS) |
+| `cors_origins` | `list[str]` | `None` | Allowed CORS origins (empty = no CORS). `"*"` is refused while credentials are on |
+| `cors_allow_credentials` | `bool` | `True` | Send `Access-Control-Allow-Credentials` |
 | `static_dir` | `Path \| str` | `None` | Static files directory (mounted at `/static`) |
 | `template_dir` | `Path \| str` | `None` | Jinja2 templates directory |
 | `log_requests` | `bool` | `True` | Enable request logging middleware |
@@ -72,7 +73,9 @@ Built-in self-contained HTML error pages for: 400, 403, 404, 405, 422, 429, 500,
 
 ### CORS
 
-Configured via `cors_origins`. When provided, adds `CORSMiddleware` with `allow_credentials=True` and all methods/headers allowed.
+Configured via `cors_origins`. When provided, adds `CORSMiddleware` with all methods/headers allowed and `allow_credentials` from `cors_allow_credentials` (default `True`).
+
+**A `"*"` entry is refused while credentials are enabled** — `create_app` raises `ConfigurationError` at startup. Starlette echoes the requesting origin instead of emitting `*` once credentials are on, so the browser's wildcard-plus-credentials protection never engages and any site can read authenticated responses. The check is membership, not equality: `CORS_ORIGINS=*,https://ok.example` is refused too. For a genuinely public read-only API, pass `cors_allow_credentials=False` and `cors_origins=["*"]` — that emits a literal `Access-Control-Allow-Origin: *` with no credentials.
 
 ## Templates
 

@@ -27,6 +27,7 @@ from sqlalchemy.engine import Connection, Engine
 
 from pf_core.exceptions import ConfigurationError
 from pf_core.log import get_logger
+from pf_core.utils.env import resolve_int
 
 
 class DatabaseUnavailableError(ConfigurationError):
@@ -138,7 +139,7 @@ def get_engine(url: str | None = None) -> Engine:
         @event.listens_for(engine, "connect")
         def _sqlite_pragmas(dbapi_conn, _record):
             cur = dbapi_conn.cursor()
-            busy_timeout = int(os.environ.get("SQLITE_BUSY_TIMEOUT", "30000"))
+            busy_timeout = resolve_int(None, "SQLITE_BUSY_TIMEOUT", default=30000)
             cur.execute("PRAGMA foreign_keys = ON")
             cur.execute("PRAGMA journal_mode = WAL")
             cur.execute(f"PRAGMA busy_timeout = {busy_timeout}")

@@ -51,6 +51,7 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
     raise extra_import_error("http", "httpx", feature="pf_core.utils.url_liveness") from e
 
+from pf_core.utils.env import resolve_positive_int
 from pf_core.utils.http_tls import verify_tls
 from pf_core.utils.url_safety import guarded_get
 from pf_core.utils.urls import check_url
@@ -67,6 +68,20 @@ _BROWSER_HEADERS = {
 }
 
 DEFAULT_CACHE_TTL_SECONDS = 86_400  # 24h
+DEFAULT_NEGATIVE_CACHE_TTL_SECONDS = 300  # 5m
+
+_CACHE_TTL_ENV_VAR = "URL_LIVENESS_TTL_SECONDS"
+_NEGATIVE_CACHE_TTL_ENV_VAR = "URL_LIVENESS_NEGATIVE_TTL_SECONDS"
+
+# Verdicts that describe this moment rather than the URL. The status set is
+# needed because check_url maps only 200/403/404/410 — a 5xx arrives as
+# http_<code>, which no category test would catch.
+_TRANSIENT_CATEGORIES = frozenset({"timeout", "error"})
+_TRANSIENT_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def _is_transient(code: int, category: str) -> bool:
+    return category in _TRANSIENT_CATEGORIES or code in _TRANSIENT_STATUS_CODES
 
 
 class CacheBackend(Protocol):
@@ -144,7 +159,8 @@ def check_url_cached(
     url: str,
     *,
     cache: CacheBackend | None = None,
-    cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+    cache_ttl_seconds: int | None = None,
+    negative_cache_ttl_seconds: int | None = None,
     cache_key_prefix: str = "url_liveness:",
     disabled: bool = False,
 ) -> tuple[int, str]:
@@ -159,7 +175,13 @@ def check_url_cached(
         cache: Optional key-value backend implementing :class:`CacheBackend`.
             ``None`` (default) disables both reading and writing — every
             call goes to the network.
-        cache_ttl_seconds: TTL for cached entries. Default 24h.
+        cache_ttl_seconds: TTL for stable verdicts. ``None`` reads
+            ``URL_LIVENESS_TTL_SECONDS`` (default 24h).
+        negative_cache_ttl_seconds: TTL for transient verdicts — ``timeout``,
+            ``error``, and retryable status codes (408, 425, 429, 5xx).
+            ``None`` reads ``URL_LIVENESS_NEGATIVE_TTL_SECONDS`` (default 300).
+            Short enough that a DNS blip doesn't pin a live URL as dead for a
+            day, long enough that a hard-down host isn't re-probed every call.
         cache_key_prefix: Prefix prepended to ``url`` to form the cache key.
             Use a project-namespaced prefix (e.g. ``"myapp:url_liveness:"``)
             to avoid collisions when multiple consumers share a Redis.
@@ -172,8 +194,9 @@ def check_url_cached(
         - On 403 or 401, retries as GET with browser UA + follow_redirects;
           a 200 via GET means real content behind bot-protection (returns
           ``(200, "ok")``); a 403 via GET keeps the original verdict.
-        - Successful results are written to cache; ``"disabled"`` and
-          ``"error"`` shortcuts are not cached.
+        - Every network verdict is cached; transient ones get the short
+          negative TTL. The ``"disabled"`` and empty-URL returns happen before
+          any cache access and are never written.
     """
     if disabled:
         return 0, "disabled"
@@ -189,5 +212,15 @@ def check_url_cached(
     if category == "forbidden" or code == 401:
         code, category = _get_with_browser_ua(url)
 
-    _write_cache(cache, cache_key, cache_ttl_seconds, code, category)
+    if _is_transient(code, category):
+        ttl = resolve_positive_int(
+            negative_cache_ttl_seconds,
+            _NEGATIVE_CACHE_TTL_ENV_VAR,
+            default=DEFAULT_NEGATIVE_CACHE_TTL_SECONDS,
+        )
+    else:
+        ttl = resolve_positive_int(
+            cache_ttl_seconds, _CACHE_TTL_ENV_VAR, default=DEFAULT_CACHE_TTL_SECONDS
+        )
+    _write_cache(cache, cache_key, ttl, code, category)
     return code, category

@@ -41,6 +41,10 @@ _ENV_VARS = (
     "OPENROUTER_API_KEY",
     "BRAVE_API_KEY",
     "REQUEST_TIMEOUT",
+    # Safety switches — surface when outbound HTTP runs unverified or unguarded.
+    "PF_VERIFY_TLS",
+    "URL_CHECK_VERIFY_TLS",
+    "URL_FETCH_ALLOW_PRIVATE",
 )
 
 # Marker import -> extra it indicates (find_spec only; nothing is imported).

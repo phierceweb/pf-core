@@ -94,6 +94,11 @@ class TestAppConfigEnvOverrides:
         cfg = AppConfig()
         assert cfg.CORS_ORIGINS == ["http://localhost:3000", "http://localhost:5000"]
 
+    def test_wildcard_cors_origin_reaches_the_list(self, monkeypatch):
+        # Nothing filters "*" out here — create_app is what refuses it.
+        monkeypatch.setenv("CORS_ORIGINS", "*")
+        assert AppConfig().CORS_ORIGINS == ["*"]
+
     def test_string_stripped(self, monkeypatch):
         monkeypatch.setenv("APP_NAME", "  Padded  ")
         cfg = AppConfig()

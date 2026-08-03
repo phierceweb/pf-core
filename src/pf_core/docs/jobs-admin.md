@@ -7,6 +7,7 @@ Mountable jobs list/detail pages plus a polling JSON API and cancel endpoint —
 ## Table of Contents
 
 - [Mounting](#mounting)
+- [Auth](#auth)
 - [Routes](#routes)
 - [Cancel semantics](#cancel-semantics)
 - [Customization](#customization)
@@ -18,7 +19,7 @@ from pf_core.web.jobs_admin import make_jobs_router
 from pf_core.jobs.workers import terminate_job
 
 app.include_router(make_jobs_router(
-    auth_dep=require_admin,                       # None = open (dev only)
+    auth_dep=require_admin,                       # required — see Auth below
     kind_labels={"grading_pass": "grade"},
     describe=lambda job: {"label": section_label(job), "href": section_url(job)},
     terminate_hook=terminate_job,                 # only when jobs run as subprocesses
@@ -27,6 +28,17 @@ app.include_router(make_jobs_router(
 ```
 
 `describe` receives the job row and returns the consumer's scope link (`{"label", "href"}`) or `None`; `kind_labels` maps kinds to human action names. Both default to raw values.
+
+## Auth
+
+pf-core does not bundle authentication. Supply a FastAPI dependency via `auth_dep` — the same pattern as [`llm_admin.make_admin_router`](llm-admin.md#auth).
+
+`auth_dep` is **required**: `make_jobs_router()` raises `ConfigurationError` if called with neither `auth_dep` nor `allow_unauthenticated=True`, so an unauthenticated dashboard can never be mounted by accident. An explicit `auth_dep=None` raises too. To run it open for local development, opt in with `allow_unauthenticated=True` — never in production: the dashboard exposes job inputs and errors, and its cancel POST invokes `terminate_hook`, which for subprocess-mode consumers is a process-group SIGTERM/SIGKILL.
+
+| Parameter | Purpose |
+|---|---|
+| `auth_dep` | FastAPI dependency that runs on every route. **Required.** |
+| `allow_unauthenticated` | Explicit opt-in to mount with no `auth_dep` (local dev only). Default `False`. |
 
 ## Routes
 
@@ -43,4 +55,4 @@ Cancel is soft: the row transitions to `canceled` (a `canceled` event is recorde
 
 ## Customization
 
-Templates are self-contained (no consumer base template or CSS assumed) so the router works in any app unstyled-by-design; pass `templates=Jinja2Templates(...)` pointing at your own `jobs_list.html` / `job_detail.html` to reskin. `auth_dep` guards every route via a standard FastAPI dependency — the same pattern as `llm_admin.make_admin_router`.
+Templates are self-contained (no consumer base template or CSS assumed) so the router works in any app unstyled-by-design; pass `templates=Jinja2Templates(...)` pointing at your own `jobs_list.html` / `job_detail.html` to reskin.

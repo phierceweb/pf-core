@@ -38,20 +38,47 @@ class TestResolveModelId:
     def test_empty_name_returns_none(self, pf_tables, pf_connection):
         assert resolve_model_id("") is None
 
-    def test_cached_after_first_call(self, pf_tables, pf_connection):
-        resolve_model_id("cached-model")
-        # Second call should hit cache (no DB access needed)
-        id2 = resolve_model_id("cached-model")
-        assert id2 is not None
+    def test_cached_after_first_call(self, recording_conn):
+        first = resolve_model_id("cached-model")
+        after_first = len(recording_conn.statements)
+        second = resolve_model_id("cached-model")
+        assert second == first
+        assert after_first == 2  # insert-or-ignore + SELECT
+        assert len(recording_conn.statements) == 2  # second call never reached the DB
+
+    def test_cached_id_survives_the_db_going_away(self, pf_tables, pf_connection, monkeypatch):
+        model_id = resolve_model_id("real-model")
+
+        @contextlib.contextmanager
+        def _explode(*_args, **_kwargs):
+            raise AssertionError("cache miss: resolve_model_id re-queried the DB")
+            yield
+
+        monkeypatch.setattr(models_mod, "transaction", _explode)
+        assert resolve_model_id("real-model") == model_id
+
+    def test_creates_the_row_in_the_db(self, pf_tables, pf_connection):
+        from sqlalchemy import text
+
+        from pf_core.db import transaction
+
+        model_id = resolve_model_id("anthropic/claude-sonnet-4.6")
+        with transaction() as conn:
+            row = conn.execute(
+                text("SELECT id FROM models WHERE name = :n"),
+                {"n": "anthropic/claude-sonnet-4.6"},
+            ).fetchone()
+        assert row is not None
+        assert row[0] == model_id
 
 
 class TestClearCache:
-    def test_clears_cache(self, pf_tables, pf_connection):
-        resolve_model_id("to-clear")
+    def test_clears_cache(self, recording_conn):
+        first = resolve_model_id("to-clear")
         clear_cache()
-        # After clearing, a new DB lookup should happen but still return same ID
-        id2 = resolve_model_id("to-clear")
-        assert id2 is not None
+        second = resolve_model_id("to-clear")
+        assert second == first
+        assert len(recording_conn.statements) == 4  # the DB was consulted again
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +122,20 @@ class _RecordingConn:
     def execute(self, stmt, params=None):
         self.statements.append(stmt)
         return _FakeResult()
+
+
+@pytest.fixture()
+def recording_conn(monkeypatch) -> _RecordingConn:
+    """Swap the resolver's transaction for a statement recorder, so a cache hit
+    is provable as "no DB access" rather than just "returned something"."""
+    conn = _RecordingConn("sqlite")
+
+    @contextlib.contextmanager
+    def _fake_transaction(*_args, **_kwargs):
+        yield conn
+
+    monkeypatch.setattr(models_mod, "transaction", _fake_transaction)
+    return conn
 
 
 _DIALECTS = {

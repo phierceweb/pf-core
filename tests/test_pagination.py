@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pf_core.web.pagination import paginate_params, paginate_result
 
 
@@ -38,6 +40,13 @@ class TestPaginateParams:
         monkeypatch.setenv("MAX_PER_PAGE", "50")
         p = paginate_params(1, 500, max_per_page=100)
         assert p["per_page"] == 100
+
+    @pytest.mark.parametrize("bad", ["abc", "", "0", "-10"])
+    def test_malformed_env_max_falls_back(self, monkeypatch, bad):
+        # A typo in .env must not 500 every paginated endpoint.
+        monkeypatch.setenv("MAX_PER_PAGE", bad)
+        p = paginate_params(1, 500)
+        assert p["per_page"] == 200
 
     def test_per_page_clamped_to_1(self):
         p = paginate_params(1, 0)

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import datetime
 import json as _json
-import os
 
 try:
     import httpx
@@ -25,6 +24,7 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
     raise extra_import_error("http", "httpx", feature="pf_core.utils.urls") from e
 
+from pf_core.utils.env import resolve_positive_int
 from pf_core.utils.http_tls import verify_tls
 from pf_core.utils.url_html import extract_article_metadata  # noqa: F401 — re-export
 from pf_core.utils.url_parse import (
@@ -33,7 +33,7 @@ from pf_core.utils.url_parse import (
     domain_of,
     extract_path_date,
 )
-from pf_core.utils.url_safety import guarded_get, guarded_head
+from pf_core.utils.url_safety import guarded_get, guarded_head, guarded_stream
 
 __all__ = [
     "archive_timestamp_is_round",
@@ -77,7 +77,7 @@ def check_url(url: str, *, timeout: int | None = None) -> tuple[int, str]:
         ``"timeout"``, ``"error"``, or ``"http_{status_code}"``.
     """
     if timeout is None:
-        timeout = int(os.environ.get("URL_CHECK_TIMEOUT", "8"))
+        timeout = resolve_positive_int(None, "URL_CHECK_TIMEOUT", default=8)
 
     headers = {"User-Agent": _USER_AGENT}
 
@@ -116,9 +116,17 @@ def fetch_url_content(
 ) -> tuple[int, str, str]:
     """Fetch an HTTP URL's body for downstream content analysis.
 
-    Always GETs (we need the body), browser-like User-Agent, truncates at
-    ``_CONTENT_BODY_MAX_BYTES`` to protect downstream token budgets.
+    Always GETs (we need the body), browser-like User-Agent, and stops reading
+    at ``_CONTENT_BODY_MAX_BYTES`` to protect downstream token budgets.
     ``timeout=None`` reads ``URL_CHECK_TIMEOUT`` (default 8).
+
+    The cap is applied to the decoded stream as it arrives, and the request
+    asks for ``identity``, so a compliant server cannot inflate memory past the
+    cap. A server that sends ``Content-Encoding: gzip`` regardless is bounded by
+    one of httpx's read chunks rather than by the cap, since httpx decodes a
+    whole network chunk before this loop sees it. For untrusted hosts prefer
+    :class:`pf_core.fetch.Fetcher` with ``max_bytes``, which bounds the decoded
+    body directly.
 
     Returns:
         ``(status_code, category, body)`` — ``category`` mirrors
@@ -128,11 +136,14 @@ def fetch_url_content(
     if not url:
         return 0, "error", ""
     if timeout is None:
-        timeout = int(os.environ.get("URL_CHECK_TIMEOUT", "8"))
+        timeout = resolve_positive_int(None, "URL_CHECK_TIMEOUT", default=8)
 
     headers = {
         "User-Agent": _USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        # The read stops at _CONTENT_BODY_MAX_BYTES, so compression saves little
+        # here and costs the inflation httpx applies before we see the bytes.
+        "Accept-Encoding": "identity",
     }
     try:
         with httpx.Client(
@@ -141,17 +152,21 @@ def fetch_url_content(
             verify=verify_tls(),
             headers=headers,
         ) as client:
-            resp = guarded_get(client, url)
-            code = resp.status_code
-            category = _STATUS_CATEGORIES.get(code, f"http_{code}")
-            if 200 <= code < 300:
-                text = resp.text or ""
-                if len(text.encode("utf-8", errors="ignore")) > _CONTENT_BODY_MAX_BYTES:
-                    text = text.encode("utf-8", errors="ignore")[:_CONTENT_BODY_MAX_BYTES].decode(
-                        "utf-8", errors="ignore"
-                    )
+            with guarded_stream(client, url) as resp:
+                code = resp.status_code
+                category = _STATUS_CATEGORIES.get(code, f"http_{code}")
+                if not 200 <= code < 300:
+                    return code, category, ""
+                raw = bytearray()
+                for chunk in resp.iter_bytes():
+                    raw += chunk
+                    if len(raw) >= _CONTENT_BODY_MAX_BYTES:
+                        break
+                encoding = resp.charset_encoding or "utf-8"
+                # errors="replace", not "ignore": callers sniff magic bytes on
+                # this text, and a dropped signature byte reads as clean HTML.
+                text = bytes(raw[:_CONTENT_BODY_MAX_BYTES]).decode(encoding, errors="replace")
                 return code, category, text
-            return code, category, ""
     except httpx.TimeoutException:
         return 0, "timeout", ""
     except Exception:
@@ -183,7 +198,9 @@ def wayback_exists_at(
     if not url:
         return False, None
     if timeout is None:
-        timeout = int(os.environ.get("WAYBACK_TIMEOUT", str(_WAYBACK_DEFAULT_TIMEOUT)))
+        timeout = resolve_positive_int(
+            None, "WAYBACK_TIMEOUT", default=_WAYBACK_DEFAULT_TIMEOUT
+        )
 
     params: dict[str, str] = {
         "url": url,

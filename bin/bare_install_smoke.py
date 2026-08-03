@@ -34,6 +34,8 @@ foundation = [
     "pf_core.utils.similarity", "pf_core.utils.vocab",
     # generic JSON-from-messy-text recovery (lives outside pf_core.llm).
     "pf_core.utils.json_recovery",
+    # pure URL parsing / HTML metadata — no httpx.
+    "pf_core.utils.url_parse", "pf_core.utils.url_html",
 ]
 for mod in foundation:
     check(f"import {mod}", lambda m=mod: importlib.import_module(m))
@@ -81,6 +83,21 @@ def _lazy_http():
 
 
 check("pf_core.utils.check_url -> friendly [http] error", _lazy_http)
+
+
+# 5. The stdlib-only helpers must resolve off the same facade with no extra —
+# the negative check above passes just as well when everything is gated.
+def _ungated_utils():
+    import pf_core.utils as u
+
+    assert u.domain_of("https://www.example.com/p") == "example.com"
+    assert u.archive_timestamp_is_round("https://example.com") is False
+    assert callable(u.canonical_url)
+    assert callable(u.extract_path_date)
+    assert callable(u.extract_article_metadata)
+
+
+check("pf_core.utils pure helpers resolve without [http]", _ungated_utils)
 
 print()
 if failures:

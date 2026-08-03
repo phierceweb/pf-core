@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
 from urllib.parse import urljoin, urlsplit
 
 from pf_core.exceptions import InvalidInputError
@@ -32,6 +34,8 @@ def _allow_private() -> bool:
 
 
 def _ip_is_blocked(ip: str) -> bool:
+    # Don't collapse to `not is_global`: NAT64, SRv6, and multicast all report
+    # is_global=True. It is only here to catch 100.64.0.0/10.
     addr = ipaddress.ip_address(ip)
     return (
         addr.is_private
@@ -40,6 +44,7 @@ def _ip_is_blocked(ip: str) -> bool:
         or addr.is_reserved
         or addr.is_multicast
         or addr.is_unspecified
+        or not addr.is_global
     )
 
 
@@ -93,6 +98,32 @@ def guarded_get(client: object, url: str, *, max_redirects: int = 5) -> object:
 def guarded_head(client: object, url: str, *, max_redirects: int = 5) -> object:
     """HEAD *url* through *client*, validating the target and every redirect hop."""
     return _guarded(client.head, url, max_redirects=max_redirects)  # type: ignore[attr-defined]
+
+
+@contextmanager
+def guarded_stream(client: object, url: str, *, max_redirects: int = 5) -> Iterator[object]:
+    """Stream-GET *url* through *client*, validating the target and every hop.
+
+    The streaming counterpart of :func:`guarded_get`, for callers that must
+    bound how much of a response they pull into memory. Yields the final
+    response with its body unread; the client must be built with
+    ``follow_redirects=False``.
+    """
+    assert_public_url(url)
+    cur = url
+    hops = 0
+    while True:
+        with client.stream("GET", cur) as resp:  # type: ignore[attr-defined]
+            if resp.status_code not in _REDIRECT_CODES or hops >= max_redirects:
+                yield resp
+                return
+            location = _location(resp)
+            if not location:
+                yield resp
+                return
+            cur = urljoin(cur, location)
+            hops += 1
+        assert_public_url(cur)
 
 
 def _guarded(fetch, url, *, max_redirects):

@@ -204,53 +204,110 @@ class TestLogVerbose:
         log_verbose(logger, "hello", verbose=False, key="val")
 
 
+def _record(caplog) -> logging.LogRecord:
+    """The single record log_exception emitted. ``.msg`` is the structlog event
+    dict, so assert on keys — never on rendered text."""
+    records = [r for r in caplog.records if r.name == "exceptions"]
+    assert len(records) == 1, records
+    return records[0]
+
+
 class TestLogException:
-    def test_flow_exception_default_warning(self):
-        exc = InvalidInputError("bad input")
-        log_exception(exc)  # should not raise
+    def test_flow_exception_default_warning(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(InvalidInputError("bad input"))
+        rec = _record(caplog)
+        assert rec.levelno == logging.WARNING
+        assert rec.msg["event"] == "APP-InvalidInputError"
+        assert rec.msg["message"] == "bad input"
+        assert rec.msg["exc_info"] is False  # no traceback for a FlowException
 
-    def test_app_error_default_error(self):
-        exc = AppError("boom", context={"task_id": 7})
-        log_exception(exc)
+    def test_app_error_default_error(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(AppError("boom", context={"task_id": 7}))
+        rec = _record(caplog)
+        assert rec.levelno == logging.ERROR
+        assert rec.msg["event"] == "APP-AppError"
+        assert rec.msg["task_id"] == 7
+        assert isinstance(rec.msg["exc_info"], AppError)
 
-    def test_custom_log_level(self):
-        exc = InvalidInputError("x")
-        log_exception(exc, log_level="error")
+    def test_custom_log_level(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(InvalidInputError("x"), log_level="error")
+        assert _record(caplog).levelno == logging.ERROR
 
-    def test_message_prepend(self):
-        exc = AppError("failed")
-        log_exception(exc, message_prepend="search step")
+    def test_message_prepend(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(AppError("failed"), message_prepend="search step")
+        assert _record(caplog).msg["message"] == "search step: failed"
 
-    def test_additional_context_merged(self):
-        exc = AppError("failed", context={"a": 1})
-        log_exception(exc, additional_context={"b": 2})
+    def test_additional_context_merged(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(AppError("failed", context={"a": 1}), additional_context={"b": 2})
+        rec = _record(caplog)
+        assert rec.msg["a"] == 1
+        assert rec.msg["b"] == 2
 
-    def test_additional_context_wins_over_exc_context(self):
-        exc = AppError("failed", context={"key": "from_exc"})
-        log_exception(exc, additional_context={"key": "from_additional"})
+    def test_additional_context_wins_over_exc_context(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(
+                AppError("failed", context={"key": "from_exc"}),
+                additional_context={"key": "from_additional"},
+            )
+        assert _record(caplog).msg["key"] == "from_additional"
 
-    def test_cause_chain_context_merged(self):
+    def test_cause_chain_context_merged(self, caplog):
         inner = AppError("inner", context={"inner_key": "inner_val"})
         outer = ClientError("outer", context={"outer_key": "outer_val"}, cause=inner)
-        log_exception(outer)
+        with caplog.at_level(logging.DEBUG):
+            log_exception(outer)
+        rec = _record(caplog)
+        assert rec.msg["inner_key"] == "inner_val"
+        assert rec.msg["outer_key"] == "outer_val"
 
-    def test_cause_chain_priority(self):
+    def test_exc_context_wins_over_ancestor(self, caplog):
+        ancestor = AppError("a", context={"k": "ancestor"})
+        exc = ClientError("b", context={"k": "exc"}, cause=ancestor)
+        with caplog.at_level(logging.DEBUG):
+            log_exception(exc)
+        assert _record(caplog).msg["k"] == "exc"
+
+    def test_cause_chain_priority(self, caplog):
         # ancestor context < exc context < additional_context
         ancestor = AppError("a", context={"k": "ancestor"})
         exc = ClientError("b", context={"k": "exc"}, cause=ancestor)
-        log_exception(exc, additional_context={"k": "additional"})
+        with caplog.at_level(logging.DEBUG):
+            log_exception(exc, additional_context={"k": "additional"})
+        assert _record(caplog).msg["k"] == "additional"
 
-    def test_event_prefix(self):
-        exc = InvalidInputError("x")
-        log_exception(exc, event_prefix="COMP")
+    def test_furthest_ancestor_wins_among_ancestors(self, caplog):
+        oldest = AppError("oldest", context={"k": "oldest"})
+        middle = AppError("middle", context={"k": "middle"}, cause=oldest)
+        exc = ClientError("top", cause=middle)
+        with caplog.at_level(logging.DEBUG):
+            log_exception(exc)
+        assert _record(caplog).msg["k"] == "oldest"
 
-    def test_non_framework_exception(self):
-        exc = ValueError("plain python error")
-        log_exception(exc)
+    def test_event_prefix(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(InvalidInputError("x"), event_prefix="COMP")
+        assert _record(caplog).msg["event"] == "COMP-InvalidInputError"
 
-    def test_task_error_with_running_log(self):
+    def test_non_framework_exception(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            log_exception(ValueError("plain python error"))
+        rec = _record(caplog)
+        assert rec.levelno == logging.ERROR
+        assert rec.msg["event"] == "APP-ValueError"
+        assert rec.msg["exc_info"] is False
+
+    def test_task_error_with_running_log(self, caplog):
         exc = TaskError("failed", context={"task_id": 1}, running_log="step1\nstep2")
-        log_exception(exc)
+        with caplog.at_level(logging.DEBUG):
+            log_exception(exc)
+        rec = _record(caplog)
+        assert rec.msg["event"] == "APP-TaskError"
+        assert rec.msg["task_id"] == 1
 
     def test_reserved_context_keys_renamed_not_colliding(self, caplog):
         exc = AppError("boom", context={"message": "collide", "event": "e", "exc_info": "x"})
@@ -262,13 +319,17 @@ class TestLogException:
         assert rec.msg["ctx_exc_info"] == "x"
         assert rec.msg["message"] == "boom"
 
-    def test_circular_cause_chain_handled(self):
+    def test_circular_cause_chain_handled(self, caplog):
         """Circular __cause__ chains don't cause infinite loops."""
-        exc_a = AppError("a", context={"from": "a"})
-        exc_b = AppError("b", context={"from": "b"}, cause=exc_a)
+        exc_a = AppError("a", context={"from_a": 1})
+        exc_b = AppError("b", context={"from_b": 2}, cause=exc_a)
         # Manually create a cycle
         exc_a.__cause__ = exc_b
-        log_exception(exc_b)  # should not hang or raise
+        with caplog.at_level(logging.DEBUG):
+            log_exception(exc_b)
+        rec = _record(caplog)
+        assert rec.msg["from_a"] == 1
+        assert rec.msg["from_b"] == 2
 
 
 class TestExcInfoRendering:

@@ -158,3 +158,59 @@ class TestHtmlNegotiation:
         r = client.get("/budget-exceeded", headers={"accept": "text/html"})
         assert r.status_code == 429
         assert "Too many requests" in r.text
+
+
+class TestCors:
+    """Starlette echoes the requesting origin once credentials are on, so a
+    wildcard origin list hands every site read access to authenticated
+    responses. `create_app` refuses that combination."""
+
+    def _app(self, **kwargs):
+        return create_app(title="T", log_requests=False, rate_limit=False, **kwargs)
+
+    def _client(self, **kwargs):
+        app = self._app(**kwargs)
+
+        @app.get("/x")
+        def _x():
+            return {"ok": True}
+
+        return TestClient(app)
+
+    @pytest.mark.parametrize("origins", [["*"], ["*", "http://ok.example"], [" * "]])
+    def test_wildcard_with_credentials_raises(self, origins):
+        with pytest.raises(ConfigurationError, match=r"\*"):
+            self._app(cors_origins=origins)
+
+    def test_wildcard_allowed_without_credentials(self):
+        client = self._client(cors_origins=["*"], cors_allow_credentials=False)
+        r = client.get("/x", headers={"Origin": "https://evil.example"})
+        assert r.headers["access-control-allow-origin"] == "*"
+        assert "access-control-allow-credentials" not in r.headers
+
+    def test_explicit_origin_keeps_credentials(self):
+        client = self._client(cors_origins=["http://ok.example"])
+        r = client.get("/x", headers={"Origin": "http://ok.example"})
+        assert r.headers["access-control-allow-origin"] == "http://ok.example"
+        assert r.headers["access-control-allow-credentials"] == "true"
+
+    def test_disallowed_origin_gets_no_acao(self):
+        client = self._client(cors_origins=["http://ok.example"])
+        r = client.get("/x", headers={"Origin": "https://evil.example"})
+        assert "access-control-allow-origin" not in r.headers
+
+    def test_preflight_from_disallowed_origin_is_refused(self):
+        client = self._client(cors_origins=["http://ok.example"])
+        r = client.options(
+            "/x",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert "access-control-allow-origin" not in r.headers
+
+    def test_no_cors_origins_adds_no_headers(self):
+        client = self._client(cors_origins=None)
+        r = client.get("/x", headers={"Origin": "https://evil.example"})
+        assert not [h for h in r.headers if h.startswith("access-control-")]

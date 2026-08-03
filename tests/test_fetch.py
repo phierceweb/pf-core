@@ -8,7 +8,9 @@ for real without live lookups.
 from __future__ import annotations
 
 import gzip
+import http.client
 import socket
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -75,6 +77,12 @@ class _Resp:
 
     def close(self) -> None:
         self.closed = True
+
+
+def _raw_deflate(data: bytes) -> bytes:
+    """Deflate with no zlib wrapper — what servers that skip it send."""
+    compressor = zlib.compressobj(wbits=-15)
+    return compressor.compress(data) + compressor.flush()
 
 
 def _http_error(code: int, headers: dict[str, str] | None = None) -> urllib.error.HTTPError:
@@ -300,6 +308,52 @@ class TestContentEncoding:
         Fetcher().get_bytes(URL)
         assert "accept-encoding" not in _sent_headers(calls[0][0])
 
+    def test_multi_member_gzip_decoded(self, monkeypatch):
+        body = gzip.compress(b"part1-") + gzip.compress(b"part2")
+        _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": "gzip"})])
+        _, raw = Fetcher().get_bytes(URL)
+        assert raw == b"part1-part2"
+
+    @pytest.mark.parametrize("trailer", [b"\x00" * 8, b"\x00"])
+    def test_nul_padded_gzip_decoded(self, monkeypatch, trailer):
+        # gzip.decompress lstrips NUL padding between members; so must we.
+        _script_open(
+            monkeypatch,
+            [_Resp(gzip.compress(b"payload") + trailer, {"Content-Encoding": "gzip"})],
+        )
+        _, raw = Fetcher().get_bytes(URL)
+        assert raw == b"payload"
+
+    @pytest.mark.parametrize("body, encoding", [
+        (b"not gzip at all", "gzip"),                       # was gzip.BadGzipFile
+        (gzip.compress(b"payload" * 100)[:20], "gzip"),     # was EOFError
+        (b"\x00\x01\x02garbage", "deflate"),                # was zlib.error
+    ])
+    def test_undecodable_body_raises_client_error(self, monkeypatch, body, encoding):
+        _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": encoding})])
+        with pytest.raises(ClientError) as exc_info:
+            Fetcher().get_bytes(URL)
+        assert exc_info.value.context["url"] == URL
+
+    def test_corrupt_gzip_payload_raises_client_error(self, monkeypatch):
+        # Corruption in the deflate payload, not the header — the gzip branch's
+        # own zlib.error, which a deflate-only guard would miss.
+        good = gzip.compress(bytes(range(256)) * 40)
+        mid = len(good) // 2
+        body = good[:mid] + bytes([good[mid] ^ 0xFF]) + good[mid + 1:]
+        _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": "gzip"})])
+        with pytest.raises(ClientError):
+            Fetcher().get_bytes(URL)
+
+    def test_decode_failure_is_not_retried(self, monkeypatch):
+        calls = _script_open(
+            monkeypatch,
+            [_Resp(b"garbage", {"Content-Encoding": "deflate"}), _Resp(b"ok")],
+        )
+        with pytest.raises(ClientError):
+            Fetcher().get_bytes(URL)
+        assert len(calls) == 1  # decode runs outside the retry loop, deliberately
+
 
 class TestMaxBytes:
     def test_overrun_raises_client_error_with_context(self, monkeypatch):
@@ -317,6 +371,51 @@ class TestMaxBytes:
         _script_open(monkeypatch, [_Resp(b"x" * 4096)])
         _, raw = Fetcher().get_bytes(URL)
         assert len(raw) == 4096
+
+    @pytest.mark.parametrize("encoding, compress", [
+        ("gzip", gzip.compress),
+        ("deflate", zlib.compress),
+        ("deflate", _raw_deflate),  # the except-zlib.error fallback path
+    ])
+    def test_decompression_bomb_over_cap_raises(self, monkeypatch, encoding, compress):
+        body = compress(b"\0" * (2 * 1024 * 1024))
+        cap = 64 * 1024
+        assert len(body) < cap, "wire body must fit under the cap or this proves nothing"
+        _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": encoding})])
+        with pytest.raises(ClientError) as exc_info:
+            Fetcher(max_bytes=cap).get_bytes(URL)
+        assert exc_info.value.context == {"url": URL, "max_bytes": cap}
+
+    def test_decoded_body_at_cap_passes(self, monkeypatch):
+        payload = b"\0" * 1000
+        _script_open(
+            monkeypatch, [_Resp(gzip.compress(payload), {"Content-Encoding": "gzip"})]
+        )
+        _, raw = Fetcher(max_bytes=1000).get_bytes(URL)
+        assert raw == payload
+
+    def test_max_bytes_none_still_decodes_compressed_body(self, monkeypatch):
+        payload = b"\0" * (1024 * 1024)
+        _script_open(
+            monkeypatch, [_Resp(gzip.compress(payload), {"Content-Encoding": "gzip"})]
+        )
+        _, raw = Fetcher().get_bytes(URL)
+        assert raw == payload
+
+    def test_incomplete_read_raises_client_error(self, monkeypatch):
+        class _Truncated(_Resp):
+            def read(self, amt: int | None = None) -> bytes:
+                raise http.client.IncompleteRead(b"abc", 99996)
+
+        _script_open(monkeypatch, [_Truncated()])
+        with pytest.raises(ClientError) as exc_info:
+            Fetcher().get_bytes(URL)
+        assert exc_info.value.context == {"url": URL, "read": 3}
+
+    def test_short_read_under_cap_is_not_an_error(self, monkeypatch):
+        _script_open(monkeypatch, [_Resp(b"short")])
+        _, raw = Fetcher(max_bytes=10_000).get_bytes(URL)
+        assert raw == b"short"
 
 
 class TestValidators:
@@ -478,3 +577,39 @@ class TestModuleFunctions:
     def test_not_modified(self, monkeypatch):
         _script_open(monkeypatch, [_http_error(304)])
         assert not_modified(URL, etag='"e"', last_modified=None) is True
+
+
+class TestTlsVerification:
+    """`URL_CHECK_VERIFY_TLS` reaches every Fetcher in the process, not just the
+    `[http]` URL-inspection helpers its name implies — so the base-install
+    download path needs its own knob and its own coverage."""
+
+    def _verify_mode(self, fetcher: Fetcher):
+        handler = next(h for h in fetcher._opener.handlers if hasattr(h, "_context"))
+        return handler._context.verify_mode
+
+    def test_verifies_by_default(self):
+        assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED
+
+    def test_kwarg_disables_for_one_fetcher_only(self):
+        assert self._verify_mode(Fetcher(verify_tls=False)) == ssl.CERT_NONE
+        assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED
+
+    @pytest.mark.parametrize("var", ["PF_VERIFY_TLS", "URL_CHECK_VERIFY_TLS"])
+    def test_env_disables(self, monkeypatch, var):
+        monkeypatch.setenv(var, "0")
+        assert self._verify_mode(Fetcher()) == ssl.CERT_NONE
+
+    def test_kwarg_beats_env(self, monkeypatch):
+        monkeypatch.setenv("PF_VERIFY_TLS", "0")
+        assert self._verify_mode(Fetcher(verify_tls=True)) == ssl.CERT_REQUIRED
+
+    def test_new_name_beats_legacy(self, monkeypatch):
+        monkeypatch.setenv("URL_CHECK_VERIFY_TLS", "0")
+        monkeypatch.setenv("PF_VERIFY_TLS", "1")
+        assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED
+
+    @pytest.mark.parametrize("var", ["PF_VERIFY_TLS", "URL_CHECK_VERIFY_TLS"])
+    def test_unrecognized_value_fails_safe(self, monkeypatch, var):
+        monkeypatch.setenv(var, "maybe")
+        assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED

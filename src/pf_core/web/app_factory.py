@@ -224,6 +224,7 @@ def create_app(
     title: str = "App",
     version: str = "0.1.0",
     cors_origins: list[str] | None = None,
+    cors_allow_credentials: bool = True,
     static_dir: Path | str | None = None,
     template_dir: Path | str | None = None,
     log_requests: bool = True,
@@ -236,6 +237,10 @@ def create_app(
         title: Application title.
         version: Application version.
         cors_origins: List of allowed CORS origins (empty = no CORS middleware).
+            A ``"*"`` entry is refused while credentials are enabled — list
+            explicit origins, or set ``cors_allow_credentials=False``.
+        cors_allow_credentials: Send ``Access-Control-Allow-Credentials``
+            (default True).
         static_dir: Path to static files directory (mounted at /static).
         template_dir: Path to Jinja2 templates directory (stored on app.state).
         log_requests: Enable request logging middleware (default True).
@@ -252,10 +257,19 @@ def create_app(
 
     # CORS
     if cors_origins:
+        # Starlette echoes the requesting origin once credentials are on, so the
+        # browser's wildcard-plus-credentials protection never engages.
+        # Membership, not equality: ["*", "https://ok"] is still wildcard.
+        if cors_allow_credentials and any(o.strip() == "*" for o in cors_origins):
+            raise ConfigurationError(
+                "cors_origins contains '*' with credentials enabled — every origin "
+                "would be allowed to read authenticated responses. List explicit "
+                "origins, or pass cors_allow_credentials=False."
+            )
         app.add_middleware(
             CORSMiddleware,
             allow_origins=cors_origins,
-            allow_credentials=True,
+            allow_credentials=cors_allow_credentials,
             allow_methods=["*"],
             allow_headers=["*"],
         )

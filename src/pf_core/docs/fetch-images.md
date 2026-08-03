@@ -23,10 +23,11 @@ result = localize_images(markdown, out_dir / "images", base_url="https://example
 markdown = result.markdown            # refs retargeted to images/<name>
 # result.saved: list[Path] written or reused; result.failed: count left remote
 
-# File-as-ledger mode — for large documents localized across multiple runs
-saved = localize_file(doc_path, doc_path.parent / "images")
-while count_remote_images(doc_path.read_text(encoding="utf-8")):
-    localize_file(doc_path, doc_path.parent / "images")
+# File-as-ledger mode — for large documents localized across multiple runs.
+# Stop when a pass localizes nothing: some refs fail permanently (404, or a
+# body that isn't an image), so looping on count_remote_images never exits.
+while localize_file(doc_path, doc_path.parent / "images"):
+    pass
 ```
 
 ## What gets localized
@@ -34,7 +35,8 @@ while count_remote_images(doc_path.read_text(encoding="utf-8")):
 - Markdown image refs `![alt](https://…)` and HTML `<img src="https://…">`.
 - **Relative refs** (`../assets/figure.png`) only when `base_url` is given — they resolve via `urljoin`. Without `base_url` they are left for the browser.
 - Refs already under `images/`, absolute filesystem paths, and `data:` URIs are never touched.
-- A ref with a **non-image extension** is skipped; an image extension or **no extension at all** qualifies (opaque CDN URLs) — extensionless downloads get an extension sniffed from magic bytes (`sniff_image_ext`; png/jpg/gif/webp/svg, default png).
+- A ref with a **non-image extension** is skipped; an image extension or **no extension at all** qualifies (opaque CDN URLs) — extensionless downloads get their extension sniffed from magic bytes (`sniff_image_ext`; png/jpg/gif/webp/svg/avif/heic/bmp/tiff/ico/jxl).
+- **The body must actually be an image.** `sniff_image_ext` returns `None` for anything it doesn't recognize — an HTML interstitial, a JSON error, a login page — and that is a per-URL failure: the ref stays remote and counts in `failed`. This applies to extensioned URLs too, so a CDN path ending `.png` that 200s with a sign-in wall is not written to disk and reported as saved. An XML body counts as SVG only when `<svg` appears within the first 4 KiB, which clears a DOCTYPE and an embedded license header but not an arbitrarily long preamble.
 
 Rewrites are anchor-safe — `]({url})` and `src="{url}"` forms only — so a bare URL in prose is never rewritten. Duplicate refs are fetched once and retargeted everywhere.
 
@@ -56,7 +58,7 @@ With `reuse_existing=False`, existing files are never probed; new names take `-2
 
 ## Failure containment
 
-A per-URL failure — HTTP error, network error, SSRF block, size-cap `ClientError`, disk error — counts in `failed`, logs a warning, **keeps the remote ref** (it still resolves in a browser), and the loop continues. `localize_images` never raises for an individual URL; it raises only for programmer errors (bad arguments, missing parent directories).
+A per-URL failure — HTTP error, network error, SSRF block, size-cap `ClientError`, corrupt or truncated body, non-image response body, disk error — counts in `failed`, logs a warning, **keeps the remote ref** (it still resolves in a browser), and the loop continues. `localize_images` never raises for an individual URL; it raises only for programmer errors (bad arguments, missing parent directories).
 
 ## Injection seams
 

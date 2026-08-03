@@ -16,6 +16,7 @@ from pf_core.exceptions import InvalidInputError
 from pf_core.utils.url_liveness import (
     CacheBackend,
     DEFAULT_CACHE_TTL_SECONDS,
+    DEFAULT_NEGATIVE_CACHE_TTL_SECONDS,
     _get_with_browser_ua,
     check_url_cached,
 )
@@ -289,3 +290,62 @@ class TestReExports:
         from pf_core.utils.url_liveness import CacheBackend
 
         assert exported is CacheBackend
+
+
+class TestNegativeCacheTtl:
+    """A verdict that describes the network right now must not be pinned for a
+    day: one 30-second outage would mark every URL checked in that window dead
+    until tomorrow — the exact false-positive wave the kill switch exists for."""
+
+    def _ttl(self, result, **kwargs) -> int:
+        cache = FakeCache()
+        with patch("pf_core.utils.url_liveness.check_url", return_value=result):
+            check_url_cached("https://example.com/x", cache=cache, **kwargs)
+        assert cache.setex_calls, "verdict was not cached at all"
+        return cache.setex_calls[0][1]
+
+    @pytest.mark.parametrize("result", [
+        (0, "error"),
+        (0, "timeout"),
+        (503, "http_503"),
+        (429, "http_429"),
+        (500, "http_500"),
+    ])
+    def test_transient_verdicts_get_the_short_ttl(self, result):
+        assert self._ttl(result) == DEFAULT_NEGATIVE_CACHE_TTL_SECONDS
+
+    @pytest.mark.parametrize("result", [(200, "ok"), (404, "not_found"), (410, "gone")])
+    def test_stable_verdicts_keep_the_long_ttl(self, result):
+        assert self._ttl(result) == DEFAULT_CACHE_TTL_SECONDS
+
+    def test_transient_verdict_is_still_written(self):
+        # Short TTL, not skip-write: a hard-down host must stay throttled
+        # rather than being re-probed on every call.
+        assert self._ttl((0, "error")) > 0
+
+    def test_browser_ua_fallback_verdict_also_short_ttl(self):
+        cache = FakeCache()
+        with patch(
+            "pf_core.utils.url_liveness.check_url", return_value=(403, "forbidden")
+        ), patch(
+            "pf_core.utils.url_liveness._get_with_browser_ua", return_value=(0, "timeout")
+        ):
+            check_url_cached("https://example.com/x", cache=cache)
+        assert cache.setex_calls[0][1] == DEFAULT_NEGATIVE_CACHE_TTL_SECONDS
+
+    def test_env_overrides(self, monkeypatch):
+        monkeypatch.setenv("URL_LIVENESS_NEGATIVE_TTL_SECONDS", "42")
+        monkeypatch.setenv("URL_LIVENESS_TTL_SECONDS", "7200")
+        assert self._ttl((0, "timeout")) == 42
+        assert self._ttl((200, "ok")) == 7200
+
+    def test_kwarg_beats_env(self, monkeypatch):
+        monkeypatch.setenv("URL_LIVENESS_NEGATIVE_TTL_SECONDS", "42")
+        monkeypatch.setenv("URL_LIVENESS_TTL_SECONDS", "7200")
+        assert self._ttl((0, "timeout"), negative_cache_ttl_seconds=11) == 11
+        assert self._ttl((200, "ok"), cache_ttl_seconds=99) == 99
+
+    @pytest.mark.parametrize("bad", ["abc", "0", "-5"])
+    def test_malformed_env_falls_back(self, monkeypatch, bad):
+        monkeypatch.setenv("URL_LIVENESS_NEGATIVE_TTL_SECONDS", bad)
+        assert self._ttl((0, "error")) == DEFAULT_NEGATIVE_CACHE_TTL_SECONDS

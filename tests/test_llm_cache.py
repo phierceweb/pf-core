@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from sqlalchemy import select
 
 from pf_core.llm.cache import (
     CacheHit,
@@ -234,7 +235,19 @@ def test_exact_cache_store_conflict_returns_existing_id(cache_db):
     assert id1 == id2
 
 
+def _entry_col(entry_id: int, column):
+    from pf_core.db import transaction
+    from pf_core.llm.cache._schema import llm_cache_entries
+
+    with transaction() as conn:
+        return conn.execute(
+            select(column).where(llm_cache_entries.c.id == entry_id)
+        ).scalar_one()
+
+
 def test_exact_cache_bump_hit(cache_db):
+    from pf_core.llm.cache._schema import llm_cache_entries
+
     run_id = _make_run()
     repo = ExactCacheRepo()
     entry_id = repo.store(
@@ -243,8 +256,97 @@ def test_exact_cache_bump_hit(cache_db):
         model="openai/gpt-4o",
         source_run_id=run_id,
     )
+    assert _entry_col(entry_id, llm_cache_entries.c.hit_count) == 0
     repo.bump_hit(entry_id=entry_id)
-    # No assertion on hit_count (SQLite server_default quirk); just verify no exception
+    assert _entry_col(entry_id, llm_cache_entries.c.hit_count) == 1
+    repo.bump_hit(entry_id=entry_id)
+    assert _entry_col(entry_id, llm_cache_entries.c.hit_count) == 2
+    assert _entry_col(entry_id, llm_cache_entries.c.last_hit_at) is not None
+
+
+def test_exact_cache_store_refreshes_expired_entry(cache_db):
+    """A re-store after expiry must refill the entry, not hand back the stale row."""
+    from pf_core.db import transaction
+    from pf_core.llm.cache._schema import llm_cache_entries
+
+    run_id = _make_run()
+    repo = ExactCacheRepo()
+    entry_id = repo.store(
+        input_hash="h" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=run_id,
+        parsed_output={"v": 1},
+        ttl_seconds=3600,
+    )
+    with transaction() as conn:
+        conn.execute(
+            llm_cache_entries.update()
+            .where(llm_cache_entries.c.id == entry_id)
+            .values(expires_at=dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc))
+        )
+    assert repo.lookup(input_hash="h" * 64, agent_type="classifier") is None
+
+    again = repo.store(
+        input_hash="h" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=run_id,
+        parsed_output={"v": 2},
+        ttl_seconds=3600,
+    )
+    assert again == entry_id
+    row = repo.lookup(input_hash="h" * 64, agent_type="classifier")
+    assert row is not None
+    assert row["parsed_output"] == {"v": 2}
+
+
+def test_exact_cache_store_preserves_hit_counters_across_refresh(cache_db):
+    from pf_core.llm.cache._schema import llm_cache_entries
+
+    run_id = _make_run()
+    repo = ExactCacheRepo()
+    kwargs = dict(
+        input_hash="i" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=run_id,
+    )
+    entry_id = repo.store(**kwargs)
+    repo.bump_hit(entry_id=entry_id)
+    repo.store(**kwargs)
+    assert _entry_col(entry_id, llm_cache_entries.c.hit_count) == 1
+
+
+@pytest.mark.parametrize("dialect_name, expected", [
+    ("postgresql", "ON CONFLICT (INPUT_HASH) DO UPDATE SET"),
+    ("sqlite", "ON CONFLICT (INPUT_HASH) DO UPDATE SET"),
+    ("mysql", "ON DUPLICATE KEY UPDATE"),
+])
+def test_store_compiles_to_a_portable_upsert(dialect_name, expected):
+    """The hand-rolled try-INSERT/except-SELECT this replaced could not work on
+    PostgreSQL — a failed statement aborts the transaction, so the recovery
+    SELECT raised InFailedSqlTransaction. The suite runs on SQLite, which is why
+    it went unnoticed; compiling per dialect catches it with no server."""
+    from sqlalchemy.dialects import mysql, postgresql, sqlite
+
+    from pf_core.db.upsert import _upsert_stmt
+    from pf_core.llm.cache._schema import llm_cache_entries
+
+    dialects = {
+        "postgresql": postgresql.dialect(),
+        "sqlite": sqlite.dialect(),
+        "mysql": mysql.dialect(),
+    }
+    stmt = _upsert_stmt(
+        dialect_name,
+        llm_cache_entries,
+        {"input_hash": "a" * 64, "agent_type_id": 1, "model_id": 1, "source_run_id": 1},
+        ["input_hash"],
+        ["agent_type_id", "model_id", "source_run_id"],
+    )
+    sql = str(stmt.compile(dialect=dialects[dialect_name])).upper()
+    assert expected in sql
 
 
 # ---------------------------------------------------------------------------

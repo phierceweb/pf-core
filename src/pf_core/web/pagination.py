@@ -29,8 +29,9 @@ Usage::
 
 from __future__ import annotations
 
-import os
 from typing import Any
+
+from pf_core.utils.env import resolve_positive_int
 
 
 def paginate_params(
@@ -63,7 +64,7 @@ def paginate_params(
         (``per_page + 1`` for has-next detection), ``sort``, ``dir``.
     """
     if max_per_page is None:
-        max_per_page = int(os.environ.get("MAX_PER_PAGE", "200"))
+        max_per_page = resolve_positive_int(None, "MAX_PER_PAGE", default=200)
 
     page = max(1, page)
     per_page = max(1, min(per_page, max_per_page))

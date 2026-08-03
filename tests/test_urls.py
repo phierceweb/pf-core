@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 
 import httpx
@@ -410,6 +411,15 @@ class TestCheckUrl:
         check_url("https://example.com")
         assert captured["timeout"] == 12
 
+    @pytest.mark.parametrize("bad", ["abc", "", "0", "-3"])
+    def test_malformed_timeout_env_falls_back(self, monkeypatch, bad):
+        # A typo in .env must not take the checker down mid-run.
+        monkeypatch.setenv("URL_CHECK_TIMEOUT", bad)
+        mock = MockClient(head_response=MockResponse(200))
+        captured = self._patch_client(monkeypatch, mock)
+        check_url("https://example.com")
+        assert captured["timeout"] == 8
+
     # -- TLS verification -------------------------------------------------
 
     def test_verifies_tls_by_default(self, monkeypatch):
@@ -699,13 +709,35 @@ class TestWaybackExistsAt:
 # ---------------------------------------------------------------------------
 
 class _ContentResponse:
-    def __init__(self, status_code: int, text: str = ""):
+    """Streaming stand-in: ``iter_bytes`` is what fetch_url_content consumes,
+    so the body is served in chunks and the caller can stop early."""
+
+    def __init__(
+        self,
+        status_code: int,
+        text: str = "",
+        *,
+        chunk_size: int = 64 * 1024,
+        charset_encoding: str | None = None,
+        headers: dict[str, str] | None = None,
+    ):
         self.status_code = status_code
         self.text = text
+        self.charset_encoding = charset_encoding
+        self.headers = headers or {}
+        self._chunk_size = chunk_size
+        self.bytes_served = 0
+
+    def iter_bytes(self):
+        raw = self.text.encode(self.charset_encoding or "utf-8")
+        for i in range(0, len(raw), self._chunk_size):
+            chunk = raw[i : i + self._chunk_size]
+            self.bytes_served += len(chunk)
+            yield chunk
 
 
 class _ContentClient:
-    """Stub for httpx.Client that captures GET calls and returns a canned body."""
+    """Stub for httpx.Client that captures stream calls and returns a canned body."""
 
     def __init__(self, response: _ContentResponse | None = None,
                  get_error: Exception | None = None):
@@ -713,11 +745,13 @@ class _ContentClient:
         self.get_error = get_error
         self.captured: dict = {}
 
-    def get(self, url: str):
+    @contextlib.contextmanager
+    def stream(self, method: str, url: str):
         self.captured["url"] = url
+        self.captured["method"] = method
         if self.get_error is not None:
             raise self.get_error
-        return self.response
+        yield self.response
 
     def __enter__(self):
         return self
@@ -773,6 +807,65 @@ class TestFetchUrlContent:
         self._patch(monkeypatch, client)
         _, _, body = fetch_url_content("https://example.com/")
         assert len(body.encode("utf-8", errors="ignore")) <= 512 * 1024
+
+    def test_stops_reading_at_the_cap(self, monkeypatch):
+        """The old path called ``resp.text``, pulling the whole body — and with
+        ``Content-Encoding: gzip`` inflating it entirely before truncating."""
+        resp = _ContentResponse(200, "x" * (8 * 1024 * 1024), chunk_size=64 * 1024)
+        self._patch(monkeypatch, _ContentClient(resp))
+        fetch_url_content("https://example.com/")
+        assert resp.bytes_served < 8 * 1024 * 1024
+        assert resp.bytes_served <= 512 * 1024 + 64 * 1024  # cap plus one chunk
+
+    def test_requests_identity_encoding(self, monkeypatch):
+        """Asking for identity is what keeps a compressed bomb from inflating
+        inside httpx's decoder before the cap can apply."""
+        captured: dict = {}
+        client = _ContentClient(_ContentResponse(200, "ok"))
+
+        def factory(**kwargs):
+            captured.update(kwargs)
+            return client
+
+        monkeypatch.setattr(httpx, "Client", factory)
+        fetch_url_content("https://example.com/")
+        assert captured["headers"]["Accept-Encoding"] == "identity"
+
+    def test_uses_declared_charset(self, monkeypatch):
+        resp = _ContentResponse(200, "café", charset_encoding="latin-1")
+        self._patch(monkeypatch, _ContentClient(resp))
+        _, _, body = fetch_url_content("https://example.com/")
+        assert body == "café"
+
+    def test_redirect_hops_are_still_ssrf_checked(self, monkeypatch):
+        """Streaming must not lose the per-hop guard."""
+        seen: list[str] = []
+
+        def guard(url, *_a, **_k):
+            seen.append(url)
+
+        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", guard)
+
+        class _Redirecting(_ContentClient):
+            def __init__(self):
+                super().__init__()
+                self._n = 0
+
+            @contextlib.contextmanager
+            def stream(self, method, url):
+                self._n += 1
+                if self._n == 1:
+                    yield _ContentResponse(
+                        302, "", headers={"location": "https://elsewhere.example/x"}
+                    )
+                else:
+                    yield _ContentResponse(200, "landed")
+
+        self._patch(monkeypatch, _Redirecting())
+        code, _, body = fetch_url_content("https://example.com/")
+        assert code == 200
+        assert body == "landed"
+        assert seen == ["https://example.com/", "https://elsewhere.example/x"]
 
     def test_verifies_tls_by_default(self, monkeypatch):
         # The fetched body flows to downstream LLMs — TLS must be verified
@@ -893,3 +986,33 @@ class TestExtractArticleMetadata:
         result = extract_article_metadata(html)
         # Goal: no exception; at least title captured
         assert "x" in result["title"] or result["title"] == ""
+
+
+class TestReExports:
+    """The pure helpers resolve off ``pf_core.utils`` with no ``[http]`` extra —
+    they are defined in the stdlib-only ``url_parse`` / ``url_html`` modules and
+    must not be routed through the httpx-backed ``urls`` facade."""
+
+    @pytest.mark.parametrize("name", [
+        "archive_timestamp_is_round",
+        "canonical_url",
+        "domain_of",
+        "extract_path_date",
+    ])
+    def test_url_parse_helpers_reexported(self, name):
+        import pf_core.utils as utils
+        from pf_core.utils import url_parse
+
+        assert getattr(utils, name) is getattr(url_parse, name)
+
+    def test_extract_article_metadata_reexported(self):
+        import pf_core.utils as utils
+        from pf_core.utils import url_html
+
+        assert utils.extract_article_metadata is url_html.extract_article_metadata
+
+    @pytest.mark.parametrize("name", ["check_url", "fetch_url_content", "wayback_exists_at"])
+    def test_httpx_backed_helpers_still_lazy(self, name):
+        import pf_core.utils as utils
+
+        assert utils._LAZY[name] == "pf_core.utils.urls"
