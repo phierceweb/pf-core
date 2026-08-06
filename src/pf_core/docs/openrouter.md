@@ -56,7 +56,7 @@ content, usage = client.chat(
 
 **content** (`str`): The assistant's response text, exactly as returned by the model — nothing is appended.
 
-**usage** (`dict`): Token counts and cost. Carries the same key set as [`AnthropicClient.chat`](anthropic.md) and [`ClaudeCodeClient.chat`](claude-code.md):
+**usage** (`dict`): Token counts and cost. Carries the shared key set of [`AnthropicClient.chat`](anthropic.md) and [`ClaudeCodeClient.chat`](claude-code.md), plus `finish_reason`:
 
 ```python
 {
@@ -68,10 +68,21 @@ content, usage = client.chat(
     "cost_usd": 0.0023,           # from OpenRouter's reported `cost` field
     "duration_ms": 3400,
     "system_fingerprint": None,
+    "finish_reason": "stop",      # OpenRouter-only extra key
 }
 ```
 
 `cost_usd` is OpenRouter's own reported cost for the call (the `usage.cost` field) — not a local estimate.
+
+`finish_reason` is the first choice's finish reason as the route reported it (`None` when absent). **`"length"` means the model hit `max_tokens` and `content` is truncated mid-stream** — a short string that looks complete. Truncated content is still returned (so [`parse_llm_json(recover=True)`](llm-parse.md) can salvage it), and the client logs an `openrouter_truncated` warning; callers that need whole responses must check the key:
+
+```python
+content, usage = client.chat(messages, model=model, max_tokens=4096)
+if usage["finish_reason"] == "length":
+    ...  # retry with a larger max_tokens, or continue the completion
+```
+
+A response with an empty or missing `choices` array raises `OpenRouterError` rather than an `IndexError`/`KeyError`.
 
 For routes that return citations (e.g. Perplexity models), `usage` additionally carries a `citations` key — a plain list of URL strings. The key is present only when the response includes citations:
 
@@ -127,8 +138,18 @@ except OpenRouterError as e:
 client = get_client(retry=2)  # up to 3 total attempts
 content, usage = client.chat(messages, model="...")
 # Each retry logs warning event openrouter_retry_status / _retry_timeout
-# with attempt count, status, and body head.
+# with attempt count, status, body head, and the delay it slept.
 ```
+
+### Pacing
+
+Every re-attempt sleeps first — an unpaced retry budget would burn all its attempts inside a millisecond, while the rate-limit window that rejected the first call is still saturated.
+
+- **429 with a numeric `Retry-After`** — sleeps for that many seconds, clamped to 0–30. A malformed or absent header (an HTTP-date form, or a `NaN`) falls back to backoff; a negative value floors to no wait rather than reaching `time.sleep`, which rejects it.
+- **Everything else** (5xx, timeout, 429 without the header) — `0.5 s × attempt number` (0.5 s, 1.0 s, 1.5 s …) plus up to 25% jitter, so parallel workers don't re-hit the same window in lockstep.
+- **The final attempt never sleeps** — the error raises immediately once the budget is spent.
+
+`Retry-After` is honoured on 429 only; on 5xx it is ignored, matching [`pf_core.fetch`](fetch.md).
 
 ## Timeout handling
 

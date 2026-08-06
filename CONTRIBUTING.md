@@ -7,9 +7,10 @@ welcome.
 ## Scope — read this first
 
 pf-core is **infrastructure only**. It must never contain business logic, domain
-models, route handlers, CLI commands, or project-specific configuration —
-anything that only makes sense inside one application belongs in that
-application, not here.
+models, or project-specific configuration — anything that only makes sense
+inside one application belongs in that application, not here. It does ship
+generic entry points (the mountable admin routers, the `pf-*` console scripts);
+those are fine because everything they touch is framework-owned.
 
 A feature earns its place in pf-core when **two or more independent projects**
 need it. A pattern that lives in a single project should stay there until a
@@ -37,10 +38,14 @@ For lighter work, install only the extras you're touching — the base
 These three checks run in CI and as pre-commit hooks — run them locally first:
 
 ```bash
-pytest                                  # full suite, must be green
-ruff check src tests                    # lint
-python -m pf_core.guards                # structural gate (reads .pf-guards.toml)
+bin/test                                # full suite, must be green
+bin/run ruff check src tests            # lint
+bin/run python -m pf_core.guards        # structural gate (reads .pf-guards.toml)
 ```
+
+`bin/test` and `bin/run` dispatch through `.venv/` — the same wrappers
+`bin/new-consumer` scaffolds into consumer projects. With the venv activated the
+bare `pytest` / `ruff` commands work too.
 
 And hold the change to these standards:
 

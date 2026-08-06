@@ -22,14 +22,18 @@ Walks a multi-step fallback pipeline to extract valid JSON from LLM output:
 
 1. Strip markdown fences (` ```json ... ``` `)
 2. Try `json.loads()` on cleaned text (strict)
-3. Try targeted extraction (`extract_json_array` / `extract_json_object`)
-4. Try truncated array recovery (when `recover=True`)
+3. Try targeted extraction — `extract_json_array` / `extract_json_object`, or `extract_json` for `expect="any"`. Every balanced span is tried and ranked by content, not just the first ([which span wins](json-recovery.md#which-span-wins))
+4. Try truncated array recovery (when `recover=True`), anchored on the first *unclosed* bracket
 5. Try `json_repair.loads()` — permissive last-resort repair (when `recover=True`). Handles unescaped inner double quotes in string values (e.g. embedded quoted dialogue), backslash-escaped single quotes, trailing commas, unquoted keys, single-quoted strings.
 6. Type-check against `expect` parameter
 
 Strict parsing runs first so well-formed responses stay on the fast path — `json_repair` is only called when the stricter steps have all failed, which keeps its permissive tolerance from masking genuine structural defects.
 
-> **Truncation is lossy and unsignaled in the return.** Step 4 salvages the complete-object prefix of an array cut off at `max_tokens` and **drops the incomplete tail** — `[{"a":1},{"b":2},{"c":3` returns `[{"a":1},{"b":2}]`. The return type carries no truncation flag, so a caller can't tell a salvaged-partial result from a complete one by value. When it fires, the parser logs a **WARNING** (`parse_llm_json_recovered_truncated`, with the recovered item count) precisely so a batch pipeline can't silently shed the tail of every long response — watch that event, or raise `max_tokens`, if completeness matters. Pass `recover=False` to disable truncation recovery (and `json_repair`) entirely and get `None` on any truncated input instead.
+> **Truncation is lossy and unsignaled in the return.** Step 4 salvages the complete-object prefix of an array cut off at `max_tokens` and **drops the incomplete tail** — `[{"a":1},{"b":2},{"c":3` returns `[{"a":1},{"b":2}]`. The return type carries no truncation flag, so a caller can't tell a salvaged-partial result from a complete one by value: 40 records in, 15 rows out, exit 0.
+>
+> Pass **`on_truncation="raise"`** to get an `InvalidInputError` instead of the prefix — that is the only way to fail a run that must not shed records, and it is what [`tracked_call`](llm-tracked.md) defaults to. Under the default `on_truncation="warn"` the parser returns the prefix and logs a **WARNING** (`parse_llm_json_recovered_truncated`, with the recovered item count) — watch that event, or raise `max_tokens`, if completeness matters. `recover=False` disables truncation recovery (and `json_repair`) entirely and returns `None` on any truncated input.
+>
+> `on_truncation` governs step 4 only. A truncated *object* is completed by `json_repair` in step 5 and is not covered.
 
 ```python
 # Parse any JSON
@@ -45,8 +49,12 @@ parse_llm_json('```json\n[1, 2]\n```', expect="array")  # [1, 2]
 # Handle trailing prose
 parse_llm_json('[{"a":1}]\nHere is my explanation...') # [{"a": 1}]
 
-# Recover truncated arrays
+# Recover truncated arrays — prefix salvaged, tail dropped, WARNING logged
 parse_llm_json('[{"a":1},{"b":2},{"c":3', expect="array")  # [{"a":1},{"b":2}]
+
+# …or refuse the partial result
+parse_llm_json('[{"a":1},{"b":2},{"c":3', expect="array", on_truncation="raise")
+# raises InvalidInputError
 
 # Repair malformed LLM output — unescaped inner quotes, trailing commas, etc.
 parse_llm_json('{"quote": "She said, "Hello.""}', expect="object")
@@ -65,6 +73,7 @@ parse_llm_json('{"q": "she said, "hi""}', recover=False)  # → None
 | `expect` | `str` | `"any"` | Expected type: `"any"`, `"array"`, or `"object"` |
 | `recover` | `bool` | `True` | Enable both truncated-array recovery and `json_repair` permissive repair. Set `False` for strict parse semantics. |
 | `strict` | `bool` | `False` | Raise `InvalidInputError` instead of returning `None` |
+| `on_truncation` | `str` | `"warn"` | What step 4 does with a salvaged prefix: `"warn"` returns it and logs a WARNING, `"raise"` raises `InvalidInputError`. Independent of `strict`. |
 
 Returns `dict | list | None`.
 

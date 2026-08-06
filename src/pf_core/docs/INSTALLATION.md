@@ -13,7 +13,7 @@ How to install `pf-core` for local development, deploy from PyPI, and pick the r
 | Lightweight LLM tool — clients + anti-slop guards | `pip install pf-core[llm]` |
 | Crawl/fetch web pages — title, body, publish date, liveness | `pip install pf-core[crawl]` |
 | Active pf-core development on this machine | `pip install -e ~/projects/pf-core` |
-| New consumer project, full app framework | Pin `pf-core[full,<dialect>]~=0.17.0` in `pyproject.toml`, then `pip install -e .` |
+| New consumer project, full app framework | Pin `pf-core[full,<dialect>]~=0.18.0` in `pyproject.toml`, then `pip install -e .` |
 | Fresh machine, consumer only | `git clone <project>` → `pip install -e .` (pulls pf-core from PyPI automatically) |
 | Fresh machine, also editing pf-core | Clone pf-core → `pip install -e ~/projects/pf-core` (overrides the PyPI pin) |
 
@@ -38,7 +38,7 @@ Pin a compatible release in your project's `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "pf-core[full,postgres]~=0.17.0",
+    "pf-core[full,postgres]~=0.18.0",
 ]
 ```
 
@@ -131,11 +131,11 @@ Real-world shapes, by project type. Anything importing `pf_core.clients` / `pf_c
 
 | Project shape | Install line |
 |---|---|
-| Full-stack web app, Postgres | `pf-core[full,llm,postgres]~=0.17.0` |
-| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles]~=0.17.0` (+ `[redis,ratelimit]` if caching/limits are used) |
-| Full-stack web app, SQLite | `pf-core[full,llm]~=0.17.0` (SQLite driver is stdlib) |
-| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm]~=0.17.0` |
-| Foundation-only CLI (no LLM at all) | `pf-core[cli]~=0.17.0` |
+| Full-stack web app, Postgres | `pf-core[full,llm,postgres]~=0.18.0` |
+| Full-stack web app, MySQL + article ingest | `pf-core[full,llm,mysql,articles]~=0.18.0` (+ `[redis,ratelimit]` if caching/limits are used) |
+| Full-stack web app, SQLite | `pf-core[full,llm]~=0.18.0` (SQLite driver is stdlib) |
+| Batch document pipeline (no web/db) | `pf-core[image-phash,tracking,llm]~=0.18.0` |
+| Foundation-only CLI (no LLM at all) | `pf-core[cli]~=0.18.0` |
 
 ## Updating the dependency
 
@@ -158,14 +158,14 @@ git tag vX.Y.Z
 git push origin main --tags
 
 # 3. Bump the compatible-release pin in each consumer's pyproject.toml
-#    "pf-core[full,postgres]~=0.17.0"
+#    "pf-core[full,postgres]~=0.18.0"
 
 # 4. Reinstall in each consumer
 cd ~/projects/my-project
 pip install -U -e .
 ```
 
-PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). A `~=0.17.0` consumer picks up `0.16.x` patches on the next reinstall with no pin change; a new minor (`0.17.x`) requires a deliberate pin bump. Patch fixes land on the newest minor only — once a new minor ships, older lines are frozen, so bumping the pin is how a consumer keeps receiving fixes. If OIDC trusted publishing isn't active for the run, publish manually from the pf-core checkout: `python -m build && twine upload -u __token__ dist/*`.
+PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). A `~=0.18.0` consumer picks up `0.18.x` patches on the next reinstall with no pin change; the next minor requires a deliberate pin bump. Patch fixes land on the newest minor only — once a new minor ships, older lines are frozen, so bumping the pin is how a consumer keeps receiving fixes. If OIDC trusted publishing isn't active for the run, publish manually from the pf-core checkout: `python -m build && twine upload -u __token__ dist/*`.
 
 ### On a fresh machine
 
@@ -203,10 +203,10 @@ If the path points into `site-packages`, you're editing files that aren't being 
 cd ~/projects/pf-core
 python3.12 -m venv .venv                          # 3.11+; skip if .venv already exists
 .venv/bin/python -m pip install -e ".[full,dev,anthropic]"
-.venv/bin/pytest
+bin/test                                          # args pass through to pytest
 ```
 
-The `[dev]` extra installs pytest. The base fixture `pf_app_client` is auto-registered as a pytest plugin via the `pf_core` entry point in `pyproject.toml` — no `conftest.py` import needed. The DB fixtures (`pf_engine`, `pf_connection`, `pf_tables`) require the `[db]` extra and are opt-in: add `pytest_plugins = ["pf_core.testing.db_fixtures"]` to your `conftest.py`. See [testing.md](testing.md).
+The `[dev]` extra installs pytest. The base fixtures `pf_app_client` and `pf_budget_disabled` are auto-registered as a pytest plugin via the `pf_core` entry point in `pyproject.toml` — no `conftest.py` import needed. The DB fixtures (`pf_engine`, `pf_connection`, `pf_tables`) require the `[db]` extra and are opt-in: add `pytest_plugins = ["pf_core.testing.db_fixtures"]` to your `conftest.py`. See [testing.md](testing.md).
 
 The full test suite requires `[full,dev,anthropic]` — most fixtures and integration tests exercise the DB and web layers, and the Anthropic client tests patch the `anthropic` SDK, which is its own extra (not part of `full`). Without `[anthropic]`, those tests error instead of skipping.
 

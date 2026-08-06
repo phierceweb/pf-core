@@ -38,6 +38,8 @@ _UL_ITEM = re.compile(r"^\s*[-*]\s+(.+)$")
 _OL_ITEM = re.compile(r"^\s*\d+\.\s+(.+)$")
 _MD_HEADING = re.compile(r"^(#{1,4})\s+(.+)$")
 
+_HREF_SLOT = "\x00{}\x00"
+
 
 def _is_safe_href(href: str) -> bool:
     """Reject dangerous URL schemes (``javascript:``, ``data:``, …) in links.
@@ -52,9 +54,14 @@ def _is_safe_href(href: str) -> bool:
     return ":" not in h.split("/", 1)[0]
 
 
-def _apply_links(text: str) -> str:
-    """Convert [label](url) links, supporting nested parens in URLs."""
+def _apply_links(text: str) -> tuple[str, list[str]]:
+    """Convert [label](url) links, supporting nested parens in URLs.
+
+    Hrefs are emitted as NUL-delimited slots (put back by :func:`_restore_hrefs`)
+    so the inline passes that follow can't rewrite a URL containing ``*`` or a backtick.
+    """
     out: list[str] = []
+    hrefs: list[str] = []
     i = 0
     n = len(text)
     while i < n:
@@ -82,14 +89,22 @@ def _apply_links(text: str) -> str:
         label = text[i + 1 : close_bracket]
         href = text[close_bracket + 2 : j - 1]
         if _is_safe_href(href):
+            hrefs.append(href)
+            slot = _HREF_SLOT.format(len(hrefs) - 1)
             out.append(
-                f'<a href="{href}" rel="nofollow noopener" target="_blank">{label}</a>'
+                f'<a href="{slot}" rel="nofollow noopener" target="_blank">{label}</a>'
             )
         else:
             # Unsafe scheme — drop the link, keep the (already-escaped) label text.
             out.append(label)
         i = j
-    return "".join(out)
+    return "".join(out), hrefs
+
+
+def _restore_hrefs(text: str, hrefs: list[str]) -> str:
+    for index, href in enumerate(hrefs):
+        text = text.replace(_HREF_SLOT.format(index), href)
+    return text
 
 
 def _inline_md(
@@ -102,11 +117,12 @@ def _inline_md(
     if extra_transforms:
         for fn in extra_transforms:
             result = fn(result)
-    result = _apply_links(result)
+    result = result.replace("\x00", "")  # so input can't forge an href slot
+    result, hrefs = _apply_links(result)
     result = _MD_CODE.sub(r"<code>\1</code>", result)
     result = _MD_BOLD.sub(r"<strong>\1</strong>", result)
     result = _MD_ITALIC.sub(r"<em>\1</em>", result)
-    return result
+    return _restore_hrefs(result, hrefs)
 
 
 def safe_markdown(

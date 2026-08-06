@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import socket
+from pathlib import Path
+
 import pytest
 
+import pf_core
 from pf_core.exceptions import InvalidInputError
 from pf_core.utils import url_safety
 from pf_core.utils.url_safety import assert_public_url, guarded_get
+
+_URLS_DOC = Path(pf_core.__file__).resolve().parent / "docs" / "urls.md"
 
 
 class TestAssertPublicUrl:
@@ -79,6 +85,41 @@ class TestAssertPublicUrl:
         monkeypatch.setattr(socket, "getaddrinfo", boom)
         with pytest.raises(InvalidInputError):
             assert_public_url("http://nonexistent.invalid/figure.png")
+
+
+class TestVettedAddressesAreReturned:
+    """The guard resolves the host; callers need those addresses to pin to."""
+
+    def test_returns_resolved_address(self):
+        assert assert_public_url("http://1.1.1.1/") == ("1.1.1.1",)
+
+    def test_returns_every_address_deduped_in_order(self, monkeypatch):
+        infos = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1::1", 80, 0, 0)),
+        ]
+        monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: infos)
+        assert assert_public_url("http://example.com/") == (
+            "93.184.216.34",
+            "2606:2800:220:1::1",
+        )
+
+    def test_allow_private_returns_no_vetted_addresses(self, monkeypatch):
+        monkeypatch.setenv("URL_FETCH_ALLOW_PRIVATE", "1")
+        assert assert_public_url("http://127.0.0.1/") == ()
+
+
+class TestRebindingIsDocumented:
+    """The guard does not survive a DNS rebind; nothing may claim otherwise."""
+
+    def test_module_docstring_states_the_gap(self):
+        doc = (url_safety.__doc__ or "").lower()
+        assert "rebinding" in doc
+        assert "toctou" in doc
+
+    def test_urls_doc_states_the_gap(self):
+        assert "rebinding" in _URLS_DOC.read_text().lower()
 
 
 class _Resp:

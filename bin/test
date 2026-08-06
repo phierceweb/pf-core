@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run the test suite via the project venv. Args pass through to pytest.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+exec "$ROOT/.venv/bin/python" -m pytest "$@"

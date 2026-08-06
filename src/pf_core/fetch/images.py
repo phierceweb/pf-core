@@ -38,6 +38,8 @@ _IMAGE_EXTENSIONS = (
     ".avif", ".heic", ".bmp", ".tiff", ".ico", ".jxl",
 )
 
+_EXTENSION_RE = re.compile(r"\.[A-Za-z0-9]{1,5}$")
+
 _DEFAULT_MAX_BYTES = 25 * 1024 * 1024
 _DEFAULT_TIMEOUT_S = 30.0
 
@@ -262,9 +264,14 @@ def _targets(text: str, base_url: str | None) -> list[tuple[str, str]]:
 
 def _is_image_url(url: str) -> bool:
     """Image extension or none at all (opaque CDN URLs) qualifies; only a
-    non-image extension (``.html``/``.css``/…) is rejected."""
-    suffix = Path(urlparse(url).path.rstrip("/")).suffix.lower()
-    return suffix == "" or suffix in _IMAGE_EXTENSIONS
+    non-image extension (``.html``/``.css``/…) is rejected.
+
+    ``Path.suffix`` is not the test: a dot in an extensionless CDN basename
+    (``.../asset-v3.1-large``, ``.../asset.jpg-1``) would read as an extension
+    and skip a real image.
+    """
+    match = _EXTENSION_RE.search(Path(urlparse(url).path.rstrip("/")).name)
+    return match is None or match.group(0).lower() in _IMAGE_EXTENSIONS
 
 
 def _setup(

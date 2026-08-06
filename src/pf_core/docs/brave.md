@@ -135,9 +135,8 @@ def search_with_retry(query):
 
 Brave free tier is **1 query per second**. The client never auto-sleeps — callers manage QPS. For batched workloads, either:
 
-1. Use the paid tier (higher QPS).
-2. Add a `time.sleep(1)` between calls in your loop.
-3. Use a token bucket (e.g. `pf_core.utils.ratelimit` if available, or `pyrate-limiter`).
+1. Pace the loop with [`Throttle`](throttle.md) — `Throttle.per_second(1)`, then `acquire()` before each `search()`. Thread-safe, so the cap holds even when the calls fan out through `pf_core.parallel.run_parallel`.
+2. Use the paid tier (higher QPS).
 
 ## Env vars
 
@@ -153,3 +152,4 @@ Resolved through [`utils.env`](env.md): an explicit `get_client(...)` argument w
 ## See also
 
 - `pf_core.utils.article_fetch` — the natural pairing: Brave gives you URLs, article_fetch turns them into structured content
+- [`throttle`](throttle.md) — the pacing primitive for holding the free tier's 1 QPS cap

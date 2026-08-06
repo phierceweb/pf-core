@@ -74,6 +74,9 @@ DEFAULT_PREFLIGHT_TIMEOUT_SECONDS = 30
 # why lives in ClaudeCodeClient's `isolate` docstring.
 _SAFE_MODE_FLAG = "--safe-mode"
 
+# Backoff before retry N (0-based): _RETRY_BACKOFF_BASE * (N + 1) seconds.
+_RETRY_BACKOFF_BASE = 0.5
+
 
 class ClaudeCodeError(AppError):
     """The ``claude --print`` subprocess call failed (binary missing,
@@ -199,8 +202,8 @@ class ClaudeCodeClient:
             if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
         }
 
-        # Up to (self.retry + 1) attempts. Default retry=0 means one shot.
-        # Both timeout and non-zero exit are treated as transient — both
+        # Up to (self.retry + 1) attempts, backing off between them. Both
+        # timeout and non-zero exit are treated as transient — both
         # have legitimate retryable causes (rate-limit windows, momentary
         # auth refresh, model warm-up). Missing binary / empty messages
         # already raised above and aren't reached here.
@@ -225,6 +228,7 @@ class ClaudeCodeClient:
                         of=self.retry + 1,
                         timeout=wall_timeout,
                     )
+                    time.sleep(_RETRY_BACKOFF_BASE * (attempt + 1))
                     continue
                 raise ClaudeCodeError(
                     f"`{self.binary} --print` timed out after {wall_timeout}s "
@@ -241,6 +245,7 @@ class ClaudeCodeClient:
                         returncode=result.returncode,
                         stderr_head=result.stderr[:200],
                     )
+                    time.sleep(_RETRY_BACKOFF_BASE * (attempt + 1))
                     continue
                 raise ClaudeCodeError(
                     f"`{self.binary} --print` exited {result.returncode} "

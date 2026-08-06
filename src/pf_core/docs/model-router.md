@@ -34,7 +34,7 @@ This is not the LLM tracking backbone. Tracking (`pf_core.llm.tracking`) records
 - **`llm_runs` is actuals.** Every invocation's real model, fingerprint, tokens, cost, and sampling params land in the tracking tables. The router never writes to the DB.
 - **Per-backend models, never translated.** The same model is `anthropic/claude-sonnet-4.6` on OpenRouter, `sonnet` as a claude_code alias, and `claude-sonnet-4-6` to the Anthropic SDK — these are not mechanically convertible, so the nested form declares a model string per backend and the router never rewrites ids.
 - **Capability constraint by omission.** An agent only routes to backends it declares. An agent that only lists an `openrouter` backend can never be rotated onto a backend that lacks a capability it needs.
-- **Fallback is opt-in and comes in two shapes, both gated by `fallback: true`.** *Availability* fallback (`resolve_agent`): a declared backend whose client can't be constructed or whose `preflight()` fails is skipped at acquisition time. *Call-failure* fallback (`call_with_fallback` / `resolve_agent_candidates`): a `chat()` that raises moves to the next declared backend with **its own** model — the call itself is the probe, no preflight. An env-selected backend participates in both (its choice goes first in the chain); only an explicit per-call `backend=` is deterministic. Clients still own same-backend retry, and per-call quality ladders ("try X, judge, then Y") stay caller-owned business logic.
+- **Fallback is opt-in and comes in two shapes, both gated by `fallback: true`.** *Availability* fallback (`resolve_agent`): a declared backend whose client can't be constructed or whose `preflight()` fails is skipped at acquisition time. *Call-failure* fallback (`call_with_fallback` / `resolve_agent_candidates`): a `chat()` that raises anything but a `FlowException` moves to the next declared backend with **its own** model — the call itself is the probe, no preflight. An env-selected backend participates in both (its choice goes first in the chain); only an explicit per-call `backend=` is deterministic. Clients still own same-backend retry, and per-call quality ladders ("try X, judge, then Y") stay caller-owned business logic.
 - **Reload without restart.** The loader caches the parsed YAML for a TTL. Edit the file, wait one interval, the next call sees the new config.
 
 **Do:** name agent slugs the same across YAML, call sites, and `assert_agents_registered(...)`.
@@ -175,7 +175,7 @@ content, usage = client.chat(messages=msgs, **cfg)
 - `backend` in the result is the resolved name — pass it to tracking as the `provider` label.
 - With `fallback: true` (selection from YAML *or* env — the env choice goes first in the chain), unavailable backends (factory error or failed `preflight()`) are skipped in declaration order; all-unavailable raises `ConfigurationError` naming each failure. Without fallback there is no preflight call and acquisition errors propagate unchanged.
 
-### `call_with_fallback(slug, messages, *, model_override=None, retry_on=(Exception,)) -> FallbackCall`
+### `call_with_fallback(slug, messages, *, model_override=None, retry_on=None) -> FallbackCall`
 
 Call-failure fallback in one line — walks the agent's chain and calls `chat()` on each candidate (with that candidate's own model and kwargs) until one succeeds. `FallbackCall` unpacks as `(content, usage, resolved)`.
 
@@ -186,7 +186,7 @@ content, usage, resolved = call_with_fallback("summarizer", msgs)
 # resolved.backend answered — use it as the tracking provider label
 ```
 
-- An exception matching `retry_on` logs and moves to the next backend; anything else propagates immediately. Narrow `retry_on` to transport-shaped errors (`(ClientError,)`, timeouts) so a deterministic bug doesn't burn a second backend.
+- By default (`retry_on=None`) every `Exception` **except** `FlowException` logs and moves to the next backend; a `FlowException` propagates immediately, since a budget cap, invalid request, or missing config fails identically on the next backend and falling back only spends money. Passing `retry_on` replaces the set exactly — including the `FlowException` carve-out, so `retry_on=(Exception,)` does fall back on one. Narrow it to transport-shaped errors (`(ClientError,)`, timeouts) to be stricter still.
 - No `preflight()` on this path — the call itself is the probe.
 - Exhaustion re-raises the **last call exception unchanged** (existing except clauses keep working); if no backend was even constructable, raises `ConfigurationError` listing the failures.
 - Without `fallback: true` this is a plain single-backend call.

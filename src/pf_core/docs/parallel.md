@@ -36,7 +36,7 @@ run_parallel(
 - Progress prints to stderr: `  Processed 3/10: item_label`
 - Thread-safe progress counter
 - `workers=1` runs sequentially (no thread pool overhead)
-- Exceptions from `fn` propagate after all futures complete
+- Every item is attempted regardless of sibling failures, at any `workers` width. Exceptions from `fn` are held until the batch ends, then raised: one failure re-raises unchanged, several raise an `ExceptionGroup` over all of them (catch with `except*`, or `except ExceptionGroup`)
 - Item labels are auto-extracted: tuples use the second element (or first if not an int), other types use `str(item)[:60]`
 - Each worker receives its own snapshot of the calling thread's `contextvars` (via `copy_context()` per task), so `ContextVar`s set in the parent — including the `Job()` context manager from `pf_core.jobs.runtime` — remain visible inside `fn`. Mutations inside one worker do not leak to siblings or the parent.
 
@@ -57,7 +57,7 @@ run_parallel(
 
 ## Batch resilience — `resilient` decorator
 
-By default, an exception inside `fn` propagates after all in-flight futures finish, aborting the batch. For LLM-style workloads where one bad item shouldn't waste the rest of the batch, use the `resilient` decorator to absorb per-item failures into a list while siblings keep running.
+By default, exceptions inside `fn` are re-raised at end-of-batch, so the caller still has to unpack them to know which items failed. For LLM-style workloads, use the `resilient` decorator to absorb per-item failures into a list the caller reads directly — no exception, and each failure logged and reported as it happens.
 
 ```python
 from pf_core.parallel import resilient, run_parallel
@@ -117,5 +117,7 @@ run_parallel(items, summarize_one, workers=4, label="Summarized", failures=failu
 ```
 
 The summary level distinguishes the two cases so dashboards and log filters can alert on the warning case (any failure in the batch) without false positives from the all-succeeded case.
+
+The failed count is `len(failures)` plus any exceptions that escaped `fn` (items `resilient` did not absorb), so the summary is emitted — and accurate — even on the batch that ends by raising.
 
 The summary is opt-in — without `failures=`, no summary log is emitted. Empty `items` lists also skip the summary.

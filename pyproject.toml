@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pf-core"
-version = "0.17.0"
+version = "0.18.1"
 description = "Python foundation for LLM apps whose prompts and spend you can actually see — versioned prompts, every call recorded and replayable, budgets, evals, and resumable jobs on one schema; opt-in LLM, database, and FastAPI layers"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -78,8 +78,8 @@ cli = [
 # pf_core.llm.validate (pydantic schema/semantic validation). Pure-Python —
 # NO httpx / clients / tenacity / db — so a project can validate LLM output
 # (or wire its own transport) without the client stack. The stdlib/pyyaml
-# members of pf_core.llm (json_helpers, url_check, prompts, router,
-# safe_apply) need no extra at all once pf_core.llm imports lazily.
+# members of pf_core.llm (url_check, prompts, router, safe_apply, recording)
+# need no extra at all once pf_core.llm imports lazily.
 validate = [
     "json-repair>=0.40",
     "pydantic>=2.0",

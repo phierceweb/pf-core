@@ -22,3 +22,11 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      # The gate script is gitignored (it names private consumers), so it is
+      # absent in a public clone — skip rather than fail there.
+      - id: fingerprints
+        name: fingerprint gate
+        entry: bash -c 'if [ -f .ai/scripts/check-fingerprints.sh ]; then bash .ai/scripts/check-fingerprints.sh; else echo "fingerprint gate not present - skipped"; fi'
+        language: system
+        pass_filenames: false
+        always_run: true

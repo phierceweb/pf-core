@@ -89,20 +89,26 @@ This is the payoff over a single call: you get a principled confidence estimate,
 
 ## What the admin surfaces
 
-- `/admin/llm/run/{winning_run_id}` — sibling links point at the other N-1 runs
-- `/admin/llm/cost-by-agent` — the full N calls all appear under the same `agent_type`, so the cost overhead is visible per-tag or per-experiment
-- Tag experiments that use self-consistency with `consistency:n=5` so comparisons are legible
+- `/admin/llm/run/{winning_run_id}` — sibling links point at the other N-1 runs, and the run's tags
+- `/admin/llm/cost-by-agent` — the full N calls all appear under the same `agent_type`, so the N-fold overhead lands in that agent's total
 
 ## Tag convention
 
-When shipping a self-consistency variant alongside the base agent, add a tag so the admin can separate their metrics:
+When shipping a self-consistency variant alongside the base agent, tag its runs so the two cohorts stay separable. Tags are written when the row is recorded, and `@track_run` has no tag hook — record through [`tracked_messages_call`](../llm-tracked.md) instead of the decorator when you want them:
 
 ```python
-# Service side:
-run_parallel(
-    ...,
-    # each tracked call adds this tag via @track_run(tags=[...]) or explicit LlmRunRepo.add_tag
+from pf_core.llm.tracked import tracked_messages_call
+
+content, usage, run_id = tracked_messages_call(
+    client=client,
+    agent_type="classifier",
+    messages=messages,
+    model=cfg["model"],
+    sampling={"temperature": 0.7},
+    metadata={"consistency": f"n={n}"},   # → tag "consistency:n=5"
 )
 ```
 
-Tags like `consistency:n=5` and `consistency:n=1` let `/admin/llm/cost-by-tag` show the cost/accuracy tradeoff directly.
+`LlmRunRepo.record(tags=["consistency:n=5"])` is the lower-level equivalent.
+
+There is no cost-by-tag page. To compare `consistency:n=5` against `consistency:n=1`, pull each cohort's run ids with `LlmRunStatsRepo.runs_with_all_tags([...])` (see [LLM tracking](../llm-tracking.md)) and aggregate cost over them.

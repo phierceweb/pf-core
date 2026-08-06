@@ -120,6 +120,18 @@ The switch is **process-wide, not module-scoped**: it also disables verification
 
 `check_url` and `fetch_url_content` accept caller-influenced URLs, so they are guarded against server-side request forgery: the target — and every redirect hop — must use an http/https scheme and resolve to a **public** address. A URL that resolves to loopback, link-local (incl. `169.254.169.254` cloud metadata), private, reserved, multicast, or carrier-grade-NAT shared space (`100.64.0.0/10` — where EKS/GKE pod addresses live) is refused, and the call returns its normal failure tuple (`(0, "error")` / `(0, "error", "")`) with an `ssrf_blocked` warning logged. Set `URL_FETCH_ALLOW_PRIVATE=1` to allow internal targets (service mesh, dev) — the http/https scheme requirement still applies. Implemented in `pf_core.utils.url_safety`.
 
+#### What it does not cover: DNS rebinding
+
+The guard resolves the host to decide, then httpx resolves it again to open the connection. A host whose DNS answer flips between those two lookups — a short-TTL record that answers the check with a public address and the connect with `127.0.0.1` — **passes the check and is then fetched from the private address**. This is a time-of-check/time-of-use gap, and `check_url` / `fetch_url_content` / `check_url_cached` do not close it: they validate the URL and hand it to httpx, which resolves independently. Read the guarantee as "blocks statically-internal targets" (literal private IPs, hostnames with stable private records), not "safe against an attacker who controls DNS for the host they gave you".
+
+`assert_public_url` returns the tuple of addresses it vetted (empty when `URL_FETCH_ALLOW_PRIVATE` skipped the address check) so a caller *can* close the gap — connect to one of the returned IPs directly, carrying the original hostname in the `Host` header and TLS SNI. That pinning is the caller's job; no pf-core fetch helper does it today.
+
+```python
+from pf_core.utils.url_safety import assert_public_url
+
+ips = assert_public_url("https://example.com/x")   # ("<ip>", …) in resolution order, may be IPv6 first
+```
+
 ### check_url
 
 | Parameter | Type | Default | Description |

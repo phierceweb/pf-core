@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -142,6 +143,35 @@ def test_write_run_record_input_sha256_stable(tmp_path: Path) -> None:
     r1 = json.loads((out1 / DEFAULT_FILENAME).read_text(encoding="utf-8"))
     r2 = json.loads((out2 / DEFAULT_FILENAME).read_text(encoding="utf-8"))
     assert r1["input_sha256"] == r2["input_sha256"]
+
+
+def test_failed_rewrite_leaves_previous_record_intact(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A re-run that dies mid-write must not destroy the last good record."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"x")
+    out = tmp_path / "out"
+    out.mkdir()
+    common = {
+        "preset": None,
+        "resolved_flags": {},
+        "input_path": src,
+        "started_at": "2026-05-10T00:00:00Z",
+        "finished_at": "2026-05-10T00:00:30Z",
+    }
+    write_run_record(out, version="1.1.0", **common)  # type: ignore[arg-type]
+    original = (out / DEFAULT_FILENAME).read_text(encoding="utf-8")
+
+    def boom(*args, **kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr("pf_core.utils.io.os.replace", boom)
+    with contextlib.suppress(OSError):
+        write_run_record(out, version="2.0.0", **common)  # type: ignore[arg-type]
+
+    assert (out / DEFAULT_FILENAME).read_text(encoding="utf-8") == original
+    assert [p.name for p in out.iterdir()] == [DEFAULT_FILENAME]
 
 
 def test_read_run_record_returns_none_when_missing(tmp_path: Path) -> None:

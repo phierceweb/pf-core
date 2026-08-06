@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
+import time
 
 import pytest
 
@@ -547,8 +549,6 @@ def test_sync_budgets_from_yaml_missing_file_is_noop(budget_db, tmp_path, monkey
 
 
 def test_check_budget_uses_snapshot_plus_delta(budget_db):
-    import time
-
     _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=10.0)
     _spend("drafter", "claude-opus-4-7", 3.0)
     time.sleep(1.1)  # ensure SQLite TIMESTAMP second-tick separation
@@ -590,3 +590,134 @@ class TestConfigReloadCache:
         assert load_yaml()["global"]["daily"] == 1.0
         monkeypatch.setenv("BUDGET_CONFIG", str(b))
         assert load_yaml()["global"]["daily"] == 2.0
+
+
+# ---------------------------------------------------------------------------
+# Unpriced models must not project as free
+# ---------------------------------------------------------------------------
+
+
+def test_project_cost_falls_back_to_shared_pricing_table(budget_db):
+    # No llm_cost_rates row, but pf_core.pricing knows this model.
+    cost = project_cost(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        estimated_prompt_tokens=1_000_000,
+        estimated_completion_tokens=0,
+    )
+    assert cost == pytest.approx(15.0)
+
+
+def test_check_budget_blocks_call_priced_only_by_shared_table(budget_db):
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=10.0)
+    projected = project_cost(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        estimated_prompt_tokens=1_000_000,
+        estimated_completion_tokens=0,
+    )
+    with pytest.raises(CostBudgetExceeded):
+        check_budget(agent_type="drafter", projected_cost_usd=projected)
+
+
+def test_project_cost_warns_when_nothing_can_price_the_call(budget_db, caplog):
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+        cost = project_cost(agent_type="novel", model="novel-model")
+    assert cost == 0.0
+    assert any("budget_projection_unknown" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Snapshot cutoff — runs created mid-refresh must not be dropped
+# ---------------------------------------------------------------------------
+
+
+def test_snapshot_refresh_counts_run_created_during_refresh(budget_db, monkeypatch):
+    import pf_core.budget.snapshot_job as snapshot_job
+
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=100.0)
+    real_aggregate = snapshot_job.aggregate_spent
+
+    def _aggregate_then_spend(**kwargs):
+        result = real_aggregate(**kwargs)
+        time.sleep(1.1)  # SQLite server timestamps tick per second
+        _spend("drafter", "claude-opus-4-7", 5.0)
+        return result
+
+    monkeypatch.setattr(snapshot_job, "aggregate_spent", _aggregate_then_spend)
+    snapshot_job.refresh_snapshots()
+
+    from pf_core.budget.check import _current_spent
+
+    budget = BudgetRepo().find(scope_kind="agent", scope_value="drafter", period="daily")
+    assert _current_spent(budget) == pytest.approx(5.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Scope filter — one definition for snapshot and live delta
+# ---------------------------------------------------------------------------
+
+
+def test_aggregate_spent_rejects_unknown_scope_kind(budget_db):
+    from pf_core.exceptions import InvalidInputError
+
+    start = compute_period_start("daily")
+    budget = {"scope_kind": "cost_center", "scope_value": "eng", "period": "daily"}
+    with pytest.raises(InvalidInputError):
+        aggregate_spent(
+            budget=budget,
+            period_start=start,
+            period_end=compute_period_end("daily", start),
+        )
+
+
+def test_live_delta_rejects_unknown_scope_kind(budget_db):
+    from pf_core.budget.check import _current_spent
+    from pf_core.exceptions import InvalidInputError
+
+    _insert_budget(scope_kind="global", scope_value=None, period="daily", limit_usd=100.0)
+    refresh_snapshots()
+    time.sleep(1.1)
+    _spend("drafter", "claude-opus-4-7", 7.0)
+
+    budget = dict(BudgetRepo().find(scope_kind="global", scope_value=None, period="daily"))
+    budget["scope_kind"] = "cost_center"
+    budget["scope_value"] = "eng"
+    with pytest.raises(InvalidInputError):
+        _current_spent(budget)
+
+
+def test_refresh_snapshots_skips_budget_with_unknown_scope_kind(budget_db):
+    _insert_budget(scope_kind="cost_center", scope_value="eng", period="daily", limit_usd=1.0)
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=50.0)
+    _spend("drafter", "claude-opus-4-7", 2.0)
+
+    assert refresh_snapshots() == 1
+
+    budget = BudgetRepo().find(scope_kind="agent", scope_value="drafter", period="daily")
+    snap = BudgetSnapshotRepo().get(
+        budget_id=budget["id"], period_start=compute_period_start("daily")
+    )
+    assert float(snap["spent_usd"]) == pytest.approx(2.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Soft-threshold dedupe key
+# ---------------------------------------------------------------------------
+
+
+def test_threshold_dedupe_key_is_the_utc_period_start():
+    from pf_core.budget.check import _THRESHOLD_FIRED, _maybe_log_threshold
+
+    for period in ("daily", "monthly"):
+        _clear_threshold_state()
+        budget = {
+            "id": 42,
+            "scope_kind": "global",
+            "scope_value": None,
+            "period": period,
+            "limit_usd": 10.0,
+            "soft_thresholds": [0.5],
+        }
+        _maybe_log_threshold(budget=budget, spent_before=0.0, spent_after=6.0)
+        assert _THRESHOLD_FIRED == {(42, str(compute_period_start(period)), 0.5)}

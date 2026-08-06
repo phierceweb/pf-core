@@ -19,6 +19,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from pf_core.exceptions import InvalidInputError
 from pf_core.llm import LlmJsonError, tracked_call
 from pf_core.llm.tracking import (
     LlmRunRepo,
@@ -63,6 +64,18 @@ class _FakeClient:
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class _ExplodingRepo:
+    """Stands in for a broken tracking DB — every ``record`` raises."""
+
+    def __init__(self, exc: Exception | None = None):
+        self.exc = exc or RuntimeError("tracking db is down")
+        self.calls: list[dict] = []
+
+    def record(self, **kwargs):
+        self.calls.append(kwargs)
+        raise self.exc
 
 
 def _links(engine, child_run_id: int) -> list[dict]:
@@ -241,3 +254,128 @@ def test_json_retry_disabled_raises_without_second_call(tracking_db):
     with tracking_db.connect() as conn:
         rows = conn.execute(select(s.llm_runs)).mappings().fetchall()
     assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# Truncated JSON
+# ---------------------------------------------------------------------------
+
+_TRUNCATED = '[{"a": 1}, {"b": 2}, {"c'
+
+
+def test_truncated_json_raises_instead_of_returning_a_short_list(tracking_db):
+    """A max_tokens-cut array must not come back as a silently shortened list."""
+    client = _FakeClient(
+        (_TRUNCATED, {"duration_ms": 1}),
+        (_TRUNCATED, {"duration_ms": 2}),
+    )
+
+    with pytest.raises(LlmJsonError) as excinfo:
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+        )
+
+    assert excinfo.value.raw == _TRUNCATED
+    assert len(client.calls) == 2
+
+
+def test_on_truncation_warn_opts_back_into_the_salvaged_prefix(tracking_db):
+    client = _FakeClient((_TRUNCATED, {"duration_ms": 1}))
+
+    parsed, _run_id = tracked_call(
+        client=client,
+        agent_type="classifier",
+        spec=_SPEC,
+        model="haiku",
+        render_kwargs={"role": "x"},
+        expect_json=True,
+        on_truncation="warn",
+    )
+
+    assert parsed == [{"a": 1}, {"b": 2}]
+    assert len(client.calls) == 1
+
+
+def test_invalid_on_truncation_rejected(tracking_db):
+    with pytest.raises(InvalidInputError, match="on_truncation"):
+        tracked_call(
+            client=_FakeClient(("ok", {"duration_ms": 1})),
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            on_truncation="ignore",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tracking-sink failures
+# ---------------------------------------------------------------------------
+
+
+def test_record_failure_does_not_replace_the_client_exception(tracking_db):
+    """The tracking write is the messenger; it must not become the message."""
+    repo = _ExplodingRepo()
+    client = _FakeClient(ValueError("real llm failure"))
+
+    with pytest.raises(ValueError, match="real llm failure"):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            repo=repo,
+        )
+
+    assert len(repo.calls) == 1
+
+
+def test_on_record_error_warn_returns_a_none_run_id(tracking_db):
+    repo = _ExplodingRepo()
+    client = _FakeClient(("hello world", {"duration_ms": 1}))
+
+    content, run_id = tracked_call(
+        client=client,
+        agent_type="classifier",
+        spec=_SPEC,
+        model="haiku",
+        render_kwargs={"role": "x"},
+        repo=repo,
+        on_record_error="warn",
+    )
+
+    assert content == "hello world"
+    assert run_id is None
+
+
+def test_on_record_error_raise_propagates_a_success_path_record_failure(tracking_db):
+    repo = _ExplodingRepo()
+    client = _FakeClient(("hello world", {"duration_ms": 1}))
+
+    with pytest.raises(RuntimeError, match="tracking db is down"):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            repo=repo,
+        )
+
+
+def test_invalid_on_record_error_rejected(tracking_db):
+    with pytest.raises(InvalidInputError, match="on_record_error"):
+        tracked_call(
+            client=_FakeClient(("ok", {"duration_ms": 1})),
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            on_record_error="ignore",
+        )

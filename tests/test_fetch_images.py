@@ -283,6 +283,24 @@ class TestLocalizeImages:
         assert fetcher.calls == []
         assert result == LocalizeResult(markdown=md, saved=[], failed=0)
 
+    def test_dotted_basename_is_not_an_extension(self, tmp_path):
+        """Version numbers and variant suffixes in a basename are not extensions.
+
+        Reading the tail after the last dot as the extension rejects such a
+        ref as a non-image and silently skips the download.
+        """
+        urls = [
+            "https://cdn.example.com/is/image/Prod/whats-new-asset-v3.1-large",
+            "https://cdn.example.com/is/image/Prod/beta-27.0-image-edit",
+            "https://cdn.example.com/is/image/Prod/gen-upscale-2025.jpg-1",
+        ]
+        fetcher = FakeFetcher()
+        doc = "\n".join(f'<img src="{u}">' for u in urls)
+        result = localize_images(doc, tmp_path / "images", fetcher=fetcher)
+        assert fetcher.calls == urls
+        assert result.failed == 0
+        assert "https://cdn.example.com" not in result.markdown
+
     def test_duplicate_ref_fetched_once_all_occurrences_retargeted(self, tmp_path):
         url = "https://example.com/images/a/one.png"
         fetcher = FakeFetcher()

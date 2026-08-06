@@ -20,6 +20,8 @@ Usage::
 
 from __future__ import annotations
 
+import math
+import random
 import time
 from typing import Any
 
@@ -48,9 +50,31 @@ DEFAULT_PREFLIGHT_TIMEOUT_SECONDS = 30
 # will deterministically fail every retry — don't burn API budget.
 _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
+# Jitter keeps parallel workers from re-hitting a saturated rate-limit
+# window in lockstep.
+_RETRY_AFTER_CAP_SECONDS = 30.0
+_RETRY_BACKOFF_SECONDS = 0.5
+_RETRY_JITTER_FRACTION = 0.25
+
 
 class OpenRouterError(ClientError):
     """OpenRouter API call failed."""
+
+
+def _retry_delay(attempt: int, retry_after: str | None = None) -> float:
+    """Seconds to wait before the next attempt — the server's ``Retry-After``
+    (capped) when it's a sane number, else jittered backoff."""
+    if retry_after:
+        try:
+            value = float(retry_after)
+        except (TypeError, ValueError):
+            pass
+        else:
+            # time.sleep rejects a negative or NaN argument.
+            if not math.isnan(value):
+                return max(0.0, min(value, _RETRY_AFTER_CAP_SECONDS))
+    base = _RETRY_BACKOFF_SECONDS * (attempt + 1)
+    return base + random.uniform(0.0, base * _RETRY_JITTER_FRACTION)
 
 
 class OpenRouterClient:
@@ -157,13 +181,16 @@ class OpenRouterClient:
                 )
             except httpx.TimeoutException as e:
                 if attempt < self.retry:
+                    delay = _retry_delay(attempt)
                     _log.warning(
                         "openrouter_retry_timeout",
                         attempt=attempt + 1,
                         of=self.retry + 1,
                         model=model,
                         timeout=req_timeout,
+                        delay_s=round(delay, 2),
                     )
+                    time.sleep(delay)
                     continue
                 raise OpenRouterError(
                     f"Request timed out after {req_timeout}s "
@@ -176,6 +203,12 @@ class OpenRouterClient:
                 )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < self.retry:
+                delay = _retry_delay(
+                    attempt,
+                    resp.headers.get("Retry-After")
+                    if resp.status_code == 429
+                    else None,
+                )
                 _log.warning(
                     "openrouter_retry_status",
                     attempt=attempt + 1,
@@ -183,7 +216,9 @@ class OpenRouterClient:
                     model=model,
                     status_code=resp.status_code,
                     body_head=resp.text[:200],
+                    delay_s=round(delay, 2),
                 )
+                time.sleep(delay)
                 continue
             break  # success or non-retryable failure — fall through
 
@@ -208,8 +243,16 @@ class OpenRouterClient:
                 context={"model": model},
             )
 
-        raw_content = data["choices"][0]["message"].get("content")
+        choices = data.get("choices") or []
+        if not choices:
+            raise OpenRouterError(
+                "OpenRouter returned no choices",
+                context={"model": model, "body_head": resp.text[:200]},
+            )
+        choice = choices[0]
+        raw_content = (choice.get("message") or {}).get("content")
         content = raw_content if isinstance(raw_content, str) else ""
+        finish_reason = choice.get("finish_reason")
         usage_raw = data.get("usage") or {}
         prompt_details = usage_raw.get("prompt_tokens_details") or {}
         completion_details = usage_raw.get("completion_tokens_details") or {}
@@ -248,7 +291,16 @@ class OpenRouterClient:
             ),
             "duration_ms": elapsed_ms,
             "system_fingerprint": data.get("system_fingerprint"),
+            "finish_reason": finish_reason,
         }
+
+        if finish_reason == "length":
+            _log.warning(
+                "openrouter_truncated",
+                model=model,
+                max_tokens=max_tokens,
+                completion_tokens=usage["completion_tokens"],
+            )
 
         # Citation URLs (Perplexity routes) ride in usage so content stays
         # exactly what the model returned (raw_response / cache hold it).

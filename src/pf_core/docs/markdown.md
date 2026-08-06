@@ -15,7 +15,7 @@ Renders a controlled subset of markdown to sanitized HTML using an escape-first 
 | `1. item` | `<ol><li>item</li></ol>` |
 | Blank line | Paragraph break |
 
-Links support nested parentheses in URLs (e.g. Wikipedia links).
+Links support nested parentheses in URLs (e.g. Wikipedia links). Bold, italic, and code apply to the link *label* only — a URL containing `*` or a backtick is passed through untouched.
 
 ## Direct usage
 

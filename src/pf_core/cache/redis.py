@@ -37,6 +37,91 @@ from pf_core.log import get_logger
 
 logger = get_logger(__name__)
 
+_REDIS_ERRORS: tuple[type[BaseException], ...]
+try:
+    from redis.exceptions import RedisError
+
+    _REDIS_ERRORS = (RedisError, OSError)
+except ImportError:  # pragma: no cover - redis extra not installed
+    _REDIS_ERRORS = (OSError,)
+
+
+class _ResilientBackend:
+    """Backend proxy that turns an unreachable server into a cache miss.
+
+    dogpile's Redis backend connects lazily, so ``configure()`` succeeds even
+    when nothing is listening and every later operation raises instead.
+
+    Absorbed failures are counted in ``degraded_ops`` so a caller that must
+    report success or failure can tell a dropped operation from a real one.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self._warned = False
+        self.degraded_ops = 0
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def _degrade(self, op: str, exc: BaseException) -> None:
+        self.degraded_ops += 1
+        if self._warned:
+            logger.debug("cache_backend_unavailable", op=op, error=str(exc))
+            return
+        self._warned = True
+        logger.warning("cache_backend_unavailable", op=op, error=str(exc))
+
+    def _call(self, op: str, fn: Any, default: Any) -> Any:
+        try:
+            return fn()
+        except _REDIS_ERRORS as e:
+            self._degrade(op, e)
+            return default
+
+    def get(self, key: Any) -> Any:
+        return self._call("get", lambda: self._inner.get(key), _no_value())
+
+    def get_multi(self, keys: Any) -> Any:
+        keys = list(keys)
+        return self._call("get_multi", lambda: self._inner.get_multi(keys),
+                          [_no_value()] * len(keys))
+
+    def get_serialized(self, key: Any) -> Any:
+        return self._call("get_serialized", lambda: self._inner.get_serialized(key),
+                          _no_value())
+
+    def get_serialized_multi(self, keys: Any) -> Any:
+        keys = list(keys)
+        return self._call("get_serialized_multi",
+                          lambda: self._inner.get_serialized_multi(keys),
+                          [_no_value()] * len(keys))
+
+    def set(self, key: Any, value: Any) -> None:
+        self._call("set", lambda: self._inner.set(key, value), None)
+
+    def set_multi(self, mapping: Any) -> None:
+        self._call("set_multi", lambda: self._inner.set_multi(mapping), None)
+
+    def set_serialized(self, key: Any, value: Any) -> None:
+        self._call("set_serialized", lambda: self._inner.set_serialized(key, value), None)
+
+    def set_serialized_multi(self, mapping: Any) -> None:
+        self._call("set_serialized_multi",
+                   lambda: self._inner.set_serialized_multi(mapping), None)
+
+    def delete(self, key: Any) -> None:
+        self._call("delete", lambda: self._inner.delete(key), None)
+
+    def delete_multi(self, keys: Any) -> None:
+        self._call("delete_multi", lambda: self._inner.delete_multi(keys), None)
+
+
+def _no_value() -> Any:
+    from dogpile.cache.api import NO_VALUE
+
+    return NO_VALUE
+
 
 def create_region(
     url: str = "",
@@ -81,6 +166,7 @@ def create_region(
                 },
                 expiration_time=expiration_time,
             )
+            region.backend = _ResilientBackend(region.backend)
             logger.debug("cache_region_configured", backend="redis", prefix=key_prefix)
         except Exception:
             region.configure("dogpile.cache.null")
@@ -137,24 +223,34 @@ class RedisCache:
             return None
         return val  # type: ignore[return-value]
 
-    def set(self, key: str, value: str, ttl: int | None = None) -> bool:
+    def _write(self, op: Any) -> bool:
+        backend = self._region.backend
+        before = getattr(backend, "degraded_ops", 0)
         try:
-            if ttl and ttl != self._default_ttl:
-                self._region.set(key, value)
-            else:
-                self._region.set(key, value)
-            return True
+            op()
         except Exception:
             return False
+        return getattr(backend, "degraded_ops", 0) == before
+
+    def set(self, key: str, value: str) -> bool:
+        """Store ``value``; False when a configured backend dropped the write.
+
+        The region TTL applies to every key — dogpile's ``CacheRegion.set``
+        takes no per-key expiration.
+        """
+        return self._write(lambda: self._region.set(key, value))
 
     def delete(self, key: str) -> bool:
-        try:
-            self._region.delete(key)
-            return True
-        except Exception:
-            return False
+        """Delete ``key``; False when a configured backend dropped the delete."""
+        return self._write(lambda: self._region.delete(key))
 
     def bump_generation(self) -> int:
+        """Invalidate this region in **this process only**.
+
+        dogpile's invalidation marker is in-memory, so other processes keep
+        serving their cached values. Always returns 0 — there is no shared
+        generation counter.
+        """
         self._region.invalidate()
         return 0
 
@@ -170,7 +266,7 @@ class RedisCache:
             raw = json.dumps(variant, sort_keys=True, default=str)
             variant_hash = ":" + hashlib.md5(raw.encode()).hexdigest()[:10]
         cache_key = f"{parts}{variant_hash}"
-        return self._region.get_or_create(cache_key, fn)
+        return self._region.get_or_create(cache_key, fn, expiration_time=ttl)
 
 
 # ---------------------------------------------------------------------------

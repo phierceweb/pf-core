@@ -75,7 +75,9 @@ class TestAnthropicClientInit:
             assert client.api_key == "test-key"
             assert client.model == "claude-haiku-4-5"
             assert client.request_timeout == 60
-            mock_sdk.assert_called_once_with(api_key="test-key", timeout=60)
+            mock_sdk.assert_called_once_with(
+                api_key="test-key", timeout=60, max_retries=0
+            )
 
     def test_missing_sdk_raises_import_error(self):
         """If anthropic isn't importable, constructor raises ImportError with a clear message."""

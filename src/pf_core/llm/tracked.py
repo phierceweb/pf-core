@@ -90,8 +90,10 @@ def tracked_call(
     provider: str | None = None,
     expect_json: bool = False,
     json_retry: bool = True,
+    on_truncation: str = "raise",
+    on_record_error: str = "raise",
     repo: LlmRunRepo | None = None,
-) -> tuple[Any, int]:
+) -> tuple[Any, int | None]:
     """Run one tracked LLM call: render → invoke → record → optional JSON.
 
     Renders ``spec[part]`` with the chosen placeholder ``style``, resolves
@@ -123,6 +125,15 @@ def tracked_call(
         json_retry: when ``True`` (and ``expect_json``), retry once on a
             parse failure. The retry writes a second ``llm_runs`` row
             linked to the first via ``llm_run_links.relation="retry"``.
+        on_truncation: forwarded to :func:`parse_llm_json`. ``"raise"``
+            (default) treats a truncated response as a parse failure —
+            retried, then surfaced as :class:`LlmJsonError` — rather than
+            returning the salvaged prefix as if it were the whole answer.
+            ``"warn"`` opts back into the prefix.
+        on_record_error: ``"warn"`` makes the tracking sink best-effort —
+            a failed ``record()`` logs a warning and yields ``run_id=None``
+            instead of masking the call result. A record failure never
+            replaces a client exception under either value.
         repo: optional :class:`LlmRunRepo` to share a transaction or
             route writes in tests. Defaults to a fresh instance.
 
@@ -130,13 +141,25 @@ def tracked_call(
         ``(content_or_parsed, run_id)`` — ``content_or_parsed`` is a
         string when ``expect_json`` is ``False``, else the parsed
         dict/list. ``run_id`` is the row of the call whose output is
-        returned (the retry row when the retry succeeded).
+        returned (the retry row when the retry succeeded), or ``None``
+        when the row could not be written under ``on_record_error="warn"``.
 
     Raises:
         LlmJsonError: ``expect_json`` is ``True`` and parsing failed on
             both the initial call and the retry (or ``json_retry`` is
             ``False`` and the initial parse failed).
+        InvalidInputError: unknown ``on_truncation`` or ``on_record_error``
+            value.
     """
+    if on_truncation not in ("warn", "raise"):
+        raise InvalidInputError(
+            f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}"
+        )
+    if on_record_error not in ("raise", "warn"):
+        raise InvalidInputError(
+            f"on_record_error must be 'raise' or 'warn', got {on_record_error!r}"
+        )
+
     if style == "@@":
         spec_kwargs = {k.upper(): v for k, v in (render_kwargs or {}).items()}
     else:
@@ -161,13 +184,17 @@ def tracked_call(
         provider=provider,
         rendered=rendered,
         system_prompt_id=system_prompt_id,
+        on_record_error=on_record_error,
     )
 
     if not expect_json:
         return content, run_id
 
     try:
-        return parse_llm_json(content, recover=True, strict=True), run_id
+        parsed = parse_llm_json(
+            content, recover=True, strict=True, on_truncation=on_truncation
+        )
+        return parsed, run_id
     except InvalidInputError:
         logger.warning(
             "llm_json_parse_failed",
@@ -186,10 +213,14 @@ def tracked_call(
         provider=provider,
         rendered=rendered,
         system_prompt_id=system_prompt_id,
-        parent_run=(run_id, "retry"),
+        parent_run=(run_id, "retry") if run_id is not None else None,
+        on_record_error=on_record_error,
     )
     try:
-        return parse_llm_json(retry_content, recover=True, strict=True), retry_run_id
+        parsed = parse_llm_json(
+            retry_content, recover=True, strict=True, on_truncation=on_truncation
+        )
+        return parsed, retry_run_id
     except InvalidInputError as exc:
         raise LlmJsonError(retry_content) from exc
 
@@ -204,7 +235,8 @@ def _invoke_and_record(
     rendered: str,
     system_prompt_id: int | None,
     parent_run: tuple[int, str] | None = None,
-) -> tuple[str, int]:
+    on_record_error: str = "raise",
+) -> tuple[str, int | None]:
     """One chat invocation + one ``llm_runs`` row.
 
     Records ``status="failed"`` on any client exception (timeout,
@@ -213,6 +245,24 @@ def _invoke_and_record(
     payload slot, matching its wire role — eval replays rebuild message
     roles from the slots, so slot and role must agree.
     """
+
+    def _record(**kwargs: Any) -> int | None:
+        try:
+            return repo.record(
+                agent_type=agent_type,
+                model=model,
+                provider=provider,
+                system_prompt_id=system_prompt_id,
+                rendered_prompts=(None, rendered),
+                parent_run=parent_run,
+                **kwargs,
+            )
+        except Exception:
+            if on_record_error == "raise":
+                raise
+            logger.warning("llm_run_record_failed", agent_type=agent_type, model=model)
+            return None
+
     logger.info("llm_call_start", agent_type=agent_type, model=model)
     try:
         content, usage = client.chat(
@@ -220,18 +270,21 @@ def _invoke_and_record(
             model=model,
         )
     except Exception as exc:
-        repo.record(
-            agent_type=agent_type,
-            model=model,
-            provider=provider,
-            system_prompt_id=system_prompt_id,
-            usage={"duration_ms": None},
-            status="failed",
-            error=str(exc)[:_MAX_ERROR_LEN],
-            error_class=type(exc).__name__,
-            rendered_prompts=(None, rendered),
-            parent_run=parent_run,
-        )
+        try:
+            _record(
+                usage={"duration_ms": None},
+                status="failed",
+                error=str(exc)[:_MAX_ERROR_LEN],
+                error_class=type(exc).__name__,
+            )
+        except Exception as rec_exc:
+            # A tracking write must never displace the client failure.
+            logger.warning(
+                "llm_run_record_failed",
+                agent_type=agent_type,
+                model=model,
+                error=str(rec_exc)[:_MAX_ERROR_LEN],
+            )
         raise
 
     duration_ms = usage.get("duration_ms")
@@ -242,16 +295,10 @@ def _invoke_and_record(
         duration_ms=duration_ms,
         content_len=len(content or ""),
     )
-    run_id = repo.record(
-        agent_type=agent_type,
-        model=model,
-        provider=provider,
-        system_prompt_id=system_prompt_id,
+    run_id = _record(
         usage={k: v for k, v in usage.items() if k != "system_fingerprint"},
         model_fingerprint=usage.get("system_fingerprint"),
-        rendered_prompts=(None, rendered),
         raw_response=content,
-        parent_run=parent_run,
     )
     return content, run_id
 

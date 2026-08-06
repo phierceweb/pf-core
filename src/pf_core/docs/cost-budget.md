@@ -110,7 +110,11 @@ Checks in order: **global → agent → job_kind → job_id → tag**. First fai
 
 ### Spent calculation
 
-Per budget: snapshot value + live delta from `llm_runs` recorded after the snapshot. Runs with `status IN ('cache_hit', 'budget_blocked')` are excluded.
+Per budget: snapshot value + live delta from `llm_runs`. Runs with `status IN ('cache_hit', 'budget_blocked')` are excluded.
+
+The two halves meet at one cutoff. `refresh_snapshots()` reads the DB server clock once, aggregates `created_at < cutoff`, and stores that same value as the snapshot's `last_updated`; the live delta then sums `created_at >= last_updated`. Every run falls in exactly one half — nothing is lost to the window between aggregating and writing.
+
+Both halves apply the same scope filter (`pf_core.budget.repo.apply_scope_filter`). A budget row with a `scope_kind` outside `{global, agent, job_kind, job_id, tag}` raises `InvalidInputError` rather than silently counting every scope or none; `refresh_snapshots()` logs and skips such a row so one bad budget cannot freeze the others' snapshots.
 
 > **`cost_usd` is not homogeneous across backends — know the mix before you sum.** Each client populates the field with what it can actually know: **OpenRouter** reports the provider's billed cost (an actual); **Anthropic** computes it locally from the bundled rate table (an estimate); **Claude Code** records `0.0` (a Claude Max session doesn't bill per call). A budget scope, a `cost_by_model` total, or any `SUM(cost_usd)` therefore blends billed-actuals, local-estimates, and structural zeros into one number. This is correct per-call and usually fine within a single-backend scope; it becomes misleading only when one agent's runs span backends. `llm_runs.provider` records which backend produced each row — group or filter by it when the blend would distort the figure (the shipped `stats` aggregates group by model, not provider).
 
@@ -126,12 +130,21 @@ Calendar-anchored, UTC:
 cost = project_cost(
     agent_type="summarizer",
     model="claude-opus-4-7",
+    provider="anthropic",      # optional — disambiguates the price list
     estimated_prompt_tokens=1500,
     estimated_completion_tokens=1000,
 )
 ```
 
-Uses the active `llm_cost_rates` row for the model. Falls back to a 24h rolling mean of `llm_runs.cost_usd` for the (agent, model) pair when no rate row exists.
+Priced in order:
+
+1. The active `llm_cost_rates` row for the model.
+2. The shared [`pf_core.pricing`](pricing.md) rate tables (built-ins plus anything a consumer passed to `register_rates`).
+3. A 24h rolling mean of `llm_runs.cost_usd` for the (agent, model) pair.
+
+When none of the three can price the call, the projection is **unknown, not free**: `project_cost()` logs `budget_projection_unknown` at WARNING and returns `0.0`, so the cap still fires on recorded spend but the gap is visible rather than silent. An unpriced model also records `cost_usd = 0.0` on every run, so its spend never accumulates — register rates (or add an `llm_cost_rates` row) before trusting a cap over it.
+
+`pf_core.pricing.estimate_cost` keeps returning a plain `0.0` float for an unpriced model, so `cost_usd` is never NULL; `pf_core.pricing._resolver.price_call` returns `None` for the same call, which is how a genuinely zero-rate model (a Claude Max session) is told apart from one nobody has priced.
 
 For a DB-free estimate (no `llm_cost_rates` table), [`pf_core.pricing.estimate_cost`](pricing.md) computes the same input+output math from the shared per-model rate tables — useful for pre-call gating in a consumer that doesn't run `[tracking]`.
 
@@ -165,7 +178,7 @@ Set `BUDGET_ENFORCEMENT_DISABLED=true` in the environment. `check_budget()` shor
 
 ## Soft-threshold alerts
 
-When a call pushes spend across a soft-threshold fraction (e.g. `0.8` of limit), `check_budget()` logs a structured `budget_threshold_crossed` event once per `(budget, period_start, threshold)`. In-process dedupe set; a process restart re-arms alerts.
+When a call pushes spend across a soft-threshold fraction (e.g. `0.8` of limit), `check_budget()` logs a structured `budget_threshold_crossed` event once per `(budget, period_start, threshold)` — the UTC period start, so a monthly budget alerts once per month, not once per calendar day. In-process dedupe set; a process restart re-arms alerts.
 
 ## Snapshot refresh
 
@@ -219,4 +232,4 @@ Sequential, defensively:
 2. **Cold start.** First call of a new period has no snapshot and `spent_usd=0`. Fine by design.
 3. **Time zones.** All boundaries are UTC. Document this to human operators loudly.
 4. **Stale projection.** If `llm_cost_rates` drifts from actual costs, run a projection-accuracy query weekly (compare projected vs actual `cost_usd` on recent `llm_runs`) and update rates when `|mean_delta| > 5%`.
-5. **Missing rate.** When a model has no row, projection falls back to 24h mean — slow to adapt but never fails closed on missing data.
+5. **Missing rate.** When a model has no row, projection falls back to the shared price list, then the 24h mean — slow to adapt but never fails closed on missing data. A model none of them knows projects at `0.0` and records `0.0`: the cap goes blind to it, loudly (`budget_projection_unknown`, `pricing_unknown_model`).

@@ -105,7 +105,7 @@ AnthropicClient(
 | `api_key` | `str` | required | Anthropic API key |
 | `model` | `str \| None` | `None` | Default model passed on every call. Per-call `chat(model=...)` overrides this. If neither is set, `chat()` raises `AnthropicError` |
 | `request_timeout` | `int` | `120` | Per-request socket timeout in seconds (set on the SDK client at construction time). Per-call `chat(timeout=N)` overrides for one call via the SDK's `with_options(timeout=N)` derived-client. |
-| `retry` | `int` | `0` | Auto-retry count on transient failures. Layered on top of the SDK's own internal retries — pf-core retries kick in once the SDK has exhausted its own. Validation errors (no model specified) are NOT retried. |
+| `retry` | `int` | `0` | Auto-retry count on transient failures, with backoff between attempts. The SDK's own retries are disabled (`max_retries=0`) so this is the only retry loop. Deterministic failures (4xx other than 408/429, validation errors, read timeouts) are NOT retried — see **Retry on transient failure** below. |
 
 #### chat
 
@@ -172,7 +172,18 @@ except AnthropicError as e:
 
 ## Retry on transient failure
 
-`retry=N` on the constructor / `get_client()` enables auto-retry on any `Exception` from the SDK. The SDK has its own internal retry on transient HTTP failures; pf-core retry is layered on top and kicks in once the SDK has exhausted its own. Validation errors (no model specified) raise immediately — retry won't help when the input is wrong.
+`retry=N` on the constructor / `get_client()` enables auto-retry, sleeping `0.5 * attempt` seconds between attempts. The SDK client is constructed with `max_retries=0`: pf-core owns the only retry loop, so `retry=2` means at most 3 HTTP calls, not 3 × 3.
+
+Only failures that can plausibly succeed on a re-send are retried:
+
+| Failure | Retried? | Why |
+|---|---|---|
+| 408, 429, 500, 502, 503, 504, 529 (Anthropic's "overloaded") | yes | Transient server/rate-limit state |
+| Other 4xx and 5xx (400, 401, 403, 404, 409, 422, 501, 505, 507, …) | no | Deterministic — fails identically every attempt, burning budget |
+| Connect / pool timeout, connection error | yes | Request never reached the model |
+| Read or write timeout | no | The request was on the wire; a completion may already be generated **and billed**, so a retry pays for the same prompt twice |
+| Validation errors (no model specified) | no | Raised before any request |
+| Anything else (non-SDK exception) | yes | Unclassifiable — assumed transient |
 
 ```python
 client = get_client(retry=2)  # up to 3 total attempts

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import threading
 import types
 
 import pytest
@@ -138,6 +139,47 @@ class TestGetEngine:
         assert get_engine() is get_engine()
 
 
+class TestGetEngineConcurrency:
+    """Two threads racing an uncached get_engine must build exactly one engine."""
+
+    def test_single_engine_built_under_a_race(self, monkeypatch, tmp_path):
+        import pf_core.db.connection as conn_mod
+
+        real_create = conn_mod.create_engine
+        created: list = []
+        # Both threads meet here only if both got past the cache check; the
+        # timeout is what lets the serialized (fixed) path through alone.
+        gate = threading.Barrier(2)
+
+        def gated_create(*args, **kwargs):
+            engine = real_create(*args, **kwargs)
+            created.append(engine)
+            try:
+                gate.wait(timeout=0.5)
+            except threading.BrokenBarrierError:
+                pass
+            return engine
+
+        monkeypatch.setattr(conn_mod, "create_engine", gated_create)
+        url = f"sqlite:///{tmp_path / 'race.db'}"
+        got: list = []
+        reset_engine()
+        try:
+            threads = [
+                threading.Thread(target=lambda: got.append(get_engine(url)))
+                for _ in range(2)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+            assert len(created) == 1, "raced get_engine built a second, orphaned engine"
+            assert got == [created[0], created[0]]
+            assert conn_mod._engine is created[0]
+        finally:
+            reset_engine()
+
+
 class TestGetEngineUrlMismatchWarning:
     def test_differing_url_warns_and_returns_cached(self, pf_engine, caplog):
         with caplog.at_level(logging.WARNING, logger="pf_core.db.connection"):
@@ -224,12 +266,13 @@ class TestMysqldbShim:
 
 
 class TestResetEngine:
-    def test_allows_recreation(self, pf_engine):
-        # Smoke: retrieving and resetting both succeed without raising.
-        # A real new-engine assertion isn't possible here because the
-        # pf_engine fixture has already patched _engine.
+    def test_clears_the_cached_engine(self, pf_engine):
+        import pf_core.db.connection as conn_mod
+
         get_engine()
+        assert conn_mod._engine is not None
         reset_engine()
+        assert conn_mod._engine is None
 
 
 class TestTransaction:
@@ -263,5 +306,17 @@ class TestTransaction:
 
 
 class TestPing:
-    def test_ping_succeeds(self, pf_engine):
-        ping()  # should not raise
+    def test_ping_executes_a_query(self, pf_engine):
+        from sqlalchemy import event
+
+        seen: list[str] = []
+
+        def _spy(conn, cursor, statement, *args):
+            seen.append(statement)
+
+        event.listen(pf_engine, "before_cursor_execute", _spy)
+        try:
+            ping()
+        finally:
+            event.remove(pf_engine, "before_cursor_execute", _spy)
+        assert any("SELECT 1" in s for s in seen)

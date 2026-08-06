@@ -2,6 +2,47 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.18.1 — 2026-08-05
+
+### Fixed
+- `create_region` degrades when Redis is **down**, not only when it is unconfigured: reads return `NO_VALUE`, writes and deletes no-op, and `get_or_create` calls its creator. Degradation is per-operation, so a recovered server is used again without a restart. Any `RedisError` or `OSError` degrades, including `ResponseError` (out-of-memory, read-only replica); nothing outside those two is caught. `RedisCache.set()` / `.delete()` return `False` when the backend degraded and `True` on a null backend. Availability cannot be inferred from the backend type — PING `region.backend.reader_client`.
+- `price_call` returns `None` for an unpriced model, where a genuinely zero-rate model returns `0.0`, so a `block` budget no longer passes spend it could not price. `llm_runs.cost_usd` stays a non-null float. `get_rates` searches every rate table when a provider has none of its own, so a bare model name resolves.
+- Budget snapshot refresh and the live delta share one cutoff, read from the DB server clock (`repo.db_now`).
+- `aggregate_spent` and `check._delta` share one `apply_scope_filter`, so an unrecognised `scope_kind` resolves identically in both.
+- The soft-threshold dedupe key uses the UTC period start, matching every other period boundary.
+- All three LLM clients back off between retries; OpenRouter honours `Retry-After`, clamped to 0–30 seconds.
+- The Anthropic client retries only 408, 429, 500, 502, 503, 504, 529 and connect-class timeouts. Other 4xx/5xx and read/write timeouts raise immediately.
+- `OpenRouterClient.chat` raises `OpenRouterError` on an empty `choices` array, and surfaces a `max_tokens` truncation rather than returning the short string as complete.
+- A tracking-DB failure no longer replaces the LLM exception that caused it; `tracked_call` gains the `on_record_error` escape hatch `tracked_messages_call` already had.
+- `run_parallel` attempts every item at both widths and surfaces every failure.
+- `atomic_write_text` / `atomic_write_bytes` fsync the parent directory after `os.replace`, so the rename survives power loss.
+- `write_run_record` writes atomically.
+- `safe_markdown` leaves generated link targets alone; a URL containing `*` keeps its `href`.
+- `get_engine` holds a lock across the cache check and assignment, so concurrent callers share one engine.
+- `Fetcher(retries=-1)` raises `InvalidInputError`.
+- The image localizer treats a trailing dot-segment as an extension only when it looks like one (a dot, then 1–5 alphanumerics), so an extensionless CDN ref carrying a version or variant — `…/whats-new-asset-v3.1-large`, `…/gen-upscale-2025.jpg-1` — is downloaded and counted rather than skipped.
+- `extract_json`, `extract_json_array` and `extract_json_object` rank every balanced span rather than taking the first: a non-empty span at offset 0 wins, then one carrying a non-empty object, then the earliest. A prose bracket loses whether or not it is itself valid JSON, and `{}` / `{placeholder}` lose on the object side. A span that fails to parse is skipped whole, so `extract_json_array` and `extract_json_object` leave a malformed container to `json_repair`; `extract_json` scans braces and brackets independently and can still return an inner array from a failed object span. Residual: a scalar-only payload ranks equal to a scalar decoy and the earliest wins — see `docs/json-recovery.md`.
+- `recover_truncated_json` anchors on the first **unclosed** bracket, so a complete bracket earlier in the text is treated as prose.
+- `parse_llm_json(expect="any")` delegates to `extract_json`, so `expect="object"` and `expect="any"` resolve the same input identically.
+
+### Changed
+- **Breaking:** `tracked_call` defaults to `on_truncation="raise"` — a truncated JSON response raises instead of returning a short list. `parse_llm_json` keeps `on_truncation="warn"`, so the `parse_llm_json(...) or []` idiom is unaffected.
+- **Breaking:** `RedisCache.set()` no longer accepts `ttl`; passing it raises `TypeError`. Use `cached_json(ttl=...)`, which forwards to `get_or_create(expiration_time=...)`.
+- **Breaking (narrow):** `call_with_fallback` does not retry a `FlowException` on the next backend. Pass `retry_on` to override the set exactly.
+- **Breaking (narrow):** the Anthropic SDK client is constructed with `max_retries=0`; pf-core's own loop owns retrying.
+- **Breaking:** the balanced-span scan stops at the first **unclosed** `{` or `[`, which cannot be told apart from a stray brace in prose. `extract_json_object('A [ stray bracket. Then {"a": 1}')` was `{"a": 1}` and is now `None`; `parse_llm_json` falls through to `recover_truncated_json` / `json_repair`, and may log `parse_llm_json_recovered_truncated` on a response that was never truncated. The bound is what keeps a truncated array of records from being answered with an inner field's value.
+- **Breaking (narrow):** `extract_json` returns the array on an array-of-objects that misses the whole-string fast path. `extract_json('[{"a":1}] trailing text')` was `{"a": 1}` and is now `[{"a": 1}]`. Only affects text where a leading or trailing remainder defeats `json.loads`. `extract_json_array` and `extract_json_object` still filter by type.
+- `parse_llm_json` holds back an empty `{}` / `[]` and returns it only if truncation recovery and `json_repair` both come up empty.
+- `assert_public_url` returns the vetted addresses as `tuple[str, ...]` instead of `None`, so a caller can pin what was cleared. The check is **not** TOCTOU-safe against DNS rebinding; the module docstring and `docs/urls.md` state the real guarantee.
+- `bump_generation()` invalidates the calling process only; `docs/cache.md` documents the scope and the cross-process recipe.
+
+### Added
+- `bin/test`, matching the wrapper both consumer templates already scaffold.
+
+### Docs
+- `recipes/self-consistency.md` is rewritten against the real tagging mechanism; `brave.md` points at `Throttle`; `testing.md` lists every auto-loaded fixture; the `[validate]` extra names its real modules.
+- `.ai/rules/scope.md` is rewritten around ownership, so the mountable routers and framework CLIs pf-core ships are in scope.
+
 ## v0.17.0 — 2026-08-02
 
 ### Security
@@ -46,10 +87,7 @@ Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a ta
 ## v0.15.1 — 2026-08-01
 
 ### Security
-- **Removed the TLS chain-recovery path that shipped in 0.15.0** (`pf_core.utils.tls_chain`, wired into `Fetcher._attempt`). On a certificate-verification failure it fetched the certificates named in the leaf's Authority Information Access `caIssuers` URL and passed them to `ssl.SSLContext.load_verify_locations`, which installs certificates as **trust anchors** — so its check that the completed chain reached a trusted root was satisfied by the certificate it had just downloaded. An on-path attacker could present any leaf, point its `caIssuers` at their own CA over plain HTTP, and have `Fetcher` accept the connection; the result was then cached per host for the life of the process. This affected `pf_core.fetch`, which is in the base install, and was on by default with no opt-out.
-- **0.15.0 is yanked — upgrade to 0.15.1.** Only an unpinned install could reach it: a `~=0.14.0` or lower compatible-release pin cannot resolve to 0.15.0.
-
-## v0.15.0 — 2026-07-30 [YANKED]
+- **Removed the TLS chain-recovery path added in 0.15.0** (`pf_core.utils.tls_chain`, wired into `Fetcher._attempt`) — it could install a fetched certificate as a trust anchor.
 
 ### Added
 - `pf_core.utils.env.resolve_float` — the `resolve_int` contract for fractional values. `nan`/`inf` are rejected like any other malformed env value; they'd otherwise silently disable a bound instead of falling back to it.

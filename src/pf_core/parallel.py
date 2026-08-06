@@ -48,6 +48,10 @@ def run_parallel(
 ) -> None:
     """Run fn over items with optional parallelism and progress tracking.
 
+    Every item is attempted at any ``workers`` width; exceptions are held
+    until the batch ends. One failure re-raises unchanged, several raise an
+    ``ExceptionGroup`` over all of them.
+
     Args:
         items: List of work items to process.
         fn: Callable that takes one item and processes it.
@@ -58,12 +62,12 @@ def run_parallel(
             replaces the default ``print()`` progress line.
         failures: Optional caller-owned list of ``(label, reason)`` tuples
             (the same one passed to :func:`resilient`). When provided,
-            an end-of-batch summary log is emitted at INFO level if the
-            list is empty (event ``batch_complete_all_succeeded``) or
-            WARNING level if any failures were recorded
-            (``batch_complete_with_failures`` with ``succeeded`` /
-            ``failed`` / ``failure_rate`` fields). Defaults to ``None``
-            (no summary log).
+            an end-of-batch summary log is emitted at INFO level if
+            nothing failed (event ``batch_complete_all_succeeded``) or
+            WARNING level otherwise (``batch_complete_with_failures`` with
+            ``succeeded`` / ``failed`` / ``failure_rate`` fields). The
+            failed count covers both recorded failures and exceptions that
+            escaped ``fn``. Defaults to ``None`` (no summary log).
     """
     total = len(items)
     if total == 0:
@@ -94,9 +98,19 @@ def run_parallel(
                 progress_callback(done_count[0], total)
         return result
 
+    errors: list[Exception] = []
+    error_lock = threading.Lock()
+
+    def collecting_fn(item: Any) -> None:
+        try:
+            tracked_fn(item)
+        except Exception as exc:
+            with error_lock:
+                errors.append(exc)
+
     if workers <= 1:
         for item in items:
-            tracked_fn(item)
+            collecting_fn(item)
     else:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             # Each worker gets its own snapshot of the caller's contextvars
@@ -106,10 +120,10 @@ def run_parallel(
             # is called in the parent thread per submission — sharing one
             # ``Context`` across workers raises "already entered" under
             # concurrent execution.
-            futures = {
-                executor.submit(copy_context().run, tracked_fn, item): item
+            futures = [
+                executor.submit(copy_context().run, collecting_fn, item)
                 for item in items
-            }
+            ]
             for future in as_completed(futures):
                 future.result()
 
@@ -118,7 +132,7 @@ def run_parallel(
     # ``resilient``). Splits success/failure into two distinct events
     # so log filters and dashboards can alert on the warning case.
     if failures is not None:
-        failed = len(failures)
+        failed = len(failures) + len(errors)
         succeeded = total - failed
         if failed == 0:
             _log.info(
@@ -136,6 +150,11 @@ def run_parallel(
                 failed=failed,
                 failure_rate=round(100.0 * failed / total, 2),
             )
+
+    if errors:
+        if len(errors) == 1:
+            raise errors[0]
+        raise ExceptionGroup(f"{label}: {len(errors)} of {total} items failed", errors)
 
 
 def _item_label(item: Any) -> str:

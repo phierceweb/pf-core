@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 
+import pytest
+
 from pf_core.parallel import _item_label, resilient, run_parallel
 
 
@@ -48,6 +50,47 @@ class TestRunParallel:
         import pytest
         with pytest.raises(ValueError, match="boom"):
             run_parallel([1], fail, workers=2)
+
+    @pytest.mark.parametrize("workers", [1, 4])
+    def test_every_item_runs_even_when_one_fails(self, workers):
+        attempted: list[int] = []
+        lock = threading.Lock()
+
+        def fn(x):
+            with lock:
+                attempted.append(x)
+            if x == 2:
+                raise ValueError("boom")
+
+        with pytest.raises(ValueError, match="boom"):
+            run_parallel([1, 2, 3], fn, workers=workers)
+        assert sorted(attempted) == [1, 2, 3]
+
+    @pytest.mark.parametrize("workers", [1, 4])
+    def test_every_failure_is_surfaced(self, workers):
+        def fn(x):
+            raise ValueError(f"boom-{x}")
+
+        with pytest.raises(ExceptionGroup) as excinfo:
+            run_parallel([1, 2, 3], fn, workers=workers)
+        assert {str(e) for e in excinfo.value.exceptions} == {"boom-1", "boom-2", "boom-3"}
+
+    @pytest.mark.parametrize("workers", [1, 4])
+    def test_summary_still_logged_when_fn_raises(self, workers, caplog):
+        import logging
+
+        failures: list[tuple[str, str]] = []
+
+        def fn(x):
+            if x == 2:
+                raise ValueError("boom")
+
+        with caplog.at_level(logging.INFO, logger="pf_core.parallel"):
+            with pytest.raises(ValueError):
+                run_parallel([1, 2, 3], fn, workers=workers, failures=failures)
+        summary = [r for r in caplog.records if "batch_complete" in r.getMessage()]
+        assert len(summary) == 1
+        assert summary[0].levelname == "WARNING"
 
     def test_contextvars_propagate_to_parallel_workers(self):
         """ContextVars set in the calling thread must be visible inside

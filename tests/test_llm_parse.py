@@ -67,6 +67,32 @@ class TestParseLlmJson:
         result = parse_llm_json(raw, recover=False, expect="array")
         assert result is None
 
+    def test_on_truncation_raise_rejects_the_salvaged_prefix(self):
+        """A caller that needs completeness must be able to fail loudly instead
+        of receiving a short list that looks like a full answer."""
+        raw = '[{"a":1},{"b":2},{"c":3'
+        with pytest.raises(InvalidInputError, match="truncated"):
+            parse_llm_json(raw, expect="array", on_truncation="raise")
+
+    def test_on_truncation_defaults_to_warn(self):
+        raw = '[{"a":1},{"b":2},{"c":3'
+        assert parse_llm_json(raw, expect="array") == [{"a": 1}, {"b": 2}]
+        assert parse_llm_json(raw, expect="array", on_truncation="warn") == [
+            {"a": 1},
+            {"b": 2},
+        ]
+
+    def test_on_truncation_raise_leaves_complete_responses_alone(self):
+        raw = '[{"a":1},{"b":2}]'
+        assert parse_llm_json(raw, expect="array", on_truncation="raise") == [
+            {"a": 1},
+            {"b": 2},
+        ]
+
+    def test_invalid_on_truncation_rejected(self):
+        with pytest.raises(InvalidInputError, match="on_truncation"):
+            parse_llm_json("[1]", on_truncation="ignore")
+
     def test_strict_raises(self):
         with pytest.raises(InvalidInputError, match="Failed to parse JSON"):
             parse_llm_json("not json at all!!!", strict=True)
@@ -133,3 +159,84 @@ class TestParseLlmJson:
         raw = '{"quote": "she said, "hi""}'
         result = parse_llm_json(raw, recover=False, expect="object")
         assert result is None
+
+    # ── span selection composed with the repair chain ────────────────
+    # Extraction picking the wrong span doesn't just return the wrong
+    # value — it pre-empts json_repair, which would have been right.
+
+    def test_prose_bracket_no_longer_fabricates_nested_wrapper(self):
+        """Previously returned ``[['Table 1'], [{'x': 1}]]`` — json_repair
+        conjuring a wrapper around the decoy and the payload."""
+        raw = 'See [Table 1]. Result:\n[{"x":1}]'
+        assert parse_llm_json(raw, expect="array") == [{"x": 1}]
+
+    def test_citation_marker_no_longer_wins(self):
+        raw = 'Based on the criteria [1], here are the scores:\n[{"a":1}]'
+        assert parse_llm_json(raw, expect="array") == [{"a": 1}]
+
+    def test_expect_any_prefers_container_by_content_not_position(self):
+        raw = 'I found [3] events.\n{"events":[{"s":1}], "meta":"x"}'
+        assert parse_llm_json(raw, expect="any") == {"events": [{"s": 1}], "meta": "x"}
+
+    def test_expect_object_and_any_agree_on_placeholder_brace(self):
+        """``expect="object"`` and ``expect="any"`` must resolve the same input
+        identically."""
+        raw = 'Use the {placeholder} pattern:\n{"a": 1}'
+        assert parse_llm_json(raw, expect="object") == {"a": 1}
+        assert parse_llm_json(raw, expect="any") == {"a": 1}
+
+    def test_trailing_comma_still_repaired_by_json_repair(self):
+        """Extraction must decline a malformed span rather than salvage a
+        fragment of it — otherwise json_repair never runs."""
+        raw = '[{"a": [1,2]}, {"b": 2},]'
+        assert parse_llm_json(raw, expect="array") == [{"a": [1, 2]}, {"b": 2}]
+
+    def test_unquoted_outer_key_with_well_formed_inner_still_repaired(self):
+        """Unlike ``test_unquoted_keys`` above, the inner fragment here is
+        well-formed — so a scan that descended into the failed outer span
+        would return it and silently drop the wrapper."""
+        raw = '{events: [{"name": "test", "count": 3}]}'
+        assert parse_llm_json(raw, expect="object") == {
+            "events": [{"name": "test", "count": 3}]
+        }
+
+    def test_truncation_after_prose_bracket_recovers_and_warns(self):
+        raw = 'See [Table 1]. Result:\n[{"x":1}, {"y":2}, {"z'
+        assert parse_llm_json(raw, expect="array") == [{"x": 1}, {"y": 2}]
+
+    def test_truncated_records_with_inner_list_recover_and_warn(self, caplog):
+        """Extraction answering from inside the truncated container skipped
+        both recovery and repair, so the tail vanished with no warning."""
+        import logging
+
+        raw = '[{"id": 1, "tags": ["a","b"]}, {"id": 2, "tags": ["c"'
+        with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
+            result = parse_llm_json(raw, expect="array")
+        assert result == [{"id": 1, "tags": ["a", "b"]}]
+        assert any(
+            "parse_llm_json_recovered_truncated" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_truncated_object_still_reaches_json_repair(self):
+        raw = '```json\n{"a": 1, "b": {"c": 2}, "d": [1,2]'
+        assert parse_llm_json(raw, expect="object") == {"a": 1, "b": {"c": 2}, "d": [1, 2]}
+
+    def test_empty_container_at_offset_zero_does_not_win(self):
+        assert parse_llm_json('[]\n\n{"answer": 42}', expect="any") == {"answer": 42}
+
+    def test_empty_decoy_does_not_strand_a_truncated_payload(self):
+        """An empty container satisfies step 3 on its own, which would leave
+        the truncated real payload unreachable behind it."""
+        raw = 'No prior events: []\nHere is the output:\n{"events":[{"summary":"real"}'
+        assert parse_llm_json(raw, expect="any") == [{"summary": "real"}]
+
+    def test_empty_decoy_agrees_across_expect_modes(self):
+        raw = 'Result: {}\nActual:\n{"events":[{"summary":"real"}'
+        assert parse_llm_json(raw, expect="any") == [{"summary": "real"}]
+        assert parse_llm_json(raw, expect="object") == {"events": [{"summary": "real"}]}
+
+    def test_a_genuinely_empty_container_is_still_returned(self):
+        assert parse_llm_json("[]", expect="any") == []
+        assert parse_llm_json("{}", expect="object") == {}
+        assert parse_llm_json("Nothing found: []", expect="any") == []

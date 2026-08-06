@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -89,6 +90,7 @@ def dialect_of(url: str | None = None) -> str:
 
 
 _engine: Engine | None = None
+_engine_lock = threading.Lock()
 
 _URL_CREDS = re.compile(r"^([a-z0-9+.-]+://)[^@/]+@", re.IGNORECASE)
 
@@ -118,66 +120,62 @@ def get_engine(url: str | None = None) -> Engine:
             logged); call ``reset_engine()`` first to switch databases.
     """
     global _engine
-    if _engine is not None:
-        cached_url = _engine.url.render_as_string(hide_password=False)
-        if url is not None and url != cached_url:
-            get_logger(__name__).warning(
-                "get_engine_url_ignored",
-                requested_url=_redact_url(url),
-                cached_url=_redact_url(cached_url),
-            )
+    with _engine_lock:
+        if _engine is not None:
+            cached_url = _engine.url.render_as_string(hide_password=False)
+            if url is not None and url != cached_url:
+                get_logger(__name__).warning(
+                    "get_engine_url_ignored",
+                    requested_url=_redact_url(url),
+                    cached_url=_redact_url(cached_url),
+                )
+            return _engine
+
+        resolved_url = url or db_url()
+        dialect = dialect_of(resolved_url)
+
+        if dialect == "sqlite":
+            db_file = resolved_url.removeprefix("sqlite:///")
+            Path(db_file).parent.mkdir(parents=True, exist_ok=True)
+            engine = create_engine(resolved_url, poolclass=pool.NullPool)
+
+            @event.listens_for(engine, "connect")
+            def _sqlite_pragmas(dbapi_conn, _record):
+                cur = dbapi_conn.cursor()
+                busy_timeout = resolve_int(None, "SQLITE_BUSY_TIMEOUT", default=30000)
+                cur.execute("PRAGMA foreign_keys = ON")
+                cur.execute("PRAGMA journal_mode = WAL")
+                cur.execute(f"PRAGMA busy_timeout = {busy_timeout}")
+                cur.close()
+
+        elif dialect == "mysql":
+            _install_mysqldb_shim(resolved_url)
+            engine = create_engine(resolved_url)
+
+            @event.listens_for(engine, "connect")
+            def _mysql_session_setup(dbapi_conn, _record):
+                # Pin the session to UTC so TIMESTAMP round-trips as naive-UTC
+                # (SQLite's contract). Otherwise CURRENT_TIMESTAMP uses the
+                # server's time_zone and every naive-UTC comparison skews.
+                cur = dbapi_conn.cursor()
+                cur.execute("SET time_zone = '+00:00'")
+                cur.execute("SET foreign_key_checks = 1")
+                cur.close()
+
+        else:  # postgresql
+            engine = create_engine(resolved_url)
+
+        _engine = engine
         return _engine
-
-    resolved_url = url or db_url()
-    dialect = dialect_of(resolved_url)
-
-    if dialect == "sqlite":
-        db_file = resolved_url.removeprefix("sqlite:///")
-        Path(db_file).parent.mkdir(parents=True, exist_ok=True)
-        engine = create_engine(resolved_url, poolclass=pool.NullPool)
-
-        @event.listens_for(engine, "connect")
-        def _sqlite_pragmas(dbapi_conn, _record):
-            cur = dbapi_conn.cursor()
-            busy_timeout = resolve_int(None, "SQLITE_BUSY_TIMEOUT", default=30000)
-            cur.execute("PRAGMA foreign_keys = ON")
-            cur.execute("PRAGMA journal_mode = WAL")
-            cur.execute(f"PRAGMA busy_timeout = {busy_timeout}")
-            cur.close()
-
-    elif dialect == "mysql":
-        _install_mysqldb_shim(resolved_url)
-        engine = create_engine(resolved_url)
-
-        @event.listens_for(engine, "connect")
-        def _mysql_session_setup(dbapi_conn, _record):
-            # Pin the MySQL session to UTC so TIMESTAMP columns round-trip
-            # as naive-UTC (matching SQLite's contract). Without this,
-            # ``CURRENT_TIMESTAMP`` is evaluated in whatever ``time_zone``
-            # the MySQL server defaults to; callers that wrap the returned
-            # naive value as ``tzinfo=timezone.utc`` then silently add the
-            # session offset, skewing every timestamp comparison.
-            cur = dbapi_conn.cursor()
-            cur.execute("SET time_zone = '+00:00'")
-            cur.execute("SET foreign_key_checks = 1")
-            cur.close()
-
-    else:  # postgresql
-        # No per-connection setup needed: psycopg already negotiates UTC for
-        # TIMESTAMPTZ via the server's timezone setting (default UTC), and
-        # FK constraints are always enforced by Postgres.
-        engine = create_engine(resolved_url)
-
-    _engine = engine
-    return _engine
 
 
 def reset_engine() -> None:
     """Dispose and reset the cached engine (useful for testing)."""
     global _engine
-    if _engine is not None:
-        _engine.dispose()
-        _engine = None
+    with _engine_lock:
+        if _engine is not None:
+            _engine.dispose()
+            _engine = None
 
 
 @contextmanager

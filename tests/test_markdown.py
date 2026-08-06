@@ -59,6 +59,43 @@ class TestSafeMarkdown:
         result = safe_markdown("[home](/dashboard)")
         assert 'href="/dashboard"' in result
 
+    def test_href_with_asterisks_not_italicized(self):
+        result = safe_markdown("[x](http://e.com/*a*)")
+        assert 'href="http://e.com/*a*"' in result
+        assert "<em>" not in result
+
+    def test_href_with_double_asterisks_not_bolded(self):
+        result = safe_markdown("[x](http://e.com/a**b**c)")
+        assert 'href="http://e.com/a**b**c"' in result
+        assert "<strong>" not in result
+
+    def test_href_with_backticks_not_code(self):
+        result = safe_markdown("[x](http://e.com/`q`)")
+        assert 'href="http://e.com/`q`"' in result
+        assert "<code>" not in result
+
+    def test_label_still_gets_inline_markup(self):
+        result = safe_markdown("[a **b** `c` *d*](http://e.com/x)")
+        assert "<strong>b</strong>" in result
+        assert "<code>c</code>" in result
+        assert "<em>d</em>" in result
+
+    def test_emphasis_spanning_a_link(self):
+        result = safe_markdown("**bold [x](http://e.com/) more**")
+        assert "<strong>bold <a " in result
+        assert "more</strong>" in result
+
+    def test_many_hrefs_with_asterisks(self):
+        text = " ".join(f"[l{i}](http://e.com/*{i}*)" for i in range(12))
+        result = safe_markdown(text)
+        for i in range(12):
+            assert f'href="http://e.com/*{i}*"' in result
+
+    def test_nul_in_text_cannot_forge_an_href(self):
+        result = safe_markdown("\x000\x00 [x](http://e.com/ok)")
+        assert 'href="http://e.com/ok"' in result
+        assert result.count("http://e.com/ok") == 1
+
     def test_unordered_list(self):
         result = safe_markdown("- item one\n- item two")
         assert "<ul>" in result

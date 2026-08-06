@@ -1,10 +1,12 @@
 """SSRF guard for outbound HTTP fetches.
 
-The URL-fetch helpers accept caller-influenced URLs; without a guard they will
-happily fetch internal targets — `http://169.254.169.254/…` (cloud metadata),
-`http://127.0.0.1/…`, private-range hosts — which is a server-side request
-forgery vector. This module blocks any URL that resolves to a non-public
-address, on the initial request and on every redirect hop.
+Blocks any URL whose host resolves, at check time, to a non-public address — on
+the initial request and on every redirect hop.
+
+**Not TOCTOU-safe.** The client resolves the host again when it connects, so DNS
+rebinding defeats the check. `assert_public_url` returns the addresses it vetted
+so a caller can pin the connection to one; pf-core's own fetch helpers do not,
+and so have no rebinding protection. See `docs/urls.md`.
 
 Verification is on by default. `URL_FETCH_ALLOW_PRIVATE=1` opts out for
 consumers that deliberately fetch internal hosts (dev, service mesh); it still
@@ -48,12 +50,20 @@ def _ip_is_blocked(ip: str) -> bool:
     )
 
 
-def assert_public_url(url: str) -> None:
-    """Raise ``InvalidInputError`` if *url* is not a fetchable public http(s) URL.
+def assert_public_url(url: str) -> tuple[str, ...]:
+    """Validate *url* as a fetchable public http(s) URL and return its addresses.
 
     Requires an http/https scheme and a host that resolves entirely to public
-    addresses. Honors ``URL_FETCH_ALLOW_PRIVATE`` (skips the address check, still
-    enforces scheme).
+    addresses. Not TOCTOU-safe — see the module docstring.
+
+    Returns:
+        The vetted addresses in resolution order, for callers that pin the
+        connection. Empty when ``URL_FETCH_ALLOW_PRIVATE`` skipped the address
+        check (scheme is still enforced).
+
+    Raises:
+        InvalidInputError: Non-http(s) scheme, missing host, unresolvable host,
+            or any resolved address non-public.
     """
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
@@ -65,18 +75,21 @@ def assert_public_url(url: str) -> None:
         _logger.warning("ssrf_blocked", url=url, reason="no_host")
         raise InvalidInputError("URL has no host")
     if _allow_private():
-        return
+        return ()
     port = parts.port or (443 if scheme == "https" else 80)
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except OSError as e:
         _logger.warning("ssrf_blocked", url=url, host=host, reason="unresolved")
         raise InvalidInputError(f"could not resolve host: {host}") from e
+    vetted: dict[str, None] = {}
     for info in infos:
-        ip = info[4][0]
+        ip = str(info[4][0])
         if _ip_is_blocked(ip):
             _logger.warning("ssrf_blocked", url=url, host=host, ip=ip)
             raise InvalidInputError(f"URL resolves to non-public address: {ip}")
+        vetted[ip] = None
+    return tuple(vetted)
 
 
 def _location(resp: object) -> str | None:

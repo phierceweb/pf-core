@@ -61,17 +61,22 @@ def get_rates(provider: str, model: str) -> ModelRates | None:
     """Return the :class:`ModelRates` for ``model``, or ``None`` if unpriced.
 
     Registered rates win over built-ins; within a table the first
-    prefix match (insertion order) wins.
+    prefix match (insertion order) wins. A provider that has no table of
+    its own — including none given — searches every table.
     """
     provider, model = _normalize(provider, model)
-    for table in (_REGISTERED.get(provider, {}), _BUILTIN.get(provider, {})):
+    if provider in _REGISTERED or provider in _BUILTIN:
+        tables = [_REGISTERED.get(provider, {}), _BUILTIN.get(provider, {})]
+    else:
+        tables = [*_REGISTERED.values(), *_BUILTIN.values()]
+    for table in tables:
         for prefix, rates in table.items():
             if model.startswith(prefix):
                 return rates
     return None
 
 
-def estimate_cost(
+def price_call(
     provider: str,
     model: str,
     *,
@@ -80,15 +85,15 @@ def estimate_cost(
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
     cache_ttl: str = "5m",
-) -> float:
-    """Estimate the USD cost of one call.
+) -> float | None:
+    """USD cost of one call, or ``None`` when the model has no rates.
 
-    Returns ``0.0`` for an unpriced model, logging ``pricing_unknown_model``
-    once per ``provider:model`` per process. Cache token costs are added
-    only when the model's :class:`ModelRates` defines cache rates.
-    ``cache_ttl="1h"`` prices cache writes at the model's ``cache_write_1h``
-    rate when defined (falling back to ``cache_write``); any other value
-    uses ``cache_write``.
+    ``None`` is *unknown price*, which a zero-rate model is not — callers
+    that must not treat an unpriced call as free (budget gating) check for
+    it. Cache token costs are added only when the model's
+    :class:`ModelRates` defines cache rates. ``cache_ttl="1h"`` prices cache
+    writes at the model's ``cache_write_1h`` rate when defined (falling back
+    to ``cache_write``); any other value uses ``cache_write``.
     """
     rates = get_rates(provider, model)
     if rates is None:
@@ -104,7 +109,7 @@ def estimate_cost(
                     "with pf_core.pricing.register_rates"
                 ),
             )
-        return 0.0
+        return None
     cost = (
         prompt_tokens * rates.input / 1_000_000
         + completion_tokens * rates.output / 1_000_000
@@ -117,3 +122,30 @@ def estimate_cost(
     if cache_write_rate is not None:
         cost += cache_write_tokens * cache_write_rate / 1_000_000
     return cost
+
+
+def estimate_cost(
+    provider: str,
+    model: str,
+    *,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
+    cache_ttl: str = "5m",
+) -> float:
+    """Estimate the USD cost of one call — ``0.0`` for an unpriced model.
+
+    Keeps ``cost_usd`` a plain float for every caller; use
+    :func:`price_call` where an unpriced model must not read as free.
+    """
+    cost = price_call(
+        provider,
+        model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_write_tokens=cache_write_tokens,
+        cache_ttl=cache_ttl,
+    )
+    return 0.0 if cost is None else cost

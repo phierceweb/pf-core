@@ -57,12 +57,19 @@ class TestSetupLogging:
         assert len(_console_handlers()) == 1
 
     def test_respects_level_arg(self):
+        logging.getLogger().handlers.clear()
         setup_logging(level="DEBUG")
-        # Verify it ran without error
+        handlers = _console_handlers()
+        assert len(handlers) == 1
+        assert handlers[0].level == logging.DEBUG
 
     def test_reads_env_var(self, monkeypatch):
         monkeypatch.setenv("LOG_LEVEL", "WARNING")
+        logging.getLogger().handlers.clear()
         setup_logging()
+        handlers = _console_handlers()
+        assert len(handlers) == 1
+        assert handlers[0].level == logging.WARNING
 
     def test_file_handler_created(self, tmp_path):
         log_file = tmp_path / "test.jsonl"
@@ -70,8 +77,14 @@ class TestSetupLogging:
         # Default attaches to the root logger: console + file handlers.
         assert len(logging.getLogger().handlers) >= 2
 
-    def test_no_file_handler_when_empty(self):
+    def test_no_file_handler_when_empty(self, monkeypatch):
+        monkeypatch.setenv("LOG_FILE", "/tmp/should_not_be_used.jsonl")
+        logging.getLogger().handlers.clear()
         setup_logging(log_file="")
+        # Non-empty guard: without it a gutted setup_logging passes trivially.
+        assert len(_console_handlers()) == 1
+        root = logging.getLogger()
+        assert not any(isinstance(h, logging.FileHandler) for h in root.handlers)
 
 
 class TestExplicitReconfigure:
@@ -194,14 +207,22 @@ class TestGetLogger:
 
 
 class TestLogVerbose:
-    def test_info_when_verbose(self, capfd):
+    def test_info_when_verbose(self, caplog):
         logger = get_logger("test.verbose")
-        log_verbose(logger, "hello", verbose=True, key="val")
-        # Just verify no exception
+        with caplog.at_level(logging.DEBUG):
+            log_verbose(logger, "hello", verbose=True, key="val")
+        rec = next(r for r in caplog.records if r.name == "test.verbose")
+        assert rec.levelno == logging.INFO
+        assert rec.msg["event"] == "hello"
+        assert rec.msg["key"] == "val"
 
-    def test_debug_when_not_verbose(self):
+    def test_debug_when_not_verbose(self, caplog):
         logger = get_logger("test.verbose")
-        log_verbose(logger, "hello", verbose=False, key="val")
+        with caplog.at_level(logging.DEBUG):
+            log_verbose(logger, "hello", verbose=False, key="val")
+        rec = next(r for r in caplog.records if r.name == "test.verbose")
+        assert rec.levelno == logging.DEBUG
+        assert rec.msg["event"] == "hello"
 
 
 def _record(caplog) -> logging.LogRecord:

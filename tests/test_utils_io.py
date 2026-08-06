@@ -12,6 +12,26 @@ import pytest
 from pf_core.utils.io import atomic_write_bytes, atomic_write_json, atomic_write_text
 
 
+def _record_durability_calls(monkeypatch) -> list[str]:
+    """Log fsync/replace order, tagging each fsync by whether its fd is a dir."""
+    events: list[str] = []
+    real_fsync = os.fsync
+    real_replace = os.replace
+
+    def spy_fsync(fd: int) -> None:
+        kind = "dir" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
+        events.append(f"fsync:{kind}")
+        real_fsync(fd)
+
+    def spy_replace(src, dst) -> None:
+        events.append("replace")
+        real_replace(src, dst)
+
+    monkeypatch.setattr("pf_core.utils.io.os.fsync", spy_fsync)
+    monkeypatch.setattr("pf_core.utils.io.os.replace", spy_replace)
+    return events
+
+
 # ---------------------------------------------------------------------------
 # atomic_write_text
 # ---------------------------------------------------------------------------
@@ -182,6 +202,77 @@ class TestAtomicWriteBytes:
         target = tmp_path / "out.bin"
         atomic_write_bytes(target, b"data", mode=0o600)
         assert stat.S_IMODE(os.stat(target).st_mode) == 0o600
+
+
+# ---------------------------------------------------------------------------
+# Durability of the rename
+# ---------------------------------------------------------------------------
+
+
+class TestParentDirectoryFsync:
+    """fsyncing the tempfile only persists its data; the directory entry
+    created by ``os.replace`` needs its own fsync or power loss can lose the
+    rename and leave the target at its old content."""
+
+    def test_text_write_fsyncs_parent_dir_after_replace(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        events = _record_durability_calls(monkeypatch)
+        atomic_write_text(tmp_path / "out.txt", "hi")
+        assert "fsync:dir" in events
+        assert events.index("replace") < events.index("fsync:dir")
+
+    def test_bytes_write_fsyncs_parent_dir_after_replace(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        events = _record_durability_calls(monkeypatch)
+        atomic_write_bytes(tmp_path / "out.bin", b"hi")
+        assert "fsync:dir" in events
+        assert events.index("replace") < events.index("fsync:dir")
+
+    def test_json_write_fsyncs_parent_dir(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        events = _record_durability_calls(monkeypatch)
+        atomic_write_json(tmp_path / "out.json", {"a": 1})
+        assert "fsync:dir" in events
+
+    def test_write_succeeds_when_dir_fsync_unsupported(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The replace already landed, so a filesystem that rejects directory
+        fsync must cost durability only — not turn a good write into an error."""
+        real_open = os.open
+
+        def refuse_dir_open(path, flags, *args, **kwargs):
+            if flags & getattr(os, "O_DIRECTORY", 0):
+                raise OSError(22, "Invalid argument")
+            return real_open(path, flags, *args, **kwargs)
+
+        monkeypatch.setattr("pf_core.utils.io.os.open", refuse_dir_open)
+        target = tmp_path / "out.txt"
+        atomic_write_text(target, "hi")
+        assert target.read_text() == "hi"
+        assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]
+
+    def test_dir_fsync_targets_the_parent_of_the_written_file(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The fsynced directory must be the one holding the new entry."""
+        parent = tmp_path / "nested"
+        parent.mkdir()
+        synced: list[int] = []
+        real_fsync = os.fsync
+
+        def spy_fsync(fd: int) -> None:
+            st = os.fstat(fd)
+            if stat.S_ISDIR(st.st_mode):
+                synced.append(st.st_ino)
+            real_fsync(fd)
+
+        monkeypatch.setattr("pf_core.utils.io.os.fsync", spy_fsync)
+        atomic_write_text(parent / "out.txt", "hi")
+        assert synced == [os.stat(parent).st_ino]
 
 
 # ---------------------------------------------------------------------------

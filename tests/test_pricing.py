@@ -84,6 +84,27 @@ def test_unknown_provider_returns_zero():
     assert estimate_cost("openai", "gpt-4o-mini", prompt_tokens=1000, completion_tokens=1000) == 0.0
 
 
+def test_price_call_distinguishes_unknown_from_priced_at_zero():
+    from pf_core.pricing._resolver import price_call
+
+    assert price_call("anthropic", "mystery-x", prompt_tokens=1000) is None
+    register_rates("custom", "free-tier", ModelRates(input=0.0, output=0.0))
+    assert price_call("custom", "free-tier", prompt_tokens=1000) == 0.0
+
+
+def test_estimate_cost_keeps_float_contract_for_unknown_model():
+    cost = estimate_cost("anthropic", "mystery-x", prompt_tokens=1000)
+    assert isinstance(cost, float)
+    assert cost == 0.0
+
+
+def test_rates_resolve_without_a_provider():
+    assert get_rates("", "claude-opus-4-7") is not None
+    assert get_rates("openrouter", "claude-opus-4-7") is not None
+    # a provider with its own table is authoritative — no cross-provider search
+    assert get_rates("openai", "claude-opus-4-7") is None
+
+
 # ---------------------------------------------------------------------------
 # Consumer registration
 # ---------------------------------------------------------------------------

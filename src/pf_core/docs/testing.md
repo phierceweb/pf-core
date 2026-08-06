@@ -2,7 +2,7 @@
 
 pf_core ships two pytest plugins:
 
-- **`pf_core.testing.fixtures`** — auto-discovered via the `pytest11` entry point. Provides `pf_app_client` only. No DB dependencies.
+- **`pf_core.testing.fixtures`** — auto-discovered via the `pytest11` entry point. Provides `pf_app_client` and `pf_budget_disabled`. No DB dependencies.
 - **`pf_core.testing.db_fixtures`** — opt-in. Provides `pf_engine`, `pf_connection`, `pf_tables`. Requires the `[db]` extra (sqlalchemy).
 
 To use the DB fixtures, add this to your `conftest.py`:

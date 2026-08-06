@@ -6,8 +6,9 @@ the write) or the new content (after the write completes) — never a
 truncated or partially-written hybrid.
 
 Pattern: write to a sibling tempfile in the same directory, fsync it,
-chmod to the target permission, then ``os.replace`` onto the final
-path. ``os.replace`` is atomic when source and target are on the same
+chmod to the target permission, ``os.replace`` onto the final path,
+then fsync the parent directory so the rename survives power loss.
+``os.replace`` is atomic when source and target are on the same
 filesystem — that's why the tempfile lives next to the target rather
 than in ``/tmp``.
 
@@ -27,10 +28,31 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from pf_core.log import get_logger
+
+_log = get_logger(__name__)
+
 # Default file permissions for newly-written files: rw-r--r-- (0o644).
 # tempfile.mkstemp creates with 0o600 (owner-only), which surprises
 # consumers who want their cache/manifest readable by other tools.
 DEFAULT_MODE = 0o644
+
+
+def _fsync_dir(directory: Path) -> None:
+    """fsync the rename itself — syncing the file persists its data, not the
+    directory entry naming it. Best-effort: the replace has already succeeded,
+    so a filesystem that rejects directory fsync costs durability, not the write.
+    """
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+    try:
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        _log.debug("dir_fsync_unsupported", directory=str(directory), error=str(exc))
 
 
 def atomic_write_text(
@@ -43,9 +65,11 @@ def atomic_write_text(
     """Write ``content`` to ``path`` atomically.
 
     The target file's contents are either the old (pre-call) value or
-    the new value — never a torn write. If the write fails partway
-    through, the target file is left untouched and any temp file is
-    cleaned up.
+    the new value — never a torn write, and the rename is fsynced so a
+    completed call survives power loss. If the write fails partway
+    through, the target file is left untouched and the temp file is
+    removed; cleanup runs in Python, so a SIGKILL can strand a
+    ``.<name>.*.tmp`` sibling.
 
     Args:
         path: Target file path. Parent directory must exist (no silent
@@ -67,6 +91,7 @@ def atomic_write_text(
             os.fsync(f.fileno())
         os.chmod(tmp_path, mode)
         os.replace(tmp_path, path)
+        _fsync_dir(parent)
     except Exception:
         try:
             os.unlink(tmp_path)
@@ -83,8 +108,9 @@ def atomic_write_bytes(
 ) -> None:
     """Write ``data`` to ``path`` atomically — bytes twin of :func:`atomic_write_text`.
 
-    Same guarantee and pattern (sibling tempfile, fsync, chmod, ``os.replace``);
-    binary content, so no encoding parameter.
+    Same guarantee and pattern (sibling tempfile, fsync, chmod,
+    ``os.replace``, parent-directory fsync); binary content, so no
+    encoding parameter.
 
     Args:
         path: Target file path. Parent directory must exist.
@@ -101,6 +127,7 @@ def atomic_write_bytes(
             os.fsync(f.fileno())
         os.chmod(tmp_path, mode)
         os.replace(tmp_path, path)
+        _fsync_dir(parent)
     except Exception:
         try:
             os.unlink(tmp_path)

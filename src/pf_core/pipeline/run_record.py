@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from pf_core.log import get_logger
+from pf_core.utils.io import atomic_write_text
 
 logger = get_logger(__name__)
 
@@ -81,7 +82,8 @@ def write_run_record(
 
     Returns the written path. Raises OSError on filesystem failure —
     caller decides whether to swallow (most pipelines do, so a write
-    failure here doesn't kill an otherwise-successful run).
+    failure here doesn't kill an otherwise-successful run). The write is
+    atomic, so a failed re-run leaves the previous record readable.
 
     The on-disk schema is a flat JSON object combining the standard
     fields with whatever's in `extra` (extra keys override standard
@@ -101,7 +103,7 @@ def write_run_record(
     if extra:
         record.update(extra)
     target = output_dir / filename
-    target.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(target, json.dumps(record, indent=2) + "\n")
     return target
 
 

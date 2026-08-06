@@ -93,6 +93,8 @@ region.invalidate()  # all cached values in this region are now stale
 
 After invalidation, the next `get_or_create()` call will regenerate the value. Existing keys aren't deleted — they're just marked as expired. dogpile handles the "thundering herd" problem (only one thread regenerates the value; others wait or get the stale value).
 
+**Invalidation is process-local.** The marker is held in memory by the `CacheRegion` instance, so `invalidate()` does not reach other workers or a CLI process — they keep serving their cached values until the TTL expires. Invalidating across processes needs a generation counter stored in Redis and folded into every cache key; bump that instead.
+
 ## Multiple regions
 
 Use separate regions for different TTLs and invalidation scopes:
@@ -163,6 +165,14 @@ redis_cache.bump_cache_generation()
 
 The module also exports `RedisCache` — a wrapper class that delegates to a dogpile region internally. This exists for projects that already import `RedisCache` and haven't migrated to regions yet. New code should use `create_region()` directly.
 
+| Method | Behavior |
+|---|---|
+| `set(key, value)`, `delete(key)` | `False` when a configured backend dropped the write — degradation absorbs the error, so the return value is the only signal. `True` with the null backend, where caching is off by config. |
+| `cached_json(key_parts, variant, fn, ttl=None)` | `get_or_create()` under a key built from the parts plus a hash of `variant`; `ttl` overrides the region TTL for that value. |
+| `bump_generation()` | `invalidate()` on this process's region — process-local, as above. Always returns 0; there is no shared generation counter. |
+
+`set()` takes no per-key TTL: `CacheRegion.set()` has no expiration argument, so the region TTL applies to every key it writes. Per-key expiry is available only on the read path, via `cached_json(..., ttl=...)` / `get_or_create(..., expiration_time=...)`.
+
 ## Graceful degradation
 
 When Redis is unavailable (no URL configured, or Redis is down):
@@ -176,3 +186,22 @@ When Redis is unavailable (no URL configured, or Redis is down):
 | `invalidate()` | No-op |
 
 Your code doesn't need any conditional logic for Redis availability.
+
+The two cases reach that table by different routes. **No URL configured** selects the null backend at `create_region()`. **Redis down** cannot: dogpile connects lazily, so `configure()` succeeds against a dead server and the region holds a real Redis backend. That backend is wrapped, and each operation degrades — per operation rather than by a startup probe, so a server that recovers is used again without a restart.
+
+**What degrades:** any `RedisError` or `OSError`. That is deliberately the whole Redis error surface, not just connection refusal — `ResponseError` (out-of-memory, writes to a read-only replica) and an authentication failure degrade too, because a cache that raises into a request is worse than a cache that misses. Nothing outside those two families is caught, so a bug in your key mangler or serializer still raises.
+
+The cost is that an outage is quiet: the first failure in a process logs `cache_backend_unavailable` at WARNING and every later one at DEBUG. Do not treat the absence of warnings as health. Region operations return no signal either — only `RedisCache.set()` / `delete()` report a dropped write, by returning `False`.
+
+**Availability cannot be inferred from the backend type.** `isinstance(region.backend, NullBackend)` distinguishes "no URL configured" from "URL configured", not "reachable" — a refused connection looks configured. For a health check, PING the client; note a null-backend region has no client, which is *configured-off* rather than unreachable:
+
+```python
+client = getattr(region.backend, "reader_client", None)
+if client is None:
+    ...  # caching disabled by config, not an outage
+else:
+    try:
+        client.ping()
+    except Exception:
+        ...  # unreachable
+```

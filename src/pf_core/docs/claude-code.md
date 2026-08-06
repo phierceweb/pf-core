@@ -76,7 +76,7 @@ ClaudeCodeClient(
 | `binary` | `str` | `"claude"` | Path or name of the executable to run |
 | `extra_args` | `list[str]` | `None` | Flags inserted after `--safe-mode`, before `--model` / `--print` (e.g. `["--allowedTools", "Bash"]`) |
 | `model` | `str \| None` | `None` | Default model passed as `--model X` on every call. Falls back to `$PF_CORE_CLAUDE_CODE_MODEL`; `None` omits the flag entirely. Per-call `chat(model=...)` overrides for one call. |
-| `retry` | `int` | `0` | Auto-retry count for transient failures. `retry=0` (default) raises on the first failure. `retry=1` makes up to 2 total attempts; `retry=N` makes up to N+1. Both timeout and non-zero exit are retried (transient causes: rate-limit windows, momentary auth refresh, model warm-up). Missing binary and empty messages are NOT retried (deterministic config errors). |
+| `retry` | `int` | `0` | Auto-retry count for transient failures, sleeping `0.5 * attempt` seconds between attempts. `retry=0` (default) raises on the first failure. `retry=1` makes up to 2 total attempts; `retry=N` makes up to N+1. Both timeout and non-zero exit are retried (transient causes: rate-limit windows, momentary auth refresh, model warm-up). Missing binary and empty messages are NOT retried (deterministic config errors). |
 | `isolate` | `bool` | `True` | Run with `--safe-mode` so the call ignores the ambient project's `CLAUDE.md` / skills / hooks / plugins (auth, model, and explicit flags still apply). `True` is the secure default for a programmatic call; set `False` only to deliberately use the surrounding project's customizations. See **Isolation** above. |
 
 #### chat

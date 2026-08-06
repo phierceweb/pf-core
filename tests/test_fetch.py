@@ -198,6 +198,22 @@ class TestRetryLoop:
         assert sleeps == []
         assert len(calls) == 1
 
+    @pytest.mark.parametrize("retries", [-1, -5])
+    def test_negative_retries_rejected_at_construction(self, retries):
+        with pytest.raises(InvalidInputError, match="retries"):
+            Fetcher(retries=retries)
+
+    def test_negative_retries_never_reaches_the_network(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        with pytest.raises(InvalidInputError):
+            Fetcher(retries=-1).get_bytes(URL)
+        assert calls == []
+
+    @pytest.mark.parametrize("fn", [fetch_text, fetch_bytes, fetch_bytes_meta])
+    def test_module_helpers_reject_negative_retries(self, fn):
+        with pytest.raises(InvalidInputError, match="retries"):
+            fn(URL, retries=-1)
+
 
 class TestRedirects:
     def test_final_url_after_chain(self, monkeypatch):

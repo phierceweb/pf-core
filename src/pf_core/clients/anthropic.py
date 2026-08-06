@@ -61,12 +61,43 @@ DEFAULT_PREFLIGHT_TIMEOUT_SECONDS = 30
 
 _VALID_CACHE_TTLS = ("5m", "1h")
 
+# An allow-list, not a 5xx range: 501/505/507 are caller or capability errors
+# that fail identically on every attempt. 529 is Anthropic's "overloaded".
+_RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504, 529})
+
+# Backoff before retry N (0-based): _RETRY_BACKOFF_BASE * (N + 1) seconds.
+_RETRY_BACKOFF_BASE = 0.5
+
 _JSON_OBJECT_INSTRUCTION = (
     "Respond with a single valid JSON object and nothing else — "
     "no prose, no code fences."
 )
 # One-shot warning guard, keyed by response_format type.
 _response_format_warned: set[str] = set()
+
+
+def _timeout_left_the_client(exc: Exception) -> bool:
+    """True when an SDK timeout happened after the request was on the wire.
+
+    A read timeout can leave a completion generated — and billed — server
+    side; re-sending pays for the same prompt twice.
+    """
+    import httpx
+
+    return not isinstance(exc.__cause__, (httpx.ConnectTimeout, httpx.PoolTimeout))
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Whether re-sending the request can plausibly succeed without paying twice."""
+    from anthropic import APIConnectionError, APIStatusError, APITimeoutError
+
+    if isinstance(exc, APITimeoutError):
+        return not _timeout_left_the_client(exc)
+    if isinstance(exc, APIConnectionError):
+        return True
+    if isinstance(exc, APIStatusError):
+        return exc.status_code in _RETRYABLE_STATUS_CODES
+    return True  # unclassifiable (non-SDK) failure — assume transient
 
 
 def _split_system(messages: list[dict]) -> tuple[str | None, list[dict]]:
@@ -179,7 +210,11 @@ class AnthropicClient:
         self.model = model
         self.request_timeout = request_timeout
         self.retry = retry
-        self._client = Anthropic(api_key=api_key, timeout=request_timeout)
+        # max_retries=0: the SDK's own default (2) would multiply with the
+        # retry loop in chat(), turning one logical request into up to six.
+        self._client = Anthropic(
+            api_key=api_key, timeout=request_timeout, max_retries=0
+        )
 
     def chat(
         self,
@@ -212,10 +247,9 @@ class AnthropicClient:
         ``"1h"``; any other value raises :class:`AnthropicError`) so
         repeated calls with the same prefix bill cache-read rates.
 
-        On failure, retries up to ``self.retry`` times before raising
-        :class:`AnthropicError`. The SDK has its own internal retry on
-        transient HTTP failures; pf-core retry is layered on top and
-        kicks in once the SDK has exhausted its own.
+        On a retryable failure, retries up to ``self.retry`` times with
+        backoff before raising :class:`AnthropicError`; deterministic
+        failures raise on the first attempt (see :func:`_is_retryable`).
 
         Returns:
             ``(content, usage)`` — content is the concatenation of all
@@ -269,9 +303,8 @@ class AnthropicClient:
                 call_kwargs["system"] = system
         call_kwargs.update(kwargs)
 
-        # Up to (self.retry + 1) attempts. Default retry=0 means one shot.
-        # Wraps any SDK error in AnthropicError after the last retry.
-        # Validation errors (no model) raised above and aren't reached here.
+        # Only retryable failures are re-sent (see _is_retryable); everything
+        # else wraps into AnthropicError.
         response = None
         elapsed_ms = 0
         for attempt in range(self.retry + 1):
@@ -279,7 +312,7 @@ class AnthropicClient:
             try:
                 response = sdk.messages.create(**call_kwargs)
             except Exception as e:
-                if attempt < self.retry:
+                if attempt < self.retry and _is_retryable(e):
                     _log.warning(
                         "anthropic_retry",
                         attempt=attempt + 1,
@@ -287,6 +320,7 @@ class AnthropicClient:
                         model=resolved_model,
                         error_head=str(e)[:200],
                     )
+                    time.sleep(_RETRY_BACKOFF_BASE * (attempt + 1))
                     continue
                 raise AnthropicError(
                     f"Anthropic API call failed (after {attempt + 1} attempt(s)): {e}",

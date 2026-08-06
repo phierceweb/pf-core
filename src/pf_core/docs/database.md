@@ -23,7 +23,7 @@ get_engine()
 get_engine(db_url(fallback_sqlite="app.db"))
 ```
 
-The engine is cached as a module-level singleton — subsequent calls return the same engine. A later call passing a different URL still returns the cached engine and logs a `get_engine_url_ignored` warning (URLs credential-redacted); call `pf_core.db.connection.reset_engine()` first to switch databases.
+The engine is cached as a module-level singleton — subsequent calls return the same engine, and concurrent first callers are serialized so exactly one engine (and one pool) is ever built. A later call passing a different URL still returns the cached engine and logs a `get_engine_url_ignored` warning (URLs credential-redacted); call `pf_core.db.connection.reset_engine()` first to switch databases.
 
 ### URL resolution
 

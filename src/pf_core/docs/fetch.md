@@ -44,7 +44,7 @@ Constructor knobs (all keyword-only):
 |---|---|---|
 | `user_agent` | kwarg > `PF_FETCH_UA` env > identifying pf-core default | Sent on every request. Give crawls a real contact UA. |
 | `headers` | `None` | Merged over the default UA/Accept/Accept-Language set. |
-| `retries` | `2` | Re-attempts after the first try. |
+| `retries` | `2` | Re-attempts after the first try. Must be `>= 0`; a negative value raises `InvalidInputError` at construction. |
 | `throttle` | `None` | A [`Throttle`](throttle.md); acquired before **every** request, including retries and redirect hops. |
 | `max_bytes` | `None` | Size cap on the wire read **and** the decoded body; overrun raises `ClientError`. `None` leaves both unbounded. |
 | `require_public` | `True` | SSRF guard — see below. |

@@ -19,6 +19,7 @@ cost = estimate_cost(
 
 - **Prefix match.** The model id is matched against the provider's table by prefix; the first match (insertion order) wins. So `claude-opus-4-7`, `claude-opus-4-20250101`, and `claude-opus-4.1` all resolve to the `claude-opus-4` entry.
 - **Namespaced ids.** An OpenRouter-style `anthropic/claude-opus-4-7` is split on `/` and priced against the underlying provider's table — so `estimate_cost("openrouter", "anthropic/claude-...")` works.
+- **Provider with no table of its own** — including an empty or unrecognised `provider` — is searched against every table instead. A provider that *has* a table, including the deliberately empty `openai` and `google`, is never widened.
 - **Unknown model → `0.0`**, with a one-shot `pricing_unknown_model` log warning per `provider:model` per process. Treat `0.0` as "unpriced", not "free".
 - **Cache tokens** are added only when the model's `ModelRates` defines `cache_read` / `cache_write`. The built-in Anthropic entries carry them at the provider's published multipliers of the input rate (read 0.1x; write 1.25x for the 5-minute TTL, 2x for 1-hour). `cache_ttl="1h"` selects `cache_write_1h` when defined, falling back to `cache_write`; any other value uses `cache_write`.
 

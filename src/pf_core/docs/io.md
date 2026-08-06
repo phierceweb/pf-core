@@ -19,9 +19,11 @@ atomic_write_json(Path("./manifest.json"), {"step": "extract", "n": 42})
 
 ## How it works
 
-The pattern: write to a sibling tempfile in the same directory, fsync it, chmod to the target permission, then `os.replace` onto the final path.
+The pattern: write to a sibling tempfile in the same directory, fsync it, chmod to the target permission, `os.replace` onto the final path, then fsync the parent directory.
 
 `os.replace` is atomic when source and target are on the same filesystem — that's why the tempfile lives next to the target rather than in `/tmp`.
+
+The parent-directory fsync is what makes a completed write survive power loss: fsyncing the tempfile persists its *data*, but the rename that gives the data its final name lives in the directory, and an unsynced directory entry can be lost on a crash even though the file's bytes reached disk. (Skipped on platforms without directory file descriptors, i.e. Windows.)
 
 If the write fails partway through, the temp file is unlinked and the original (if any) is untouched.
 
@@ -89,6 +91,7 @@ A `TypeError` from `json.dumps` (non-serializable input) propagates without touc
 - **Not a `mkdir` wrapper.** The parent directory must exist; the caller decides where things go. Atomic-write is only about atomicity.
 - **Not a database transaction.** Atomicity here is per-file. Two related files written via two `atomic_write_*` calls are independently atomic; if you crash between them, you'll have one new + one old. For multi-file consistency, write a single manifest atomically and treat it as the source of truth.
 - **Not lock-aware.** Two processes writing the same file simultaneously will both succeed via separate tempfiles; the last `os.replace` wins. If you need write coordination, layer file locks on top.
+- **Not a guarantee that no temp file is left behind.** Temp cleanup on failure runs in a Python `except` block, so an ordinary error (disk full, permissions) cleans up but a `SIGKILL` or power loss can strand a `.<name>.*.tmp` sibling. The *target* is still correct — only the directory is untidy. Consumers that care can sweep `.<name>.*.tmp` at startup.
 
 ## See also
 

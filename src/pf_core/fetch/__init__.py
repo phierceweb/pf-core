@@ -18,7 +18,7 @@ from email.message import Message
 from typing import Any, TypedDict
 from urllib.parse import urljoin
 
-from pf_core.exceptions import ClientError
+from pf_core.exceptions import ClientError, InvalidInputError
 from pf_core.fetch._decode import decode_body
 from pf_core.utils.env import resolve_str
 from pf_core.utils.http_tls import verify_tls as _resolve_verify_tls
@@ -92,7 +92,8 @@ class Fetcher:
         headers: Extra request headers, merged over the defaults (UA, Accept,
             Accept-Language). No Accept-Encoding by default; gzip/deflate
             response bodies are decoded regardless.
-        retries: Re-attempts after the first request (``2`` → up to 3 attempts).
+        retries: Re-attempts after the first request (``2`` → up to 3 attempts);
+            must be ``>= 0``.
         throttle: Optional :class:`~pf_core.utils.throttle.Throttle`, acquired
             before every request — including retries and redirect hops.
         max_bytes: Response-size cap, applied to the wire read *and* to the
@@ -118,6 +119,8 @@ class Fetcher:
         max_redirects: int = 5,
         verify_tls: bool | None = None,
     ) -> None:
+        if retries < 0:
+            raise InvalidInputError(f"retries must be >= 0, got {retries}")
         self._user_agent = user_agent
         self._headers = dict(headers or {})
         self._retries = retries

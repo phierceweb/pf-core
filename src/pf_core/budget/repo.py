@@ -10,11 +10,13 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select, update
 
 from pf_core.db.repository import Repository
+from pf_core.db.types import server_now
 from pf_core.budget._schema import (
     llm_budget_snapshots,
     llm_budgets,
     llm_cost_rates,
 )
+from pf_core.exceptions import DataError, InvalidInputError
 from pf_core.llm.tracking._resolvers import resolve_llm_model_id
 
 
@@ -198,7 +200,14 @@ class BudgetSnapshotRepo(Repository):
         period_start: dt.date,
         spent_usd: float,
         run_count: int,
+        last_updated: dt.datetime | None = None,
     ) -> None:
+        """Write a snapshot row.
+
+        ``last_updated`` must be the cutoff the aggregate was taken at —
+        stamping it at write time instead loses every run created in
+        between (the live delta starts from this value).
+        """
         with self._tx() as conn:
             existing = conn.execute(
                 select(llm_budget_snapshots.c.budget_id).where(
@@ -220,7 +229,7 @@ class BudgetSnapshotRepo(Repository):
                     .values(
                         spent_usd=spent_usd,
                         run_count=run_count,
-                        last_updated=func.now(),
+                        last_updated=last_updated if last_updated is not None else func.now(),
                     )
                 )
             else:
@@ -230,6 +239,7 @@ class BudgetSnapshotRepo(Repository):
                         period_start=period_start,
                         spent_usd=spent_usd,
                         run_count=run_count,
+                        last_updated=last_updated if last_updated is not None else func.now(),
                     )
                 )
 
@@ -322,22 +332,84 @@ class CostRateRepo(Repository):
 # ---------------------------------------------------------------------------
 
 
-def aggregate_spent(
-    *,
-    budget: dict,
-    period_start: dt.date,
-    period_end: dt.date,
-    conn=None,
-) -> tuple[float, int]:
-    """Sum ``llm_runs.cost_usd`` for the rows matching a budget's scope in [period_start, period_end).
+def apply_scope_filter(q, budget: dict):
+    """Restrict an ``llm_runs`` query to the runs a budget's scope covers.
 
-    Excludes rows with ``status IN ('cache_hit', 'budget_blocked')``.
+    The single definition — snapshot aggregate and live delta must not
+    disagree about what a budget counts.
+
+    Raises:
+        InvalidInputError: unrecognised ``scope_kind``. Refusing beats
+            summing every scope (false blocks) or none (an unenforced cap).
     """
     from pf_core.llm.tracking.schema import (
         llm_agent_types,
         llm_run_tags,
         llm_runs,
     )
+
+    scope_kind = budget["scope_kind"]
+    scope_value = budget.get("scope_value")
+
+    if scope_kind == "global":
+        return q
+    if scope_kind == "agent":
+        return q.join(
+            llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
+        ).where(llm_agent_types.c.slug == scope_value)
+    if scope_kind == "job_kind":
+        from pf_core.jobs._schema import jobs
+
+        return q.join(jobs, llm_runs.c.job_id == jobs.c.id).where(
+            jobs.c.kind == scope_value
+        )
+    if scope_kind == "job_id":
+        if scope_value is None:
+            raise InvalidInputError("budget scope 'job_id' requires a scope_value")
+        return q.where(llm_runs.c.job_id == int(scope_value))
+    if scope_kind == "tag":
+        return q.join(
+            llm_run_tags, llm_runs.c.id == llm_run_tags.c.llm_run_id
+        ).where(llm_run_tags.c.tag == scope_value)
+    raise InvalidInputError(f"unknown budget scope_kind: {scope_kind!r}")
+
+
+def db_now(conn=None) -> dt.datetime:
+    """Read the clock ``llm_runs.created_at`` is stamped from.
+
+    Cutoffs compared against server-stamped rows must come from the same
+    clock — a Python-side UTC value skews on MySQL TIMESTAMP columns.
+    """
+    if conn is not None:
+        return _read_now(conn)
+    from pf_core.db.connection import transaction
+
+    with transaction() as c:
+        return _read_now(c)
+
+
+def _read_now(conn: Any) -> dt.datetime:
+    value = conn.execute(select(server_now())).scalar()
+    if value is None:  # pragma: no cover - a scalar clock select always yields a row
+        raise DataError("database clock query returned no row")
+    return value
+
+
+def aggregate_spent(
+    *,
+    budget: dict,
+    period_start: dt.date,
+    period_end: dt.date,
+    cutoff: dt.datetime | None = None,
+    conn=None,
+) -> tuple[float, int]:
+    """Sum ``llm_runs.cost_usd`` for the rows matching a budget's scope in [period_start, period_end).
+
+    Excludes rows with ``status IN ('cache_hit', 'budget_blocked')``.
+    ``cutoff`` bounds the sum to ``created_at < cutoff``; store it as the
+    snapshot's ``last_updated`` so the live delta resumes exactly there.
+    """
+    from pf_core.llm.tracking.schema import llm_runs
 
     def _run(c):
         q = select(
@@ -350,32 +422,10 @@ def aggregate_spent(
                 llm_runs.c.status.notin_(["cache_hit", "budget_blocked"]),
             )
         )
+        if cutoff is not None:
+            q = q.where(llm_runs.c.created_at < cutoff)
 
-        scope_kind = budget["scope_kind"]
-        scope_value = budget.get("scope_value")
-
-        if scope_kind == "global":
-            pass
-        elif scope_kind == "agent":
-            q = q.join(
-                llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-            ).where(llm_agent_types.c.slug == scope_value)
-        elif scope_kind == "job_kind":
-            from pf_core.jobs._schema import jobs
-
-            q = q.join(jobs, llm_runs.c.job_id == jobs.c.id).where(
-                jobs.c.kind == scope_value
-            )
-        elif scope_kind == "job_id":
-            q = q.where(llm_runs.c.job_id == int(scope_value))
-        elif scope_kind == "tag":
-            q = q.join(
-                llm_run_tags, llm_runs.c.id == llm_run_tags.c.llm_run_id
-            ).where(llm_run_tags.c.tag == scope_value)
-        else:
-            return (0.0, 0)
-
-        total, n = c.execute(q).fetchone()
+        total, n = c.execute(apply_scope_filter(q, budget)).fetchone()
         return (float(total or 0), int(n or 0))
 
     if conn is not None:

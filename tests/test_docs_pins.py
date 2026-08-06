@@ -132,3 +132,22 @@ def test_no_prepublication_version_references():
         "version references ahead of the released line (pre-publication/future numbering):\n"
         + "\n".join(offenders)
     )
+
+
+def test_no_backup_or_debris_files_are_tracked():
+    """No editor backup or debris file is tracked.
+
+    Enumerated from git, not globbed: ``*.md`` does not match ``.md.bak``.
+    """
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.split()
+    debris = [
+        f
+        for f in tracked
+        if f.endswith((".bak", ".orig", ".rej", ".tmp", ".swp", "~"))
+        or Path(f).name == ".DS_Store"
+    ]
+    assert not debris, f"debris committed: {debris}"
