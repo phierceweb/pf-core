@@ -52,7 +52,7 @@ A single `metadata.create_all()` creates tracking + jobs + cache + budget tables
 
 ## Budget config (budgets.yaml)
 
-Version-controlled source of truth. `sync_budgets_from_yaml()` upserts into `llm_budgets`; scopes removed from the YAML are **disabled** (not deleted) to preserve history.
+Version-controlled source of truth. `sync_budgets_from_yaml()` upserts into `llm_budgets`; scopes removed from the YAML are **disabled** (not deleted) to preserve history. A config resolving to *zero* scopes is the exception — see [When the config cannot be read](#when-the-config-cannot-be-read).
 
 ```yaml
 # config/budgets.yaml
@@ -88,6 +88,29 @@ tags:
 
 Load path resolved from `BUDGET_CONFIG` (default `config/budgets.yaml`). Reload cadence: `BUDGET_CONFIG_RELOAD_SECONDS` (default 300).
 
+### When the config cannot be read
+
+A budget guard that quietly disarms itself is worse than no guard, so the three states are kept distinct:
+
+| State | `load_yaml()` | `sync_budgets_from_yaml()` |
+|---|---|---|
+| File absent | returns `{}` (`budget_config_absent`, DEBUG) — the guard is opt-in | no-op |
+| File exists, unreadable or not a top-level mapping | raises `ConfigurationError` | no-op; logs `budget_config_unreadable` at ERROR |
+| File readable but resolves to no scopes | returns the parsed document | disables nothing; logs `budget_sync_refused_mass_disable` at WARNING |
+
+"Unreadable" covers a YAML syntax error, a permission error, a symlink loop, a symlink to a missing target (an unmounted volume, rather than an absent file), a non-UTF-8 body, and a section or limit of the wrong type (`agents: "nope"`, `daily: "20 USD"`). They all surface as `ConfigurationError` so one `except` clause catches the family.
+
+**`sync_budgets_from_yaml()` never raises on a bad config file** — database errors from the write still propagate. Consumers call it at boot, where raising on an unreadable config costs availability without buying safety: the previously synced rows keep enforcing either way. Call `load_yaml()` first if you want boot to fail fast on a bad config:
+
+```python
+load_yaml()                 # raises ConfigurationError on a bad file
+sync_budgets_from_yaml()
+```
+
+Unrecognised top-level keys are ignored and logged as `budget_config_unknown_sections` (WARNING) — `agent:` for `agents:` parses cleanly and would otherwise silently define no caps at all.
+
+Because the loader runs on a [`ReloadCache`](reload-cache.md) with `stale_on=(ConfigurationError,)`, a process that already loaded a good config keeps serving it when a later reload fails, logging `reload_cache_kept_stale` once per TTL. Only a first load with nothing cached raises.
+
 ## The pre-call guard
 
 ```python
@@ -103,6 +126,8 @@ check_budget(
 ```
 
 Checks in order: **global → agent → job_kind → job_id → tag**. First failing `block` scope raises `CostBudgetExceeded`. `warn` scopes log and continue.
+
+When *no* enabled row matches any of those scopes the call is uncapped, and that is reported rather than passed over: `budget_no_scopes_matched` logs at WARNING the first time a given `(agent_type, job_kind, tags)` combination goes unmatched and at DEBUG thereafter. `job_id` is excluded from the dedupe key as unbounded, and the set is capped (`_NO_SCOPE_WARN_LIMIT` in `budget/check.py`) so caller-supplied tags cannot grow it without limit; a process restart re-arms. Note that `list_for_scopes` always includes the `global` scope, so any deployment with a global budget never reaches this path.
 
 `CostBudgetExceeded` attributes: `scope_kind`, `scope_value`, `period`, `limit_usd`, `spent_usd`, `projected_usd`.
 
@@ -215,7 +240,7 @@ Sequential, defensively:
 2. Start with `warn`-only global budget. Watch for a week to calibrate — verify projected ≈ actual.
 3. Add agent budgets as `warn` first. Measure threshold crossings.
 4. Promote to `block` one agent at a time, starting with the highest-volume loop (the highest-risk shape for runaway spend).
-5. Route the structured `budget_threshold_crossed` / `budget_warn_exceeded` log events to Slack or similar via your log pipeline (pf-core does not ship a webhook integration).
+5. Route the structured `budget_threshold_crossed` / `budget_warn_exceeded` log events to Slack or similar via your log pipeline (pf-core does not ship a webhook integration). Route the unarmed-guard events (`budget_config_unreadable`, `budget_sync_refused_mass_disable`, `budget_no_scopes_matched`) with them — those say the cap is not enforcing at all, which matters more than a threshold crossing.
 6. For agents that should fall back rather than fail: service-side catch `CostBudgetExceeded`, call `get_agent_config(cheaper_slug)`, retry.
 
 ## Environment variables
@@ -233,3 +258,4 @@ Sequential, defensively:
 3. **Time zones.** All boundaries are UTC. Document this to human operators loudly.
 4. **Stale projection.** If `llm_cost_rates` drifts from actual costs, run a projection-accuracy query weekly (compare projected vs actual `cost_usd` on recent `llm_runs`) and update rates when `|mean_delta| > 5%`.
 5. **Missing rate.** When a model has no row, projection falls back to the shared price list, then the 24h mean — slow to adapt but never fails closed on missing data. A model none of them knows projects at `0.0` and records `0.0`: the cap goes blind to it, loudly (`budget_projection_unknown`, `pricing_unknown_model`).
+6. **Unarmed guard.** A deployment whose budgets were never synced — or whose `budgets.yaml` cannot be read — runs uncapped. Nothing raises; the state is reported instead (`budget_config_unreadable`, `budget_sync_refused_mass_disable`, `budget_no_scopes_matched`). Alert on those events; a silent log is an unenforced cap.

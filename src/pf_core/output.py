@@ -24,6 +24,7 @@ from typing import Protocol, runtime_checkable
 
 import structlog
 from rich.console import Console
+from rich.markup import escape
 
 
 def _fmt(msg: str, kw: dict) -> str:
@@ -32,6 +33,13 @@ def _fmt(msg: str, kw: dict) -> str:
         return msg.format(**kw)
     except (KeyError, IndexError, ValueError):
         return msg
+
+
+def _markup(msg: str, kw: dict) -> str:
+    """Format for rich. A reported message is data, not markup: unescaped, rich
+    drops bracketed runs and raises ``MarkupError`` on a ``[/]``.
+    """
+    return escape(_fmt(msg, kw))
 
 
 @runtime_checkable
@@ -71,19 +79,19 @@ class ConsoleReporter:
         self._console = console or Console(stderr=True)
 
     def info(self, msg: str, **kw: object) -> None:
-        self._console.print(_fmt(msg, kw))
+        self._console.print(_markup(msg, kw))
 
     def warning(self, msg: str, **kw: object) -> None:
-        self._console.print(f"[yellow]{_fmt(msg, kw)}[/yellow]")
+        self._console.print(f"[yellow]{_markup(msg, kw)}[/yellow]")
 
     def error(self, msg: str, **kw: object) -> None:
-        self._console.print(f"[red]{_fmt(msg, kw)}[/red]")
+        self._console.print(f"[red]{_markup(msg, kw)}[/red]")
 
     def step(self, msg: str, **kw: object) -> None:
-        self._console.print(f"  [dim]{_fmt(msg, kw)}[/dim]")
+        self._console.print(f"  [dim]{_markup(msg, kw)}[/dim]")
 
     def done(self, msg: str, **kw: object) -> None:
-        self._console.print(f"[bold green]{_fmt(msg, kw)}[/bold green]")
+        self._console.print(f"[bold green]{_markup(msg, kw)}[/bold green]")
 
 
 class LogReporter:

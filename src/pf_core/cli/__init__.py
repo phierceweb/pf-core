@@ -26,6 +26,7 @@ from typing import Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from pf_core.exceptions import AppError, FlowException
 from pf_core.log import get_logger, log_exception, setup_logging
@@ -33,6 +34,15 @@ from pf_core.log import get_logger, log_exception, setup_logging
 logger = get_logger(__name__)
 
 _stderr = Console(stderr=True)
+
+
+def _print_error(exc: BaseException) -> None:
+    """Print an exception in red.
+
+    The message is data, not markup: unescaped, rich drops bracketed runs and
+    raises ``MarkupError`` on a ``[/]`` inside this handler.
+    """
+    _stderr.print(f"[red]{escape(str(exc))}[/red]")
 
 
 def _exc(module: str, name: str) -> tuple[type[BaseException], ...]:
@@ -123,9 +133,9 @@ def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
         exc.show()
         sys.exit(exc.exit_code)
     except FlowException as exc:
-        _stderr.print(f"[red]{exc}[/red]")
+        _print_error(exc)
         sys.exit(1)
     except AppError as exc:
         log_exception(exc, message_prepend="cli error")
-        _stderr.print(f"[red]{exc}[/red]")
+        _print_error(exc)
         sys.exit(1)

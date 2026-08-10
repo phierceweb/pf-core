@@ -95,6 +95,14 @@ If a format placeholder is missing from `**kw`, the raw message is printed witho
 reporter.info("Missing {x}")  # prints "Missing {x}" — no KeyError
 ```
 
+`ConsoleReporter` escapes the formatted message before printing, so a message is
+treated as data rather than rich markup:
+
+```python
+reporter.info("give it two numbers [x, y]")  # prints the brackets, not a dropped tag
+reporter.error("use [/] to close a tag")     # prints — unescaped this raises MarkupError
+```
+
 ## Migration
 
 Replace a `verbose`-flag print pattern in services:

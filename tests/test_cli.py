@@ -247,3 +247,38 @@ class TestExceptionResolution:
         assert click.exceptions.Abort in _ABORT
         assert issubclass(typer.BadParameter, _USAGE)
         assert issubclass(click.exceptions.UsageError, _USAGE)
+
+
+class TestRunCliErrorMessagesAreData:
+    """Messages print through rich, which reads brackets as markup."""
+
+    def _run(self, exc, capsys):
+        app = create_cli("test")
+
+        @app.command()
+        def fail():
+            raise exc
+
+        with pytest.raises(SystemExit):
+            run_cli(app, args=["fail"])
+        return capsys.readouterr().err
+
+    def test_a_flow_exception_keeps_its_bracketed_example(self, capsys):
+        err = self._run(
+            InvalidInputError("give it two numbers [x, y] as fractions"), capsys)
+        assert "[x, y]" in err
+
+    def test_an_app_error_keeps_its_bracketed_example(self, capsys):
+        """Keep a letter-led run — rich passes `[1, 2, 3]` through and proves nothing."""
+        with patch("pf_core.cli.log_exception"):
+            err = self._run(ClientError("upstream wanted [x, y] and got none"), capsys)
+        assert "[x, y]" in err
+
+    def test_a_tag_like_run_is_printed_not_interpreted(self, capsys):
+        err = self._run(InvalidInputError("write [bold] to embolden"), capsys)
+        assert "[bold]" in err
+
+    def test_a_closing_tag_does_not_crash_the_error_handler(self, capsys):
+        """Unescaped, `[/]` raises inside the handler — a traceback instead of the error."""
+        err = self._run(InvalidInputError("use [/] to close a tag"), capsys)
+        assert "[/]" in err

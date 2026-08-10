@@ -2,6 +2,21 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.19.0 — 2026-08-09
+
+### Fixed
+- `run_cli` escapes an exception message before printing it. Rich read any bracketed run as markup, so `give it two numbers [x, y]` printed without the `[x, y]`, and a message containing `[/]` raised `MarkupError` inside the handler — replacing the error report with a traceback. Both the `FlowException` and `AppError` branches print through `_print_error`.
+- `ConsoleReporter` escapes the same way, on all five methods. A reported message containing `[/]` raised `MarkupError` from `error()` itself, so reporting a failure became a traceback.
+- A `budgets.yaml` that cannot be read no longer disarms every cap — previously an unparseable file read as "no scopes" and disabled every enabled row. The three states are now distinct: absent is a no-op (the guard is opt-in), unreadable raises `ConfigurationError` out of `load_yaml()`, and a config resolving to zero scopes disables nothing and logs `budget_sync_refused_mass_disable`. That last case covers an absent file, an unmounted symlink target, and a mistyped section name (`agent:` for `agents:`), none of which raise.
+- `ConfigurationError` now covers the whole malformed-config family, so one `except` clause catches it and `stale_on` can hold the last good config: a permission error, a symlink loop, a symlink to a missing target, a non-UTF-8 body, deep-nesting `RecursionError`, a section of the wrong type (`agents: "nope"`), and a non-numeric limit (`daily: "20 USD"`). Reading drives off `open()` rather than `Path.exists()`, closing the delete-between-check-and-open race.
+- Unrecognised top-level keys in `budgets.yaml` log `budget_config_unknown_sections` at WARNING instead of silently defining no caps.
+- `check_budget` logs `budget_no_scopes_matched` when no enabled row matches, so an uncapped call is visible — WARNING the first time a given `(agent_type, job_kind, tags)` combination goes unmatched, DEBUG after. `job_id` is excluded from the dedupe key as unbounded and the set is capped, so caller-supplied tags cannot grow it without limit. A process restart re-arms.
+
+### Changed
+- **Breaking (narrow):** `load_yaml()` raises `ConfigurationError` for a budget config that exists but is unreadable or is not a top-level mapping; it previously returned `{}` after logging a warning. The budget config `ReloadCache` is constructed with `stale_on=(ConfigurationError,)`, so a *reload* that fails serves the last good config and logs `reload_cache_kept_stale`; only a first load with nothing cached raises.
+- **Breaking (narrow):** `BudgetRepo.sync_from_desired([])` disables nothing and logs `budget_sync_refused_mass_disable`; it previously disabled every enabled row. Removing a subset of scopes still disables that subset.
+- `sync_budgets_from_yaml()` never raises on a bad config file. An unreadable config logs `budget_config_unreadable` at ERROR and leaves every existing row untouched, so consumers that call it at boot keep starting and the last synced caps keep enforcing. Database errors from the write still propagate. Call `load_yaml()` first to fail fast on the config instead.
+
 ## v0.18.1 — 2026-08-05
 
 ### Fixed

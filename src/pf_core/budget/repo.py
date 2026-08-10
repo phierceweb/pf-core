@@ -18,6 +18,9 @@ from pf_core.budget._schema import (
 )
 from pf_core.exceptions import DataError, InvalidInputError
 from pf_core.llm.tracking._resolvers import resolve_llm_model_id
+from pf_core.log import get_logger
+
+logger = get_logger(__name__)
 
 
 class BudgetRepo(Repository):
@@ -105,6 +108,11 @@ class BudgetRepo(Repository):
         A "desired" row is ``{scope_kind, scope_value, period, limit_usd,
         soft_thresholds, action}``.
 
+        An empty ``desired`` disables nothing and logs
+        ``budget_sync_refused_mass_disable`` — zero scopes is far more often an
+        unreadable or mistyped config than a deliberate removal of every cap.
+        Removing a subset of scopes still disables that subset.
+
         Returns counts: ``{"inserted": N, "updated": N, "disabled": N}``.
         """
         inserted = 0
@@ -155,7 +163,6 @@ class BudgetRepo(Repository):
                     )
                     inserted += 1
 
-            # Disable anything enabled but not in desired
             existing_rows = conn.execute(
                 select(
                     llm_budgets.c.id,
@@ -165,15 +172,28 @@ class BudgetRepo(Repository):
                 ).where(llm_budgets.c.enabled.is_(True))
             ).fetchall()
 
-            for r in existing_rows:
-                key = (r.scope_kind, r.scope_value, r.period)
-                if key not in desired_keys:
-                    conn.execute(
-                        update(llm_budgets)
-                        .where(llm_budgets.c.id == r.id)
-                        .values(enabled=False, updated_at=func.now())
+            if not desired:
+                if existing_rows:
+                    logger.warning(
+                        "budget_sync_refused_mass_disable",
+                        enabled_rows=len(existing_rows),
+                        message=(
+                            "config resolved to no scopes — keeping every existing "
+                            "cap rather than uncapping the process; check that "
+                            "budgets.yaml is readable and its section names are "
+                            "spelled 'agents', 'job_kinds', 'tags'"
+                        ),
                     )
-                    disabled += 1
+            else:
+                for r in existing_rows:
+                    key = (r.scope_kind, r.scope_value, r.period)
+                    if key not in desired_keys:
+                        conn.execute(
+                            update(llm_budgets)
+                            .where(llm_budgets.c.id == r.id)
+                            .values(enabled=False, updated_at=func.now())
+                        )
+                        disabled += 1
 
         return {"inserted": inserted, "updated": updated, "disabled": disabled}
 

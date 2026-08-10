@@ -25,7 +25,9 @@ from pf_core.budget import (
     refresh_snapshots,
     sync_budgets_from_yaml,
 )
-from pf_core.budget.check import _clear_threshold_state
+from pf_core.budget.check import _clear_no_scope_state, _clear_threshold_state
+from pf_core.budget.config import _flatten_scopes, load_yaml
+from pf_core.exceptions import ConfigurationError
 from pf_core.llm.tracking import (
     LlmRunRepo,
     clear_resolver_caches,
@@ -43,10 +45,12 @@ def _reset():
     clear_resolver_caches()
     clear_config_cache()
     _clear_threshold_state()
+    _clear_no_scope_state()
     yield
     clear_resolver_caches()
     clear_config_cache()
     _clear_threshold_state()
+    _clear_no_scope_state()
 
 
 @pytest.fixture()
@@ -310,8 +314,70 @@ def test_cost_budget_exceeded_caught_by_name():
         )
 
 
-def test_check_budget_passes_when_no_budgets(budget_db):
-    check_budget(agent_type="drafter", projected_cost_usd=5.00)  # no raise
+def _event_records(caplog, event: str) -> list:
+    """Records carrying a structlog event_dict whose ``event`` key matches."""
+    return [
+        r
+        for r in caplog.records
+        if isinstance(getattr(r, "msg", None), dict) and r.msg.get("event") == event
+    ]
+
+
+def _no_scope_records(caplog) -> list:
+    return _event_records(caplog, "budget_no_scopes_matched")
+
+
+def test_check_budget_passes_when_no_budgets(budget_db, caplog):
+    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+        check_budget(agent_type="drafter", projected_cost_usd=5.00)  # no raise
+    records = _no_scope_records(caplog)
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert records[0].msg["agent_type"] == "drafter"
+
+
+def test_check_budget_no_scope_warning_dedupes_then_drops_to_debug(budget_db, caplog):
+    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+        check_budget(agent_type="drafter", projected_cost_usd=1.0)
+        check_budget(agent_type="drafter", projected_cost_usd=1.0, job_id=7)
+        check_budget(agent_type="critic", projected_cost_usd=1.0)
+    levels = [r.levelno for r in _no_scope_records(caplog)]
+    # Same agent twice (differing only by the unbounded job_id) warns once.
+    assert levels == [logging.WARNING, logging.DEBUG, logging.WARNING]
+
+
+def test_check_budget_no_scope_log_names_every_scope_looked_for(budget_db, caplog):
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+        check_budget(
+            agent_type="drafter",
+            projected_cost_usd=1.0,
+            job_kind="draft_batch",
+            job_id=90210,
+            tags=["experiment:opus47"],
+        )
+    payload = _no_scope_records(caplog)[0].msg
+    assert payload["agent_type"] == "drafter"
+    assert payload["job_kind"] == "draft_batch"
+    assert payload["job_id"] == 90210
+    assert payload["tags"] == ["experiment:opus47"]
+
+
+def test_check_budget_no_scope_warn_set_is_bounded(budget_db, caplog):
+    from pf_core.budget.check import _NO_SCOPE_WARN_LIMIT, _NO_SCOPE_WARNED
+
+    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+        for i in range(_NO_SCOPE_WARN_LIMIT + 50):
+            check_budget(projected_cost_usd=0.1, tags=[f"run:{i}"])
+    assert len(_NO_SCOPE_WARNED) == _NO_SCOPE_WARN_LIMIT
+    warned = [r for r in _no_scope_records(caplog) if r.levelno == logging.WARNING]
+    assert len(warned) == _NO_SCOPE_WARN_LIMIT
+
+
+def test_check_budget_silent_when_a_scope_matches(budget_db, caplog):
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=20.0)
+    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+        check_budget(agent_type="drafter", projected_cost_usd=1.0)
+    assert _no_scope_records(caplog) == []
 
 
 def test_check_budget_passes_under_limit(budget_db):
@@ -543,6 +609,162 @@ def test_sync_budgets_from_yaml_missing_file_is_noop(budget_db, tmp_path, monkey
     assert counts == {"inserted": 0, "updated": 0, "disabled": 0}
 
 
+def test_sync_budgets_from_yaml_empty_file_is_noop(budget_db, tmp_path, monkeypatch):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text("# nothing declared yet\n")
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    counts = sync_budgets_from_yaml()
+    assert counts == {"inserted": 0, "updated": 0, "disabled": 0}
+
+
+def _seed_drafter_cap(tmp_path, monkeypatch, name: str = "good.yaml"):
+    """Sync a single blocking 10.0/day drafter cap and return its config path."""
+    cfg = tmp_path / name
+    cfg.write_text("agents:\n  drafter:\n    daily: 10.0\n    action: block\n")
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    assert sync_budgets_from_yaml()["inserted"] == 1
+    return cfg
+
+
+def _assert_drafter_cap_still_enforcing():
+    found = BudgetRepo().find(scope_kind="agent", scope_value="drafter", period="daily")
+    assert found is not None and found["enabled"]
+    _spend("drafter", "claude-opus-4-7", 9.5)
+    with pytest.raises(CostBudgetExceeded):
+        check_budget(agent_type="drafter", projected_cost_usd=1.0)
+
+
+def test_sync_budgets_from_yaml_malformed_file_is_a_logged_noop(
+    budget_db, tmp_path, monkeypatch, caplog
+):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text("agents:\n  drafter:\n   daily: 20.0\n    monthly: [unclosed\n")
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    with caplog.at_level(logging.ERROR, logger="pf_core.budget.config"):
+        counts = sync_budgets_from_yaml()
+    assert counts == {"inserted": 0, "updated": 0, "disabled": 0}
+    records = _event_records(caplog, "budget_config_unreadable")
+    assert len(records) == 1
+    assert str(cfg) in records[0].msg["error"]
+
+
+def test_sync_budgets_from_yaml_non_mapping_document_is_a_logged_noop(
+    budget_db, tmp_path, monkeypatch, caplog
+):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text("- global\n- agents\n")
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    with caplog.at_level(logging.ERROR, logger="pf_core.budget.config"):
+        assert sync_budgets_from_yaml() == {"inserted": 0, "updated": 0, "disabled": 0}
+    assert _event_records(caplog, "budget_config_unreadable")
+
+
+def test_load_yaml_still_raises_so_callers_can_fail_fast(budget_db, tmp_path, monkeypatch):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text("- global\n- agents\n")
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    with pytest.raises(ConfigurationError):
+        load_yaml()
+
+
+def test_malformed_config_does_not_disable_existing_budgets(budget_db, tmp_path, monkeypatch):
+    _seed_drafter_cap(tmp_path, monkeypatch)
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("agents:\n  drafter:\n   daily: 10.0\n    action: [oops\n")
+    monkeypatch.setenv("BUDGET_CONFIG", str(bad))
+    assert sync_budgets_from_yaml() == {"inserted": 0, "updated": 0, "disabled": 0}
+
+    _assert_drafter_cap_still_enforcing()
+
+
+def test_config_that_vanishes_does_not_disable_existing_budgets(
+    budget_db, tmp_path, monkeypatch, caplog
+):
+    cfg = _seed_drafter_cap(tmp_path, monkeypatch)
+    cfg.unlink()
+    clear_config_cache()
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.repo"):
+        assert sync_budgets_from_yaml()["disabled"] == 0
+    assert _event_records(caplog, "budget_sync_refused_mass_disable")
+
+    _assert_drafter_cap_still_enforcing()
+
+
+def test_mistyped_section_name_does_not_disable_existing_budgets(
+    budget_db, tmp_path, monkeypatch, caplog
+):
+    cfg = _seed_drafter_cap(tmp_path, monkeypatch)
+    # 'agent' rather than 'agents' — parses cleanly, yields zero scopes.
+    cfg.write_text("agent:\n  drafter:\n    daily: 10.0\n    action: block\n")
+    clear_config_cache()
+
+    with caplog.at_level(logging.WARNING):
+        assert sync_budgets_from_yaml()["disabled"] == 0
+    unknown = _event_records(caplog, "budget_config_unknown_sections")
+    assert unknown and unknown[0].msg["unknown"] == ["agent"]
+    assert _event_records(caplog, "budget_sync_refused_mass_disable")
+
+    _assert_drafter_cap_still_enforcing()
+
+
+def test_removing_one_scope_still_disables_it(budget_db, tmp_path, monkeypatch):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text(
+        "agents:\n  drafter:\n    daily: 10.0\n  critic:\n    daily: 5.0\n"
+    )
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    assert sync_budgets_from_yaml()["inserted"] == 2
+
+    cfg.write_text("agents:\n  drafter:\n    daily: 10.0\n")
+    clear_config_cache()
+    assert sync_budgets_from_yaml()["disabled"] == 1
+
+    repo = BudgetRepo()
+    assert repo.find(scope_kind="agent", scope_value="drafter", period="daily")["enabled"]
+    assert not repo.find(scope_kind="agent", scope_value="critic", period="daily")["enabled"]
+
+
+def test_in_place_edit_to_malformed_serves_last_good_config(
+    budget_db, tmp_path, monkeypatch
+):
+    """The realistic shape: an operator breaks budgets.yaml under a live process."""
+    cfg = _seed_drafter_cap(tmp_path, monkeypatch, name="budgets.yaml")
+    monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "0")  # reload every call
+    cfg.write_text("agents:\n  drafter:\n   daily: 10.0\n    action: [oops\n")
+
+    # Same path, warm cache -> stale-serve, so the sync re-applies the good scopes.
+    counts = sync_budgets_from_yaml()
+    assert counts["disabled"] == 0
+    _assert_drafter_cap_still_enforcing()
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "agents: nope\n",
+        "global:\n  - 5\n",
+        "global:\n  daily: 20 USD\n",
+        "agents:\n  drafter: 20.0\n",
+    ],
+)
+def test_wrongly_shaped_config_raises_configuration_error(tmp_path, monkeypatch, document):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text(document)
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    with pytest.raises(ConfigurationError):
+        _flatten_scopes(load_yaml())
+
+
+def test_broken_symlink_is_a_config_error_not_an_absent_file(tmp_path, monkeypatch):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.symlink_to(tmp_path / "unmounted-volume.yaml")
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    with pytest.raises(ConfigurationError):
+        load_yaml()
+
+
 # ---------------------------------------------------------------------------
 # Snapshot + live delta
 # ---------------------------------------------------------------------------
@@ -590,6 +812,26 @@ class TestConfigReloadCache:
         assert load_yaml()["global"]["daily"] == 1.0
         monkeypatch.setenv("BUDGET_CONFIG", str(b))
         assert load_yaml()["global"]["daily"] == 2.0
+
+    def test_malformed_reload_keeps_last_good_config(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "budgets.yaml"
+        cfg.write_text("global:\n  daily: 5.0\n")
+        monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+        monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "0")  # reload every call
+        from pf_core.budget.config import load_yaml
+
+        assert load_yaml()["global"]["daily"] == 5.0
+        cfg.write_text("global:\n  daily: 5.0\n   monthly: [oops\n")
+        assert load_yaml()["global"]["daily"] == 5.0
+
+    def test_first_load_of_a_malformed_config_raises(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "budgets.yaml"
+        cfg.write_text("global:\n  daily: 5.0\n   monthly: [oops\n")
+        monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+        from pf_core.budget.config import load_yaml
+
+        with pytest.raises(ConfigurationError):
+            load_yaml()
 
 
 # ---------------------------------------------------------------------------

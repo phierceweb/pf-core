@@ -5,6 +5,7 @@ from __future__ import annotations
 from io import StringIO
 from unittest.mock import MagicMock
 
+import pytest
 from rich.console import Console
 
 from pf_core.output import (
@@ -100,6 +101,28 @@ class TestConsoleReporter:
 
     def test_isinstance_check(self):
         assert isinstance(ConsoleReporter(), Reporter)
+
+
+class TestConsoleReporterMessagesAreData:
+    """Messages print through rich, which reads brackets as markup."""
+
+    @pytest.mark.parametrize("method", ["info", "warning", "error", "step", "done"])
+    def test_a_bracketed_run_survives(self, method):
+        r, buf = _make_console_reporter()
+        getattr(r, method)("give it two numbers [x, y]")
+        assert "[x, y]" in buf.getvalue()
+
+    @pytest.mark.parametrize("method", ["info", "warning", "error", "step", "done"])
+    def test_a_closing_tag_does_not_raise(self, method):
+        """Unescaped, `[/]` raises MarkupError — in `error()`, while reporting a failure."""
+        r, buf = _make_console_reporter()
+        getattr(r, method)("use [/] to close a tag")
+        assert "[/]" in buf.getvalue()
+
+    def test_a_bracketed_value_substituted_from_kwargs_survives(self):
+        r, buf = _make_console_reporter()
+        r.info("parsed {value}", value="[bold]")
+        assert "[bold]" in buf.getvalue()
 
 
 # ---------------------------------------------------------------------------

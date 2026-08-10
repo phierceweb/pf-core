@@ -47,7 +47,7 @@ Reload failure policy is per-site, expressed in two places:
 - **Fail-loud** (the default, `stale_on=()`): loader exceptions always propagate.
 - **Fail-empty**: catch inside your loader and return the empty value — the policy belongs to the loader, not the cache.
 
-pf-core's own model-router and LLM-cache config loaders run on this primitive (stale-serving and fail-empty respectively); read `pf_core/llm/_router_loader.py` for the canonical adoption shape.
+pf-core's own model-router, budget-config, and LLM-cache config loaders run on this primitive (the first two stale-serving, the last fail-empty); read `pf_core/llm/_router_loader.py` for the canonical adoption shape.
 
 ## Testing
 

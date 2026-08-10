@@ -314,6 +314,46 @@ def _clear_threshold_state() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Unarmed-guard reporting
+# ---------------------------------------------------------------------------
+
+# job_id is unbounded so it stays out of the dedupe key; tags are caller-supplied
+# and equally unbounded, so the set is capped rather than allowed to grow.
+_NO_SCOPE_WARN_LIMIT = 512
+_NO_SCOPE_WARNED: set[tuple[str | None, str | None, tuple[str, ...]]] = set()
+
+
+def _clear_no_scope_state() -> None:
+    """Testing helper — clears the in-process warned-scope set."""
+    _NO_SCOPE_WARNED.clear()
+
+
+def _log_no_scopes(
+    *,
+    agent_type: str | None,
+    job_kind: str | None,
+    job_id: int | None,
+    tags: list[str] | None,
+) -> None:
+    """Report that the guard matched nothing, so an inert cap is visible in logs."""
+    key = (agent_type, job_kind, tuple(sorted(tags or ())))
+    first = key not in _NO_SCOPE_WARNED and len(_NO_SCOPE_WARNED) < _NO_SCOPE_WARN_LIMIT
+    if first:
+        _NO_SCOPE_WARNED.add(key)
+    (logger.warning if first else logger.debug)(
+        "budget_no_scopes_matched",
+        agent_type=agent_type,
+        job_kind=job_kind,
+        job_id=job_id,
+        tags=list(tags or []),
+        message=(
+            "no enabled llm_budgets row matched these scopes — this call is "
+            "uncapped; run sync_budgets_from_yaml() if budgets.yaml defines one"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main guard
 # ---------------------------------------------------------------------------
 
@@ -328,6 +368,9 @@ def check_budget(
     override: dict[str, Any] | None = None,
 ) -> None:
     """Pre-call guard. Raises :class:`CostBudgetExceeded` if a block scope is over cap.
+
+    When no enabled scope matches, the call is uncapped and logged as
+    ``budget_no_scopes_matched`` rather than passing silently.
 
     Args:
         agent_type: Agent slug (optional — skips agent scope when None).
@@ -361,9 +404,11 @@ def check_budget(
         agent_type=agent_type, job_kind=job_kind, job_id=job_id, tags=tags
     )
     if not budgets:
+        _log_no_scopes(
+            agent_type=agent_type, job_kind=job_kind, job_id=job_id, tags=tags
+        )
         return
 
-    # Check in order: global → agent → job_kind → job_id → tag
     order = {"global": 0, "agent": 1, "job_kind": 2, "job_id": 3, "tag": 4}
     budgets.sort(key=lambda b: (order.get(b["scope_kind"], 99), b["period"]))
 
@@ -389,7 +434,6 @@ def check_budget(
             )
             continue
 
-        # action == 'block' — raise immediately; first failing block wins
         raise CostBudgetExceeded(
             scope_kind=budget["scope_kind"],
             scope_value=budget.get("scope_value"),
