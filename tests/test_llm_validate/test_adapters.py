@@ -32,9 +32,7 @@ def test_pydantic_validator_missing_required_field():
 
 def test_pydantic_validator_wrong_type():
     pv = PydanticValidator(PydOk)
-    instance, sig = pv.validate_shape(
-        {"headline": "hi", "score": "not-an-int"}, agent_type="t"
-    )
+    instance, sig = pv.validate_shape({"headline": "hi", "score": "not-an-int"}, agent_type="t")
     assert instance is None
     assert sig.passed is False
 
@@ -57,7 +55,5 @@ def test_jsonschema_validator_raises_without_extra(monkeypatch):
     import sys
 
     monkeypatch.setitem(sys.modules, "jsonschema", None)
-    with pytest.raises(
-        ConfigurationError, match=r"pip install pf-core\[jsonschema\]"
-    ):
+    with pytest.raises(ConfigurationError, match=r"pip install pf-core\[jsonschema\]"):
         JsonSchemaValidator({"type": "object"})

@@ -18,6 +18,7 @@ The `Service` base class solves recurring problems across projects:
 from pf_core.services import Service
 from myproject.repos.summary import SummaryRepo
 
+
 class SummaryService(Service):
     def active_summaries(self) -> list[dict]:
         repo = self._repo(SummaryRepo)

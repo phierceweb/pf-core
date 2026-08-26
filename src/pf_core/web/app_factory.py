@@ -180,6 +180,7 @@ def _render_error(
 # Request logging middleware
 # ---------------------------------------------------------------------------
 
+
 class _RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log every request with method, path, status code, and duration."""
 
@@ -198,19 +199,25 @@ class _RequestLoggingMiddleware(BaseHTTPMiddleware):
             if status >= 500:
                 logger.error(
                     "http_request",
-                    method=method, path=path, status=status,
+                    method=method,
+                    path=path,
+                    status=status,
                     duration_ms=duration_ms,
                 )
             elif status >= 400:
                 logger.warning(
                     "http_request",
-                    method=method, path=path, status=status,
+                    method=method,
+                    path=path,
+                    status=status,
                     duration_ms=duration_ms,
                 )
             else:
                 logger.debug(
                     "http_request",
-                    method=method, path=path, status=status,
+                    method=method,
+                    path=path,
+                    status=status,
                     duration_ms=duration_ms,
                 )
 
@@ -218,6 +225,7 @@ class _RequestLoggingMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
+
 
 def create_app(
     *,
@@ -298,7 +306,8 @@ def create_app(
     async def not_found_handler(request: Request, exc: NotFoundError):
         """NotFoundError → 404."""
         return _render_error(
-            request, 404,
+            request,
+            404,
             heading=_STATUS_HEADINGS[404],
             message=str(exc),
             app=app,
@@ -308,7 +317,8 @@ def create_app(
     async def invalid_input_handler(request: Request, exc: InvalidInputError):
         """InvalidInputError → 422."""
         return _render_error(
-            request, 422,
+            request,
+            422,
             heading=_STATUS_HEADINGS[422],
             message=str(exc),
             app=app,
@@ -318,7 +328,8 @@ def create_app(
     async def precondition_handler(request: Request, exc: PreconditionError):
         """PreconditionError → 409 Conflict."""
         return _render_error(
-            request, 409,
+            request,
+            409,
             heading="Conflict",
             message=str(exc),
             app=app,
@@ -328,7 +339,8 @@ def create_app(
     async def action_not_allowed_handler(request: Request, exc: ActionNotAllowedError):
         """ActionNotAllowedError → 403."""
         return _render_error(
-            request, 403,
+            request,
+            403,
             heading=_STATUS_HEADINGS[403],
             message=str(exc),
             app=app,
@@ -339,7 +351,8 @@ def create_app(
         """ConfigurationError → 500 (missing config = broken app)."""
         log_exception(exc, message_prepend="configuration error")
         return _render_error(
-            request, 500,
+            request,
+            500,
             heading=_STATUS_HEADINGS[500],
             message=_STATUS_MESSAGES[500],
             app=app,
@@ -349,7 +362,8 @@ def create_app(
     async def cost_budget_exceeded_handler(request: Request, exc: CostBudgetExceeded):
         """CostBudgetExceeded → 429 (spend cap hit)."""
         return _render_error(
-            request, 429,
+            request,
+            429,
             heading=_STATUS_HEADINGS[429],
             message=str(exc),
             app=app,
@@ -359,7 +373,8 @@ def create_app(
     async def flow_exception_handler(request: Request, exc: FlowException):
         """FlowException catch-all → 400 (for any future subclasses)."""
         return _render_error(
-            request, 400,
+            request,
+            400,
             heading=_STATUS_HEADINGS[400],
             message=str(exc),
             app=app,
@@ -372,7 +387,8 @@ def create_app(
         """AppError → 500 (actual errors, logged with full context)."""
         log_exception(exc, message_prepend="unhandled app error")
         return _render_error(
-            request, 500,
+            request,
+            500,
             heading=_STATUS_HEADINGS[500],
             message=_STATUS_MESSAGES[500],
             app=app,
@@ -385,8 +401,7 @@ def create_app(
         message = exc.detail or _STATUS_MESSAGES.get(code, "An error occurred.")
 
         if code >= 500:
-            logger.error("http_error", status=code, detail=exc.detail,
-                         path=request.url.path)
+            logger.error("http_error", status=code, detail=exc.detail, path=request.url.path)
 
         return _render_error(request, code, heading=heading, message=message, app=app)
 
@@ -406,7 +421,8 @@ def create_app(
             exc_info=exc,
         )
         return _render_error(
-            request, 500,
+            request,
+            500,
             heading=_STATUS_HEADINGS[500],
             message=_STATUS_MESSAGES[500],
             app=app,
@@ -415,6 +431,7 @@ def create_app(
     # --- Rate limiting ---
     if rate_limit:
         from pf_core.web.rate_limit import setup_rate_limit
+
         setup_rate_limit(app)
 
     return app

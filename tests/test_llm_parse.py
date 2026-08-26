@@ -57,10 +57,7 @@ class TestParseLlmJson:
         raw = '[{"a":1},{"b":2},{"c":3'
         with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
             parse_llm_json(raw, recover=True, expect="array")
-        assert any(
-            "parse_llm_json_recovered_truncated" in r.getMessage()
-            for r in caplog.records
-        )
+        assert any("parse_llm_json_recovered_truncated" in r.getMessage() for r in caplog.records)
 
     def test_truncated_array_no_recovery(self):
         raw = '[{"a":1},{"b":2},{"c":3'
@@ -144,7 +141,7 @@ class TestParseLlmJson:
         assert "trap" in result["quote"]
 
     def test_trailing_comma_in_array(self):
-        raw = '[1, 2, 3,]'
+        raw = "[1, 2, 3,]"
         result = parse_llm_json(raw, expect="array")
         assert result == [1, 2, 3]
 
@@ -196,9 +193,7 @@ class TestParseLlmJson:
         well-formed — so a scan that descended into the failed outer span
         would return it and silently drop the wrapper."""
         raw = '{events: [{"name": "test", "count": 3}]}'
-        assert parse_llm_json(raw, expect="object") == {
-            "events": [{"name": "test", "count": 3}]
-        }
+        assert parse_llm_json(raw, expect="object") == {"events": [{"name": "test", "count": 3}]}
 
     def test_truncation_after_prose_bracket_recovers_and_warns(self):
         raw = 'See [Table 1]. Result:\n[{"x":1}, {"y":2}, {"z'
@@ -213,10 +208,7 @@ class TestParseLlmJson:
         with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
             result = parse_llm_json(raw, expect="array")
         assert result == [{"id": 1, "tags": ["a", "b"]}]
-        assert any(
-            "parse_llm_json_recovered_truncated" in r.getMessage()
-            for r in caplog.records
-        )
+        assert any("parse_llm_json_recovered_truncated" in r.getMessage() for r in caplog.records)
 
     def test_truncated_object_still_reaches_json_repair(self):
         raw = '```json\n{"a": 1, "b": {"c": 2}, "d": [1,2]'

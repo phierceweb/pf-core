@@ -31,8 +31,11 @@ These are **not bugs**. They represent known conditions where an operation canno
 
 ```python
 from pf_core.exceptions import (
-    NotFoundError, InvalidInputError, PreconditionError,
-    ActionNotAllowedError, ConfigurationError,
+    NotFoundError,
+    InvalidInputError,
+    PreconditionError,
+    ActionNotAllowedError,
+    ConfigurationError,
 )
 
 # Entity doesn't exist → 404
@@ -104,11 +107,14 @@ Projects define their own error types:
 ```python
 from pf_core.exceptions import AppError, FlowException
 
+
 class SearchError(AppError):
     """LLM search call failed."""
 
+
 class ExtractError(AppError):
     """Extraction pipeline error."""
+
 
 class DataNotFoundError(FlowException):
     """Required data not loaded."""

@@ -46,15 +46,9 @@ from pf_core.llm.tracking.schema import (
 # Unsigned byte/int variants specific to jobs columns
 # ---------------------------------------------------------------------------
 
-_UINT_PRIORITY = (
-    SmallInteger()
-    .with_variant(mysql.TINYINT(unsigned=True), "mysql")
-)
+_UINT_PRIORITY = SmallInteger().with_variant(mysql.TINYINT(unsigned=True), "mysql")
 
-_UINT_PROGRESS = (
-    Integer()
-    .with_variant(mysql.INTEGER(unsigned=True), "mysql")
-)
+_UINT_PROGRESS = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
 
 
 # ---------------------------------------------------------------------------

@@ -41,12 +41,7 @@ def _current_version() -> tuple[int, int]:
 
 
 def _offending_minors(line: str, released_minor: int) -> list[int]:
-    minors = [
-        int(g)
-        for m in _VERSIONISH_RE.finditer(line)
-        for g in m.groups()
-        if g is not None
-    ]
+    minors = [int(g) for m in _VERSIONISH_RE.finditer(line) for g in m.groups() if g is not None]
     return [m for m in minors if m > released_minor]
 
 
@@ -147,7 +142,109 @@ def test_no_backup_or_debris_files_are_tracked():
     debris = [
         f
         for f in tracked
-        if f.endswith((".bak", ".orig", ".rej", ".tmp", ".swp", "~"))
-        or Path(f).name == ".DS_Store"
+        if f.endswith((".bak", ".orig", ".rej", ".tmp", ".swp", "~")) or Path(f).name == ".DS_Store"
     ]
     assert not debris, f"debris committed: {debris}"
+
+
+# ``0.M.x`` prose (e.g. "picks up 0.M.x fixes") sits next to a ``~=`` pin but is
+# neither a pin nor a three-component version, so neither gate above sees it.
+_LINE_X_RE = re.compile(r"(?<![\w.])0\.(\d{1,3})\.x(?![\w])")
+
+
+def _requires_python() -> tuple[int, int]:
+    spec = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["requires-python"]
+    m = re.search(r">=\s*(\d+)\.(\d+)", spec)
+    assert m, f"cannot parse requires-python: {spec!r}"
+    return int(m.group(1)), int(m.group(2))
+
+
+def test_pin_prose_tracks_current_minor():
+    """A ``~=`` bump is a two-part edit: the pin token and the ``0.M.x`` line it
+    is described by. Only the token was gated, so the prose drifted a minor
+    behind in the README — which is also the PyPI long description."""
+    _, minor = _current_version()
+    offenders = [
+        f"{path.relative_to(ROOT)}:{lineno}: 0.{m.group(1)}.x"
+        for path in _pin_example_files()
+        for lineno, line in enumerate(path.read_text().splitlines(), 1)
+        for m in _LINE_X_RE.finditer(line)
+        if int(m.group(1)) != minor
+    ]
+    assert not offenders, f"pin prose not on the current minor (0.{minor}.x):\n" + "\n".join(
+        offenders
+    )
+
+
+def test_templates_track_requires_python():
+    """A scaffolded project that claims a lower floor than the pf-core it pins
+    is unresolvable on the interpreters it advertises."""
+    ours = _requires_python()
+    offenders = []
+    for path in sorted(ROOT.glob("templates/*/pyproject.toml")):
+        spec = tomllib.loads(path.read_text())["project"]["requires-python"]
+        m = re.search(r">=\s*(\d+)\.(\d+)", spec)
+        if not m or (int(m.group(1)), int(m.group(2))) != ours:
+            offenders.append(f"{path.relative_to(ROOT)}: {spec}")
+    assert not offenders, (
+        f"template requires-python does not match pf-core's (>={ours[0]}.{ours[1]}):\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_doctor_floor_matches_requires_python():
+    """``pf-doctor`` reports whether the interpreter can run pf-core, so a stale
+    floor makes it PASS the exact environment the install rejects."""
+    from pf_core.doctor import _MIN_PY
+
+    assert _MIN_PY == _requires_python(), (
+        f"pf_core.doctor._MIN_PY {_MIN_PY} != requires-python {_requires_python()}"
+    )
+
+
+def _setup_scripts() -> list[Path]:
+    """Every script that picks an interpreter or validates a venv — pf-core's own
+    plus the copies ``bin/new-consumer`` stamps into each scaffolded project."""
+    return [
+        ROOT / "bin" / "setup-common",
+        ROOT / "bin" / "verify-bare-install",
+        *sorted(ROOT.glob("templates/*/bin/setup")),
+    ]
+
+
+def test_setup_scripts_track_requires_python():
+    """The setup helpers build the venv, so a stale floor there produces an
+    interpreter that cannot install the package it was created for. Covers the
+    template copies too: they are what a scaffolded project runs on day one."""
+    major, minor = _requires_python()
+    wanted = f"({major}, {minor})"
+    stale_interpreters = re.compile(rf"python{major}\.(\d+)\b")
+    offenders = []
+    for path in _setup_scripts():
+        rel = path.relative_to(ROOT)
+        text = path.read_text()
+        found = set(re.findall(r"sys\.version_info >= (\(\d+, \d+\))", text))
+        if found != {wanted}:
+            offenders.append(f"{rel}: version_info {sorted(found) or 'check missing'} != {wanted}")
+        stale = sorted({int(m) for m in stale_interpreters.findall(text) if int(m) < minor})
+        if stale:
+            offenders.append(f"{rel}: offers {major}.{stale} below the floor")
+    assert not offenders, f"setup scripts do not enforce the package floor {wanted}:\n" + "\n".join(
+        offenders
+    )
+
+
+def test_ruff_target_version_tracks_requires_python():
+    """``target-version`` tells ruff which syntax to accept. Below the floor it
+    silently rejects language features the project is entitled to use."""
+    major, minor = _requires_python()
+    wanted = f"py{major}{minor}"
+    offenders = []
+    for path in [ROOT / "pyproject.toml", *sorted(ROOT.glob("templates/*/pyproject.toml"))]:
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            m = re.match(r'\s*target-version\s*=\s*"([^"]+)"', line)
+            if m and m.group(1) != wanted:
+                offenders.append(f"{path.relative_to(ROOT)}:{lineno}: {m.group(1)} != {wanted}")
+    assert not offenders, (
+        f"ruff target-version does not match requires-python ({wanted}):\n" + "\n".join(offenders)
+    )

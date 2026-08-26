@@ -28,6 +28,7 @@ class TestNowIso:
     def test_backward_compat(self):
         """now_iso is still importable from pf_core.db.helpers."""
         from pf_core.db.helpers import now_iso as db_now_iso
+
         assert db_now_iso is now_iso
 
 
@@ -160,9 +161,7 @@ class TestParseTimestamp:
         )
 
     def test_bare_date_is_midnight_utc(self):
-        assert parse_timestamp("2026-04-14") == datetime(
-            2026, 4, 14, tzinfo=timezone.utc
-        )
+        assert parse_timestamp("2026-04-14") == datetime(2026, 4, 14, tzinfo=timezone.utc)
 
     def test_whitespace_stripped(self):
         assert parse_timestamp("  2026-04-14T09:30:00Z  ") == datetime(

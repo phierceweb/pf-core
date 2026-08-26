@@ -12,18 +12,21 @@ from pf_core.llm.url_check import (
 def _always(reason: str) -> UrlHallucinationRule:
     def _rule(url: str) -> str | None:
         return reason
+
     return _rule
 
 
 def _never() -> UrlHallucinationRule:
     def _rule(url: str) -> str | None:
         return None
+
     return _rule
 
 
 def _contains(substr: str, reason: str) -> UrlHallucinationRule:
     def _rule(url: str) -> str | None:
         return reason if substr in url else None
+
     return _rule
 
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import importlib
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import typer
 from rich.console import Console
@@ -30,6 +30,9 @@ from rich.markup import escape
 
 from pf_core.exceptions import AppError, FlowException
 from pf_core.log import get_logger, log_exception, setup_logging
+
+if TYPE_CHECKING:
+    from click.exceptions import ClickException
 
 logger = get_logger(__name__)
 
@@ -59,9 +62,14 @@ def _merge(*groups: tuple[type[BaseException], ...]) -> tuple[type[BaseException
 # typer >= 0.26 vendors its own click, so typer.Abort/BadParameter are NOT the
 # installed click's classes. Both hierarchies are live across the typer pin.
 _ABORT = _merge(_exc("typer", "Abort"), _exc("click.exceptions", "Abort"))
-_USAGE = _merge(
-    _exc("typer._click.exceptions", "ClickException"),
-    _exc("click.exceptions", "ClickException"),
+_INTERRUPT: tuple[type[BaseException], ...] = (KeyboardInterrupt, *_ABORT)
+# Typed as the installed click's; both variants share the interface.
+_USAGE = cast(
+    "tuple[type[ClickException], ...]",
+    _merge(
+        _exc("typer._click.exceptions", "ClickException"),
+        _exc("click.exceptions", "ClickException"),
+    ),
 )
 
 
@@ -126,7 +134,7 @@ def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
             sys.exit(rv)
     except SystemExit:
         raise
-    except (KeyboardInterrupt, *_ABORT):
+    except _INTERRUPT:
         _stderr.print("\nInterrupted.")
         sys.exit(130)
     except _USAGE as exc:

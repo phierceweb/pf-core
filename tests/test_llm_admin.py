@@ -48,7 +48,12 @@ def _seed(with_jobs: bool = True, with_budgets: bool = True, with_cache: bool = 
     r1 = run_repo.record(
         agent_type="drafter",
         model="claude-opus-4-7",
-        usage={"cost_usd": 0.50, "prompt_tokens": 1200, "completion_tokens": 800, "duration_ms": 2100},
+        usage={
+            "cost_usd": 0.50,
+            "prompt_tokens": 1200,
+            "completion_tokens": 800,
+            "duration_ms": 2100,
+        },
         status="success",
         tags=["env:test"],
     )
@@ -81,9 +86,7 @@ def _seed(with_jobs: bool = True, with_budgets: bool = True, with_cache: bool = 
             )
             jid = res.inserted_primary_key[0]
             conn.execute(
-                job_events.insert().values(
-                    job_id=jid, event_type="started", message="job started"
-                )
+                job_events.insert().values(job_id=jid, event_type="started", message="job started")
             )
 
     if with_budgets:

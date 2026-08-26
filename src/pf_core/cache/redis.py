@@ -84,18 +84,20 @@ class _ResilientBackend:
 
     def get_multi(self, keys: Any) -> Any:
         keys = list(keys)
-        return self._call("get_multi", lambda: self._inner.get_multi(keys),
-                          [_no_value()] * len(keys))
+        return self._call(
+            "get_multi", lambda: self._inner.get_multi(keys), [_no_value()] * len(keys)
+        )
 
     def get_serialized(self, key: Any) -> Any:
-        return self._call("get_serialized", lambda: self._inner.get_serialized(key),
-                          _no_value())
+        return self._call("get_serialized", lambda: self._inner.get_serialized(key), _no_value())
 
     def get_serialized_multi(self, keys: Any) -> Any:
         keys = list(keys)
-        return self._call("get_serialized_multi",
-                          lambda: self._inner.get_serialized_multi(keys),
-                          [_no_value()] * len(keys))
+        return self._call(
+            "get_serialized_multi",
+            lambda: self._inner.get_serialized_multi(keys),
+            [_no_value()] * len(keys),
+        )
 
     def set(self, key: Any, value: Any) -> None:
         self._call("set", lambda: self._inner.set(key, value), None)
@@ -107,8 +109,7 @@ class _ResilientBackend:
         self._call("set_serialized", lambda: self._inner.set_serialized(key, value), None)
 
     def set_serialized_multi(self, mapping: Any) -> None:
-        self._call("set_serialized_multi",
-                   lambda: self._inner.set_serialized_multi(mapping), None)
+        self._call("set_serialized_multi", lambda: self._inner.set_serialized_multi(mapping), None)
 
     def delete(self, key: Any) -> None:
         self._call("delete", lambda: self._inner.delete(key), None)
@@ -144,8 +145,7 @@ def create_region(
         from dogpile.cache import make_region
     except ImportError:
         raise ImportError(
-            "Cache support requires dogpile.cache + redis. "
-            "Install with: pip install pf-core[redis]"
+            "Cache support requires dogpile.cache + redis. Install with: pip install pf-core[redis]"
         )
 
     def _mangler(key: str) -> str:
@@ -182,6 +182,7 @@ def create_region(
 # Backward-compatible RedisCache wrapper
 # ---------------------------------------------------------------------------
 
+
 class RedisCache:
     """Backward-compatible wrapper around a dogpile.cache region.
 
@@ -208,6 +209,7 @@ class RedisCache:
     @property
     def available(self) -> bool:
         from dogpile.cache.backends.null import NullBackend
+
         return not isinstance(self._region.backend, NullBackend)
 
     def _get_client(self) -> Any:
@@ -219,6 +221,7 @@ class RedisCache:
     def get(self, key: str) -> str | None:
         val = self._region.get(key)
         from dogpile.cache.api import NO_VALUE
+
         if val is NO_VALUE:
             return None
         return val  # type: ignore[return-value]
@@ -260,6 +263,7 @@ class RedisCache:
     def cached_json(self, key_parts: tuple, variant: Any, fn: Any, ttl: int | None = None) -> Any:
         import hashlib
         import json
+
         parts = ":".join(str(p) for p in key_parts)
         variant_hash = ""
         if variant is not None:

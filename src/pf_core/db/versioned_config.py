@@ -87,9 +87,7 @@ def latest_version(
     _check_ident(version_col)
     where, params = _where(scope)
     row = (
-        conn.execute(
-            text(f"SELECT MAX({version_col}) AS v FROM {table} WHERE {where}"), params
-        )
+        conn.execute(text(f"SELECT MAX({version_col}) AS v FROM {table} WHERE {where}"), params)
         .mappings()
         .fetchone()
     )
@@ -106,10 +104,7 @@ def get_latest(
     where, params = _where(scope)
     row = (
         conn.execute(
-            text(
-                f"SELECT * FROM {table} WHERE {where} "
-                f"ORDER BY {version_col} DESC LIMIT 1"
-            ),
+            text(f"SELECT * FROM {table} WHERE {where} ORDER BY {version_col} DESC LIMIT 1"),
             params,
         )
         .mappings()

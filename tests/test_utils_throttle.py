@@ -57,16 +57,16 @@ def test_rapid_acquires_are_staggered(fake_time):
     """Three calls at the same instant get slots t, t+Δ, t+2Δ — the concurrent-reservation path."""
     clock, slept = fake_time  # clock frozen at 1000.0
     t = Throttle(min_interval_s=2.0)
-    assert t.acquire() == 0.0   # slot 1000, next_allowed 1002
-    assert t.acquire() == 2.0   # slot 1002, next_allowed 1004
-    assert t.acquire() == 4.0   # slot 1004, next_allowed 1006
+    assert t.acquire() == 0.0  # slot 1000, next_allowed 1002
+    assert t.acquire() == 2.0  # slot 1002, next_allowed 1004
+    assert t.acquire() == 4.0  # slot 1004, next_allowed 1006
     assert slept == [2.0, 4.0]
 
 
 def test_wait_resets_after_interval_elapses(fake_time):
     clock, slept = fake_time
     t = Throttle(min_interval_s=1.0)
-    assert t.acquire() == 0.0   # slot 1000, next_allowed 1001
-    clock.t = 1005.0            # well past the next slot
-    assert t.acquire() == 0.0   # already due → no wait
+    assert t.acquire() == 0.0  # slot 1000, next_allowed 1001
+    clock.t = 1005.0  # well past the next slot
+    assert t.acquire() == 0.0  # already due → no wait
     assert slept == []

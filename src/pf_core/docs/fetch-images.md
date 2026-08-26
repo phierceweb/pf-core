@@ -20,7 +20,7 @@ from pf_core.fetch.images import localize_images, localize_file, count_remote_im
 
 # Text in, text out — for pipelines that hold the document in memory
 result = localize_images(markdown, out_dir / "images", base_url="https://example.com/help/")
-markdown = result.markdown            # refs retargeted to images/<name>
+markdown = result.markdown  # refs retargeted to images/<name>
 # result.saved: list[Path] written or reused; result.failed: count left remote
 
 # File-as-ledger mode — for large documents localized across multiple runs.

@@ -2,6 +2,42 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.20.0 — 2026-08-26
+
+### Added
+- **mypy is a build gate** — `[tool.mypy]` config, zero errors across `src/`, typed via
+  stubs (`types-PyYAML`, `types-PyMySQL`, `types-jsonschema`, `types-nanoid`) and
+  behavior-neutral annotations. Strict mode is not enabled. Runs in pre-commit and CI.
+- **`ruff format` is a build gate** — `src/` and `tests/` are formatted and both
+  pre-commit and CI check it. E501 stays off: the formatter cannot break long string
+  literals, so a line-length rule would force worse code in Jinja blocks and docstrings.
+
+### Changed
+- **Python 3.12 is the floor** — `requires-python >=3.12`; the 3.11 CI leg is dropped,
+  ruff and mypy target py312, and the floor is applied everywhere it is restated:
+  `pf-doctor`, `bin/setup-common`, `bin/verify-bare-install`, and the consumer templates.
+- Dependency floors raised — see `pyproject.toml`. Environments older than these floors
+  must upgrade. Three ceilings: `ruff` and `mypy` are compatible-release pinned so a new
+  minor cannot turn CI red on its own, and `anthropic` is capped below 1.0 (see Fixed).
+- The `guards` workflow installs `[dev]` rather than its own pinned ruff, which had
+  drifted a minor behind `pyproject.toml`.
+- `pf_core.doctor` is split into `doctor` plus private `_doctor_types` and
+  `_doctor_release` modules, to stay inside the file-size gate after the format pass.
+  Every public name is unchanged and still imports from `pf_core.doctor`.
+
+### Fixed
+- The `[anthropic]` extra is capped at `anthropic>=0.105,<1.0`. SDK 1.0 removed
+  `temperature` / `top_p` / `top_k` from `messages.create()`, which
+  `AnthropicClient.chat()` sends by default, so every call raised
+  `TypeError`. The previous `>=0.105` floor already admitted 1.0, so this
+  affects installs from earlier versions too. Supporting 1.0 requires porting
+  the client — those parameters are gone, not renamed.
+- `canonical_url` and `domain_of` honour their unparseable-input contract for a malformed
+  netloc. `urlparse` defers netloc validation to the `.hostname`/`.port` properties, so an
+  out-of-range or non-numeric port (`https://example.com:99999/x`) raised `ValueError` out
+  of `canonical_url` instead of returning `""`, and an unclosed IPv6 bracket did the same
+  out of `domain_of`.
+
 ## v0.19.0 — 2026-08-09
 
 ### Fixed

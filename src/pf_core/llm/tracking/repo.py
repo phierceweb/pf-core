@@ -62,9 +62,7 @@ def _compute_input_hash(
         "rendered_system": rendered_system,
         "rendered_user": rendered_user,
         "sampling": dict(
-            sorted(
-                (k, v) for k, v in (sampling or {}).items() if k in _SAMPLING_COLS
-            )
+            sorted((k, v) for k, v in (sampling or {}).items() if k in _SAMPLING_COLS)
         ),
         "configs": dict(sorted((configs or {}).items())),
     }
@@ -224,7 +222,8 @@ class LlmRunRepo(Repository):
             run_values.update(extra_run_values)
 
         with self._tx() as conn:
-            run_id = conn.execute(s.llm_runs.insert().values(**run_values)).inserted_primary_key[0]
+            insert_result = conn.execute(s.llm_runs.insert().values(**run_values))
+            run_id = insert_result.inserted_primary_key[0]  # type: ignore[index]  # set after insert
 
             payload_fields = {
                 "rendered_system": rendered_system,
@@ -295,9 +294,11 @@ class LlmRunRepo(Repository):
     def get(self, run_id: int) -> dict | None:
         """Return the ``llm_runs`` row as a dict, or ``None`` if not found."""
         with self._tx() as conn:
-            row = conn.execute(
-                select(s.llm_runs).where(s.llm_runs.c.id == run_id)
-            ).mappings().fetchone()
+            row = (
+                conn.execute(select(s.llm_runs).where(s.llm_runs.c.id == run_id))
+                .mappings()
+                .fetchone()
+            )
         return dict(row) if row else None
 
     def get_with_payload(self, run_id: int) -> dict | None:
@@ -306,16 +307,20 @@ class LlmRunRepo(Repository):
         Payload columns are namespaced under ``payload`` to avoid collisions.
         """
         with self._tx() as conn:
-            run = conn.execute(
-                select(s.llm_runs).where(s.llm_runs.c.id == run_id)
-            ).mappings().fetchone()
+            run = (
+                conn.execute(select(s.llm_runs).where(s.llm_runs.c.id == run_id))
+                .mappings()
+                .fetchone()
+            )
             if run is None:
                 return None
-            payload = conn.execute(
-                select(s.llm_run_payloads).where(
-                    s.llm_run_payloads.c.llm_run_id == run_id
+            payload = (
+                conn.execute(
+                    select(s.llm_run_payloads).where(s.llm_run_payloads.c.llm_run_id == run_id)
                 )
-            ).mappings().fetchone()
+                .mappings()
+                .fetchone()
+            )
         out = dict(run)
         out["payload"] = dict(payload) if payload else None
         return out
@@ -326,9 +331,13 @@ class LlmRunRepo(Repository):
         Used for dedup / forensic "have we sent this exact input before?" queries.
         """
         with self._tx() as conn:
-            rows = conn.execute(
-                select(s.llm_runs)
-                .where(s.llm_runs.c.input_hash == input_hash)
-                .order_by(s.llm_runs.c.created_at.desc())
-            ).mappings().fetchall()
+            rows = (
+                conn.execute(
+                    select(s.llm_runs)
+                    .where(s.llm_runs.c.input_hash == input_hash)
+                    .order_by(s.llm_runs.c.created_at.desc())
+                )
+                .mappings()
+                .fetchall()
+            )
         return [dict(r) for r in rows]

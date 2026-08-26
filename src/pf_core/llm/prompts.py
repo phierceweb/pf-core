@@ -184,13 +184,10 @@ def load_prompt_spec(
     p = Path(path)
     missing = [k for k in _SPEC_REQUIRED if k not in spec]
     if missing:
-        raise ConfigurationError(
-            f"{p}: prompt spec missing required keys {missing}"
-        )
+        raise ConfigurationError(f"{p}: prompt spec missing required keys {missing}")
     if expected_agent is not None and spec["agent"] != expected_agent:
         raise ConfigurationError(
-            f"{p}: agent field {spec['agent']!r} does not match "
-            f"expected {expected_agent!r}"
+            f"{p}: agent field {spec['agent']!r} does not match expected {expected_agent!r}"
         )
     if not isinstance(spec["version"], int) or spec["version"] < 1:
         raise ConfigurationError(
@@ -226,14 +223,10 @@ def render_spec(
         ``(rendered_text, version)``.
     """
     if part not in spec:
-        raise InvalidInputError(
-            f"spec has no {part!r} section; available: {sorted(spec.keys())}"
-        )
+        raise InvalidInputError(f"spec has no {part!r} section; available: {sorted(spec.keys())}")
     template = spec[part]
     if not isinstance(template, str):
-        raise InvalidInputError(
-            f"spec {part!r} must be a string, got {type(template).__name__}"
-        )
+        raise InvalidInputError(f"spec {part!r} must be a string, got {type(template).__name__}")
     rendered = render(template, style=style, **variables) if variables else template
     version = int(spec.get("version", 1))
     return rendered, version

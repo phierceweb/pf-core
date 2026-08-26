@@ -37,9 +37,7 @@ class TestSetupTemplates:
         app = FastAPI()
         tdir = tmp_path / "templates"
         tdir.mkdir()
-        templates = setup_templates(
-            app, tdir, extra_filters={"upper": str.upper}
-        )
+        templates = setup_templates(app, tdir, extra_filters={"upper": str.upper})
         assert "upper" in templates.env.filters
 
     def test_no_extras(self, tmp_path):

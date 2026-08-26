@@ -96,9 +96,13 @@ def extract_article_metadata(html: str) -> dict[str, str]:
         checking membership.
     """
     out: dict[str, str] = {
-        "title": "", "description": "", "og_title": "",
-        "og_description": "", "twitter_title": "",
-        "twitter_description": "", "first_paragraph": "",
+        "title": "",
+        "description": "",
+        "og_title": "",
+        "og_description": "",
+        "twitter_title": "",
+        "twitter_description": "",
+        "first_paragraph": "",
     }
     if not html:
         return out
@@ -111,7 +115,5 @@ def extract_article_metadata(html: str) -> dict[str, str]:
     for k, v in parser.meta.items():
         out[k] = re.sub(r"\s+", " ", v).strip()
     if parser.first_paragraph_parts:
-        out["first_paragraph"] = re.sub(
-            r"\s+", " ", "".join(parser.first_paragraph_parts)
-        ).strip()
+        out["first_paragraph"] = re.sub(r"\s+", " ", "".join(parser.first_paragraph_parts)).strip()
     return out

@@ -78,11 +78,7 @@ def test_autogenerate_against_fully_migrated_db_is_empty(engine):
     # unrelated tables we don't care about here, though this test uses a
     # clean engine so this is really just defense-in-depth.
     our_names = {t.name for t in ALL_TABLES}
-    relevant = [
-        op
-        for op in diff
-        if _op_touches_any(op, our_names)
-    ]
+    relevant = [op for op in diff if _op_touches_any(op, our_names)]
     assert relevant == [], f"unexpected drift in pf-core metadata: {relevant}"
 
 
@@ -105,8 +101,7 @@ def _op_touches_any(op, names: set[str]) -> bool:
         }:
             # Positional schema differs by op; scan args for a known name.
             return any(
-                getattr(a, "name", None) in names
-                or getattr(a, "table_name", None) in names
+                getattr(a, "name", None) in names or getattr(a, "table_name", None) in names
                 for a in op
                 if a is not None
             )

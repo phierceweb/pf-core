@@ -7,9 +7,11 @@ Thread-based parallel execution for batch operations with progress tracking.
 ```python
 from pf_core.parallel import run_parallel
 
+
 def process_one(item):
     # do work with item
     ...
+
 
 run_parallel(
     items=work_items,
@@ -46,6 +48,7 @@ run_parallel(
 def update_job(done, total):
     db.update_task(task_id, progress=f"{done}/{total}")
 
+
 run_parallel(
     items=sections,
     fn=summarize_section,
@@ -64,8 +67,8 @@ from pf_core.parallel import resilient, run_parallel
 
 failures: list[tuple[str, str]] = []
 
-@resilient(failures, label_fn=lambda i: i[0], reporter=reporter,
-           log_label="summarizer failed")
+
+@resilient(failures, label_fn=lambda i: i[0], reporter=reporter, log_label="summarizer failed")
 def summarize_one(item):
     key, text = item
     with job.step(f"summarize_{key}") as step:
@@ -75,6 +78,7 @@ def summarize_one(item):
         # marks the step failed via its own except path, so the
         # resilient wrapper outside catches the re-raised exception.
     return key
+
 
 run_parallel(items, summarize_one, workers=4, label="Summarized")
 written = len(items) - len(failures)
@@ -106,9 +110,10 @@ When the caller hands `run_parallel` the same `failures` list it gave to `resili
 ```python
 failures: list[tuple[str, str]] = []
 
+
 @resilient(failures, label_fn=lambda i: i[0])
-def summarize_one(item):
-    ...
+def summarize_one(item): ...
+
 
 run_parallel(items, summarize_one, workers=4, label="Summarized", failures=failures)
 # At end of batch, one of:

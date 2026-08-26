@@ -58,7 +58,9 @@ class TestPaginateParams:
 
     def test_sort_rejected_falls_back(self):
         p = paginate_params(
-            1, 50, "hacked",
+            1,
+            50,
+            "hacked",
             allowed_sorts={"date", "title"},
             default_sort="date",
         )

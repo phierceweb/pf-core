@@ -14,11 +14,7 @@ def test_every_template_dir_is_declared_in_package_data():
     failure mode)."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     pkg_data = pyproject["tool"]["setuptools"]["package-data"]
-    declared = {
-        pkg
-        for pkg, globs in pkg_data.items()
-        if any("templates" in g for g in globs)
-    }
+    declared = {pkg for pkg, globs in pkg_data.items() if any("templates" in g for g in globs)}
     src = ROOT / "src"
     for d in sorted(src.rglob("templates")):
         if not d.is_dir() or not any(d.glob("*.html")):

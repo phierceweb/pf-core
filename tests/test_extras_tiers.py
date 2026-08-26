@@ -175,7 +175,9 @@ def test_lazy_entries_do_not_overgate(package: str) -> None:
             continue
         declared_extra = required_extra(module)
         if declared_extra is not None and required_extra(defining) is None:
-            overgated.append(f"{name}: routed via {module} [{declared_extra}], defined in {defining}")
+            overgated.append(
+                f"{name}: routed via {module} [{declared_extra}], defined in {defining}"
+            )
     assert not overgated, (
         f"{package}._LAZY routes names through a module that needs an extra their "
         f"defining module does not: {overgated} — point the entry at the definition, "

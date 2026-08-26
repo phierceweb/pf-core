@@ -73,7 +73,7 @@ result = extract_json_array(raw)  # [{"id": 1}, {"id": 2}]
 
 # A prose bracket does not win, and does not block extraction:
 extract_json_array('Based on the criteria [1]:\n[{"a": 1}]')  # [{"a": 1}]
-extract_json_array('See [Table 1]. Result:\n[{"x": 1}]')    # [{"x": 1}]
+extract_json_array('See [Table 1]. Result:\n[{"x": 1}]')  # [{"x": 1}]
 ```
 
 Returns `None` if no valid array is found.
@@ -87,7 +87,7 @@ raw = 'The classification is: {"category": "sports", "confidence": 0.95}'
 result = extract_json_object(raw)  # {"category": "sports", "confidence": 0.95}
 
 # `{}` is the only prose token that is also valid JSON — it loses too:
-extract_json_object('Template {} then real: {"a": 1}')       # {"a": 1}
+extract_json_object('Template {} then real: {"a": 1}')  # {"a": 1}
 extract_json_object('Use the {placeholder} form:\n{"a": 1}')  # {"a": 1}
 ```
 

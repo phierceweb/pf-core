@@ -145,9 +145,7 @@ def test_write_run_record_input_sha256_stable(tmp_path: Path) -> None:
     assert r1["input_sha256"] == r2["input_sha256"]
 
 
-def test_failed_rewrite_leaves_previous_record_intact(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_failed_rewrite_leaves_previous_record_intact(tmp_path: Path, monkeypatch) -> None:
     """A re-run that dies mid-write must not destroy the last good record."""
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"x")

@@ -17,9 +17,11 @@ from pf_core.llm.tracking import compute_input_hash, track_run
 from pf_core.llm.router import get_agent_config
 from pf_core.clients.openrouter import get_client
 
+
 @track_run(agent_type="classifier", provider="openrouter")
 def _tracked_chat(*, model, messages, **sampling):
     return get_client().chat(model=model, messages=messages, **sampling)
+
 
 def classify(*, text: str) -> dict:
     cfg = get_agent_config("classifier")
@@ -107,7 +109,7 @@ h = compute_input_hash(
     model="anthropic/claude-opus-4-7",
     messages=[{"role": "user", "content": "classify this text"}],
     sampling={"temperature": 0.0, "max_tokens": 512},
-    configs={"category_set_id": 42},   # optional project-specific snapshot
+    configs={"category_set_id": 42},  # optional project-specific snapshot
 )
 # → 64-char hex string
 ```
@@ -124,7 +126,7 @@ from pf_core.llm.cache import cache_lookup, CacheHit
 hit: CacheHit | None = cache_lookup(
     agent_type="classifier",
     input_hash=h,
-    canonical_text="...",   # pass now to avoid call-site changes when semantic lands
+    canonical_text="...",  # pass now to avoid call-site changes when semantic lands
 )
 ```
 
@@ -180,10 +182,10 @@ Creates:
 ```python
 from pf_core.llm.cache import by_agent, by_model, by_run, purge_expired
 
-by_agent("classifier")                            # drop all classifier entries
-by_model("extractor", new_model="claude-opus-4-7") # drop entries for other models
-by_run(run_id=1042)                               # drop the entry from one run
-purge_expired()                                   # sweep rows past expires_at
+by_agent("classifier")  # drop all classifier entries
+by_model("extractor", new_model="claude-opus-4-7")  # drop entries for other models
+by_run(run_id=1042)  # drop the entry from one run
+purge_expired()  # sweep rows past expires_at
 ```
 
 All functions return the count of deleted rows.

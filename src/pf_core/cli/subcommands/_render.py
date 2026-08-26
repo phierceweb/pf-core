@@ -72,9 +72,7 @@ def _print_diff_summary(report: DiffReport, *, default_top: int = 30) -> None:
         if sd.renamed:
             typer.echo(f"  renamed ({len(sd.renamed)}):")
             for r in sd.renamed:
-                typer.echo(
-                    f"    {r.old_path}  →  {r.new_path}  (similarity={r.similarity:.2f})"
-                )
+                typer.echo(f"    {r.old_path}  →  {r.new_path}  (similarity={r.similarity:.2f})")
     typer.echo("")
 
     # Body changes.
@@ -104,9 +102,7 @@ def _emit_section_unified_diff(
     base = report.baseline_path / config.sections_dir_name / rel_path
     curr = report.current_path / config.sections_dir_name / rel_path
     if not base.exists() or not curr.exists():
-        raise typer.BadParameter(
-            f"section {rel_path!r} missing from baseline or current."
-        )
+        raise typer.BadParameter(f"section {rel_path!r} missing from baseline or current.")
     base_lines = base.read_text(encoding="utf-8").splitlines(keepends=True)
     curr_lines = curr.read_text(encoding="utf-8").splitlines(keepends=True)
     for line in difflib.unified_diff(
@@ -165,8 +161,7 @@ def _print_table(records: list[BaselineRecord]) -> None:
         for r in records
     ]
     widths = [
-        max(len(h), max((len(row[i]) for row in rows), default=0))
-        for i, h in enumerate(headers)
+        max(len(h), max((len(row[i]) for row in rows), default=0)) for i, h in enumerate(headers)
     ]
     fmt = "  ".join(f"{{:<{w}}}" for w in widths)
     typer.echo(fmt.format(*headers))

@@ -14,12 +14,12 @@ Fold free text to a stable lowercase ASCII slug for filenames, ids, and URL frag
 ## Quick usage
 
 ```python
-from pf_core.utils.slugify import slugify   # also re-exported from pf_core.utils
+from pf_core.utils.slugify import slugify  # also re-exported from pf_core.utils
 
-slugify("São Paulo")            # "sao-paulo"
-slugify("rock 'n' roll")        # "rock-n-roll"
-slugify("Straße 9", sep="_")    # "strasse_9"
-slugify("★☆★")                  # "" — caller owns the empty-slug fallback
+slugify("São Paulo")  # "sao-paulo"
+slugify("rock 'n' roll")  # "rock-n-roll"
+slugify("Straße 9", sep="_")  # "strasse_9"
+slugify("★☆★")  # "" — caller owns the empty-slug fallback
 ```
 
 ## Function

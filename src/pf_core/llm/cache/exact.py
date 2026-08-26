@@ -59,30 +59,34 @@ class ExactCacheRepo(Repository):
         """
         with self._tx() as conn:
             now = dt.datetime.now(dt.timezone.utc)
-            row = conn.execute(
-                select(
-                    llm_cache_entries.c.id,
-                    llm_cache_entries.c.parsed_output,
-                    llm_cache_entries.c.raw_response,
-                    llm_cache_entries.c.source_run_id,
-                    llm_cache_entries.c.created_at,
-                    llm_models.c.name.label("model"),
-                    llm_agent_types.c.slug.label("agent_type"),
+            row = (
+                conn.execute(
+                    select(
+                        llm_cache_entries.c.id,
+                        llm_cache_entries.c.parsed_output,
+                        llm_cache_entries.c.raw_response,
+                        llm_cache_entries.c.source_run_id,
+                        llm_cache_entries.c.created_at,
+                        llm_models.c.name.label("model"),
+                        llm_agent_types.c.slug.label("agent_type"),
+                    )
+                    .join(
+                        llm_models,
+                        llm_cache_entries.c.model_id == llm_models.c.id,
+                    )
+                    .join(
+                        llm_agent_types,
+                        llm_cache_entries.c.agent_type_id == llm_agent_types.c.id,
+                    )
+                    .where(llm_cache_entries.c.input_hash == input_hash)
+                    .where(
+                        (llm_cache_entries.c.expires_at.is_(None))
+                        | (llm_cache_entries.c.expires_at > now)
+                    )
                 )
-                .join(
-                    llm_models,
-                    llm_cache_entries.c.model_id == llm_models.c.id,
-                )
-                .join(
-                    llm_agent_types,
-                    llm_cache_entries.c.agent_type_id == llm_agent_types.c.id,
-                )
-                .where(llm_cache_entries.c.input_hash == input_hash)
-                .where(
-                    (llm_cache_entries.c.expires_at.is_(None))
-                    | (llm_cache_entries.c.expires_at > now)
-                )
-            ).mappings().fetchone()
+                .mappings()
+                .fetchone()
+            )
 
         return dict(row) if row else None
 
@@ -121,9 +125,7 @@ class ExactCacheRepo(Repository):
 
         expires_at: dt.datetime | None = None
         if ttl_seconds and ttl_seconds > 0:
-            expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
-                seconds=ttl_seconds
-            )
+            expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=ttl_seconds)
 
         with self._tx() as conn:
             upsert(
@@ -151,14 +153,10 @@ class ExactCacheRepo(Repository):
                 ],
             )
             row = conn.execute(
-                select(llm_cache_entries.c.id).where(
-                    llm_cache_entries.c.input_hash == input_hash
-                )
+                select(llm_cache_entries.c.id).where(llm_cache_entries.c.input_hash == input_hash)
             ).fetchone()
         if row is None:
-            raise DataError(
-                "cache entry missing after upsert", context={"input_hash": input_hash}
-            )
+            raise DataError("cache entry missing after upsert", context={"input_hash": input_hash})
         return int(row[0])
 
     def bump_hit(self, *, entry_id: int) -> None:

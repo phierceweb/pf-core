@@ -129,9 +129,7 @@ class TestCheckCopy:
         assert res.status == "PASS"
 
     def test_adjacent_pyproject_version_reads_file(self, tmp_path, monkeypatch):
-        (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "x"\nversion = "1.2.3"\n'
-        )
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "1.2.3"\n')
         monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
         assert doctor._adjacent_pyproject_version() == "1.2.3"
 
@@ -245,14 +243,14 @@ class TestDbChecks:
 def _git(cwd, *args):
     return subprocess.run(
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
-        cwd=cwd, capture_output=True, text=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
     )
 
 
 def _git_repo_with_release(tmp_path, *, version="1.0.0", changelog="1.0.0", tag=None):
-    (tmp_path / "pyproject.toml").write_text(
-        f'[project]\nname = "x"\nversion = "{version}"\n'
-    )
+    (tmp_path / "pyproject.toml").write_text(f'[project]\nname = "x"\nversion = "{version}"\n')
     if changelog is not None:
         (tmp_path / "CHANGELOG.md").write_text(f"# Changelog\n\n## v{changelog} — 2026-07-02\n")
     _git(tmp_path, "init", "-q")

@@ -17,6 +17,7 @@ Usage::
 from __future__ import annotations
 
 import json
+from typing import Any
 
 try:
     import json_repair  # type: ignore[import-untyped]
@@ -96,13 +97,11 @@ def parse_llm_json(
             the two allowed values.
     """
     if on_truncation not in ("warn", "raise"):
-        raise InvalidInputError(
-            f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}"
-        )
+        raise InvalidInputError(f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}")
 
     cleaned = strip_markdown_fences(raw)
 
-    result = None
+    result: Any = None
 
     try:
         result = json.loads(cleaned)

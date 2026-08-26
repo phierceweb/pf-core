@@ -125,9 +125,7 @@ def submit_tracked(
     if dedup_key is not None:
         existing = _running_job_for(kind, dedup_key)
         if existing is not None:
-            raise JobAlreadyRunning(
-                f"{kind} already running for this scope (job #{existing})"
-            )
+            raise JobAlreadyRunning(f"{kind} already running for this scope (job #{existing})")
 
     job_id = JobRepo().create(kind=kind, inputs=inputs, created_by=created_by)
 
@@ -170,9 +168,7 @@ def submit_detached(
     if dedup_key is not None:
         existing = _running_job_for(kind, dedup_key)
         if existing is not None:
-            raise JobAlreadyRunning(
-                f"{kind} already running for this scope (job #{existing})"
-            )
+            raise JobAlreadyRunning(f"{kind} already running for this scope (job #{existing})")
     before = _latest_job_id(kind, match)
 
     def body() -> None:

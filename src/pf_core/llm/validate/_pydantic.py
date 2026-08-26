@@ -27,7 +27,10 @@ class PydanticValidator:
         self.model = model
 
     def validate_shape(
-        self, parsed: Any, *, agent_type: str,
+        self,
+        parsed: Any,
+        *,
+        agent_type: str,
     ) -> tuple[Any | None, ValidationSignal]:
         """Run ``model.model_validate(parsed)``.
 
@@ -47,5 +50,8 @@ class PydanticValidator:
                 details={"errors": e.errors(include_url=False)},
             )
         return instance, ValidationSignal(
-            validator=name, severity="error", passed=True, details=None,
+            validator=name,
+            severity="error",
+            passed=True,
+            details=None,
         )

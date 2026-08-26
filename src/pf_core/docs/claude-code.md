@@ -43,10 +43,12 @@ Chat-message lists collapse into a single prompt:
 - The two blocks are separated by `\n\n---\n\n`.
 
 ```python
-client.chat(messages=[
-    {"role": "system", "content": "be brief"},
-    {"role": "user", "content": "summarize this"},
-])
+client.chat(
+    messages=[
+        {"role": "system", "content": "be brief"},
+        {"role": "user", "content": "summarize this"},
+    ]
+)
 # Becomes (prompt piped on stdin, not in argv — argv has a hard ARG_MAX
 # limit that large rendered prompts blow past):
 #   $ echo "be brief\n\n---\n\nsummarize this" | claude --print
@@ -155,11 +157,13 @@ A consumer can pin different tasks to different models in the same process — e
 # In your project's clients module:
 from pf_core.clients.claude_code import get_client
 
+
 def get_classifier_client():
-    return get_client(model="haiku")    # cheap, fast — fine for short classification
+    return get_client(model="haiku")  # cheap, fast — fine for short classification
+
 
 def get_summarizer_client():
-    return get_client(model="sonnet")   # smarter — reasoning over longer text
+    return get_client(model="sonnet")  # smarter — reasoning over longer text
 ```
 
 Each is cached independently; subsequent calls return the same per-model instance. Pin via constructor (`get_client(model=...)`), env var (`$PF_CORE_CLAUDE_CODE_MODEL` — applies to the no-model slot), or per call (`client.chat(messages, model=...)`).

@@ -36,33 +36,41 @@ class TestFlattenMessages:
         assert _flatten_messages([{"role": "user", "content": "hi"}]) == "hi"
 
     def test_system_then_user(self):
-        out = _flatten_messages([
-            {"role": "system", "content": "You are a bot."},
-            {"role": "user", "content": "Hello."},
-        ])
+        out = _flatten_messages(
+            [
+                {"role": "system", "content": "You are a bot."},
+                {"role": "user", "content": "Hello."},
+            ]
+        )
         assert out == "You are a bot.\n\n---\n\nHello."
 
     def test_multiple_user_messages_joined(self):
-        out = _flatten_messages([
-            {"role": "user", "content": "first"},
-            {"role": "user", "content": "second"},
-        ])
+        out = _flatten_messages(
+            [
+                {"role": "user", "content": "first"},
+                {"role": "user", "content": "second"},
+            ]
+        )
         assert out == "first\n\nsecond"
 
     def test_multiple_system_messages_joined(self):
-        out = _flatten_messages([
-            {"role": "system", "content": "rule one"},
-            {"role": "system", "content": "rule two"},
-            {"role": "user", "content": "do thing"},
-        ])
+        out = _flatten_messages(
+            [
+                {"role": "system", "content": "rule one"},
+                {"role": "system", "content": "rule two"},
+                {"role": "user", "content": "do thing"},
+            ]
+        )
         assert out == "rule one\n\nrule two\n\n---\n\ndo thing"
 
     def test_assistant_message_treated_as_body(self):
-        out = _flatten_messages([
-            {"role": "user", "content": "Q?"},
-            {"role": "assistant", "content": "A."},
-            {"role": "user", "content": "Q2?"},
-        ])
+        out = _flatten_messages(
+            [
+                {"role": "user", "content": "Q?"},
+                {"role": "assistant", "content": "A."},
+                {"role": "user", "content": "Q2?"},
+            ]
+        )
         assert "Q?" in out and "A." in out and "Q2?" in out
 
     def test_empty_messages_list(self):
@@ -72,17 +80,21 @@ class TestFlattenMessages:
         assert _flatten_messages(None) == ""  # type: ignore[arg-type]
 
     def test_skips_empty_content(self):
-        out = _flatten_messages([
-            {"role": "system", "content": ""},
-            {"role": "user", "content": "real content"},
-        ])
+        out = _flatten_messages(
+            [
+                {"role": "system", "content": ""},
+                {"role": "user", "content": "real content"},
+            ]
+        )
         assert out == "real content"
 
     def test_case_insensitive_role(self):
-        out = _flatten_messages([
-            {"role": "SYSTEM", "content": "S"},
-            {"role": "User", "content": "U"},
-        ])
+        out = _flatten_messages(
+            [
+                {"role": "SYSTEM", "content": "S"},
+                {"role": "User", "content": "U"},
+            ]
+        )
         assert out == "S\n\n---\n\nU"
 
 
@@ -115,9 +127,13 @@ class TestChatHappyPath:
         # Usage dict must carry the same keys as OpenRouterClient.chat
         # so callers can swap clients without code changes.
         for key in (
-            "prompt_tokens", "completion_tokens",
-            "cache_read_tokens", "cache_write_tokens",
-            "reasoning_tokens", "cost_usd", "duration_ms",
+            "prompt_tokens",
+            "completion_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "reasoning_tokens",
+            "cost_usd",
+            "duration_ms",
             "system_fingerprint",
         ):
             assert key in usage
@@ -132,10 +148,12 @@ class TestChatHappyPath:
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
         client = ClaudeCodeClient()
-        client.chat(messages=[
-            {"role": "system", "content": "be brief"},
-            {"role": "user", "content": "summarize this"},
-        ])
+        client.chat(
+            messages=[
+                {"role": "system", "content": "be brief"},
+                {"role": "user", "content": "summarize this"},
+            ]
+        )
         cmd = mock_run.call_args.args[0]
         # Prompt is piped via stdin, not argv — argv has an OS hard limit
         # (ARG_MAX) that large prompts trip over. `--print` is the final
@@ -312,9 +330,7 @@ class TestSafeModeIsolation:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_safe_mode_coexists_with_extra_args_and_model(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_safe_mode_coexists_with_extra_args_and_model(self, mock_which, mock_run, monkeypatch):
         """Canonical argv with everything set:
         ``[binary, --safe-mode, *extra_args, --model X, --print]``. ``--safe-mode``
         strips ambient customizations but explicit flags (--allowedTools,
@@ -326,7 +342,12 @@ class TestSafeModeIsolation:
         client.chat(messages=[{"role": "user", "content": "x"}])
         cmd = mock_run.call_args.args[0]
         assert cmd[1:7] == [
-            "--safe-mode", "--allowedTools", "Bash", "--model", "haiku", "--print",
+            "--safe-mode",
+            "--allowedTools",
+            "Bash",
+            "--model",
+            "haiku",
+            "--print",
         ]
 
     @patch("pf_core.clients.claude_code.subprocess.run")
@@ -441,9 +462,7 @@ class TestRetry:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_default_retry_is_zero_no_retry_on_failure(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_default_retry_is_zero_no_retry_on_failure(self, mock_which, mock_run, monkeypatch):
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         m = MagicMock()
@@ -458,9 +477,7 @@ class TestRetry:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_retry_one_succeeds_on_second_attempt(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_retry_one_succeeds_on_second_attempt(self, mock_which, mock_run, monkeypatch):
         """First attempt fails, second succeeds → returns content."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
@@ -476,9 +493,7 @@ class TestRetry:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_retry_one_exhausted_raises_after_two_attempts(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_retry_one_exhausted_raises_after_two_attempts(self, mock_which, mock_run, monkeypatch):
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         fail = MagicMock()
@@ -493,9 +508,7 @@ class TestRetry:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_retry_two_makes_three_attempts(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_retry_two_makes_three_attempts(self, mock_which, mock_run, monkeypatch):
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         fail = MagicMock()
@@ -510,9 +523,7 @@ class TestRetry:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_retry_also_handles_timeout(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_retry_also_handles_timeout(self, mock_which, mock_run, monkeypatch):
         """Timeouts can be transient (model warm-up, network blip) too —
         retry covers them as well as non-zero exits."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
@@ -557,9 +568,7 @@ class TestRetry:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_preflight_inherits_retry(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_preflight_inherits_retry(self, mock_which, mock_run, monkeypatch):
         """Preflight uses the same chat() path, so it benefits from
         retry — a transient auth blip won't trip a false-positive
         preflight failure when retry > 0."""
@@ -652,9 +661,7 @@ class TestPreflight:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_nonzero_exit_raises_with_login_remediation(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_nonzero_exit_raises_with_login_remediation(self, mock_which, mock_run, monkeypatch):
         """Auth failure (non-zero exit) raises ClaudeCodeError with
         actionable ``<binary> /login`` text — the operator can act on
         the message without reading source."""
@@ -670,9 +677,7 @@ class TestPreflight:
             client.preflight()
 
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_missing_binary_raises_under_preflight_wrapper(
-        self, mock_which, monkeypatch
-    ):
+    def test_missing_binary_raises_under_preflight_wrapper(self, mock_which, monkeypatch):
         """When ``claude`` binary isn't on PATH, preflight surfaces it
         as a preflight failure (not a raw "not found" error). The
         underlying not-found message stays in the cause chain."""
@@ -684,9 +689,7 @@ class TestPreflight:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_timeout_wraps_into_preflight_error(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_timeout_wraps_into_preflight_error(self, mock_which, mock_run, monkeypatch):
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=30)
@@ -696,9 +699,7 @@ class TestPreflight:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_error_carries_preflight_context_flag(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_error_carries_preflight_context_flag(self, mock_which, mock_run, monkeypatch):
         """The raised ClaudeCodeError has ``preflight: True`` in
         context so log filters distinguish preflight failures from
         per-call failures (different operational meaning — preflight
@@ -766,9 +767,7 @@ class TestModelOverride:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_chat_default_model_falls_through_to_instance(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_chat_default_model_falls_through_to_instance(self, mock_which, mock_run, monkeypatch):
         """``chat()`` without a ``model=`` kwarg uses the instance default
         (signature default is the empty string, which means 'no override')."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
@@ -782,9 +781,7 @@ class TestModelOverride:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_per_call_model_with_no_instance_default(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_per_call_model_with_no_instance_default(self, mock_which, mock_run, monkeypatch):
         """Per-call override works even when the instance has no default."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
@@ -822,9 +819,7 @@ class TestModelOverride:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_openrouter_style_model_translated(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_openrouter_style_model_translated(self, mock_which, mock_run, monkeypatch):
         """`get_routed_client` claims backend transparency: callers should
         not have to know whether they're hitting OpenRouter or Claude Code.
         OpenRouter wants ``provider/model`` (e.g. ``anthropic/claude-3.7-sonnet``);
@@ -842,9 +837,7 @@ class TestModelOverride:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_per_call_openrouter_style_translated(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_per_call_openrouter_style_translated(self, mock_which, mock_run, monkeypatch):
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
@@ -871,9 +864,7 @@ class TestModelOverride:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_multiple_slashes_takes_last_segment(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_multiple_slashes_takes_last_segment(self, mock_which, mock_run, monkeypatch):
         """Defensive: if a model string somehow has multiple slashes,
         take the segment after the last one (Claude Code's ids never
         contain slashes)."""
@@ -888,9 +879,7 @@ class TestModelOverride:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_empty_after_translation_drops_flag(
-        self, mock_which, mock_run, monkeypatch
-    ):
+    def test_empty_after_translation_drops_flag(self, mock_which, mock_run, monkeypatch):
         """A malformed string like ``"anthropic/"`` translates to ``""``;
         treat that as "no model override" and drop the flag rather than
         passing ``--model`` with an empty value."""
@@ -920,14 +909,17 @@ class TestModelOverride:
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
-        client = ClaudeCodeClient(
-            extra_args=["--allowedTools", "Bash"], model="haiku"
-        )
+        client = ClaudeCodeClient(extra_args=["--allowedTools", "Bash"], model="haiku")
         client.chat(messages=[{"role": "user", "content": "x"}])
         cmd = mock_run.call_args.args[0]
         # Expected: [binary, --safe-mode, --allowedTools, Bash, --model, haiku, --print, prompt]
         assert cmd[1:7] == [
-            "--safe-mode", "--allowedTools", "Bash", "--model", "haiku", "--print",
+            "--safe-mode",
+            "--allowedTools",
+            "Bash",
+            "--model",
+            "haiku",
+            "--print",
         ]
 
 
@@ -981,9 +973,7 @@ class TestSingleton:
         b = get_client(model="haiku")
         assert a is b
 
-    def test_no_model_and_explicit_model_are_different_singletons(
-        self, monkeypatch
-    ):
+    def test_no_model_and_explicit_model_are_different_singletons(self, monkeypatch):
         """`get_client()` (no model) and `get_client(model='haiku')` are
         two distinct cache slots even when the env happens to resolve
         the no-model path to 'haiku'. Predictable > clever."""

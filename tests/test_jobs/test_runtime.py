@@ -52,9 +52,7 @@ def test_nested_jobs_stack_context(jobs_db, simple_kind):
 
 def test_job_enter_loads_row(jobs_db, simple_kind):
     repo = JobRepo()
-    job_id = repo.create(
-        kind="simple_pass", inputs={"widget_ids": [1, 2, 3]}
-    )
+    job_id = repo.create(kind="simple_pass", inputs={"widget_ids": [1, 2, 3]})
 
     with Job(job_id) as job:
         assert job.id == job_id
@@ -158,11 +156,11 @@ def test_step_records_outputs_on_success(jobs_db, simple_kind):
 
     with Job(job_id) as job:
         job.transition("running")
-        with job.step("grade_1", inputs={"submission_id": 1}) as step:
+        with job.step("summarize_1", inputs={"item_id": 1}) as step:
             assert step.skipped is False
             step.outputs = {"result": 28}
 
-    s = repo.find_step(job_id, name="grade_1")
+    s = repo.find_step(job_id, name="summarize_1")
     assert s["status"] == "succeeded"
     assert s["outputs"] == {"result": 28}
 
@@ -177,13 +175,13 @@ def test_step_is_idempotent_when_prior_succeeded(jobs_db, simple_kind):
     # First run.
     with Job(job_id) as job:
         job.transition("running")
-        with job.step("grade_1") as step:
+        with job.step("summarize_1") as step:
             call_count["n"] += 1
             step.outputs = {"result": 28}
 
     # Simulate resume — second run should skip the step.
     with Job(job_id) as job:
-        with job.step("grade_1") as step:
+        with job.step("summarize_1") as step:
             assert step.skipped is True
             call_count["n"] += 1  # this still runs; skipped flag just informs
 
@@ -191,7 +189,7 @@ def test_step_is_idempotent_when_prior_succeeded(jobs_db, simple_kind):
 
     # Only one step row exists.
     with_steps = repo.get_with_steps(job_id)
-    step_rows = [s for s in with_steps["steps"] if s["name"] == "grade_1"]
+    step_rows = [s for s in with_steps["steps"] if s["name"] == "summarize_1"]
     assert len(step_rows) == 1
 
 
@@ -202,10 +200,10 @@ def test_step_exception_marks_step_failed_and_reraises(jobs_db, simple_kind):
     with pytest.raises(RuntimeError, match="step kaboom"):
         with Job(job_id) as job:
             job.transition("running")
-            with job.step("grade_1"):
+            with job.step("summarize_1"):
                 raise RuntimeError("step kaboom")
 
-    s = repo.find_step(job_id, name="grade_1")
+    s = repo.find_step(job_id, name="summarize_1")
     assert s["status"] == "failed"
     assert s["error"] == "step kaboom"
 
@@ -263,9 +261,7 @@ def test_explicit_job_id_overrides_contextvar(jobs_db, simple_kind):
     explicit = repo.create(kind="simple_pass")
 
     with Job(outer):
-        run_id = llm.record(
-            agent_type="reviewer", model="gpt-4o-mini", job_id=explicit
-        )
+        run_id = llm.record(agent_type="reviewer", model="gpt-4o-mini", job_id=explicit)
 
     run = llm.get(run_id)
     assert run["job_id"] == explicit
@@ -280,7 +276,7 @@ def test_llm_run_in_step_gets_job_id(jobs_db, simple_kind):
 
     with Job(job_id) as job:
         job.transition("running")
-        with job.step("grade_1"):
+        with job.step("summarize_1"):
             run_id = llm.record(agent_type="reviewer", model="gpt-4o-mini")
 
     run = llm.get(run_id)

@@ -42,9 +42,7 @@ def by_agent(agent_type: str) -> int:
     agent_type_id = resolve_agent_type_id(agent_type)
     with transaction() as conn:
         result = conn.execute(
-            delete(llm_cache_entries).where(
-                llm_cache_entries.c.agent_type_id == agent_type_id
-            )
+            delete(llm_cache_entries).where(llm_cache_entries.c.agent_type_id == agent_type_id)
         )
     count = result.rowcount
     logger.info("cache_invalidated_by_agent", agent_type=agent_type, deleted=count)
@@ -93,9 +91,7 @@ def by_run(run_id: int) -> int:
     """
     with transaction() as conn:
         result = conn.execute(
-            delete(llm_cache_entries).where(
-                llm_cache_entries.c.source_run_id == run_id
-            )
+            delete(llm_cache_entries).where(llm_cache_entries.c.source_run_id == run_id)
         )
     count = result.rowcount
     logger.info("cache_invalidated_by_run", run_id=run_id, deleted=count)
@@ -114,8 +110,7 @@ def purge_expired() -> int:
     with transaction() as conn:
         result = conn.execute(
             delete(llm_cache_entries).where(
-                llm_cache_entries.c.expires_at.isnot(None)
-                & (llm_cache_entries.c.expires_at <= now)
+                llm_cache_entries.c.expires_at.isnot(None) & (llm_cache_entries.c.expires_at <= now)
             )
         )
     count = result.rowcount

@@ -37,17 +37,17 @@ Strict parsing runs first so well-formed responses stay on the fast path — `js
 
 ```python
 # Parse any JSON
-parse_llm_json('{"key": "val"}')                     # {"key": "val"}
+parse_llm_json('{"key": "val"}')  # {"key": "val"}
 
 # Expect a specific type
-parse_llm_json('[1, 2, 3]', expect="array")          # [1, 2, 3]
-parse_llm_json('{"a": 1}', expect="array")           # None (wrong type)
+parse_llm_json("[1, 2, 3]", expect="array")  # [1, 2, 3]
+parse_llm_json('{"a": 1}', expect="array")  # None (wrong type)
 
 # Handle markdown fences
-parse_llm_json('```json\n[1, 2]\n```', expect="array")  # [1, 2]
+parse_llm_json("```json\n[1, 2]\n```", expect="array")  # [1, 2]
 
 # Handle trailing prose
-parse_llm_json('[{"a":1}]\nHere is my explanation...') # [{"a": 1}]
+parse_llm_json('[{"a":1}]\nHere is my explanation...')  # [{"a": 1}]
 
 # Recover truncated arrays — prefix salvaged, tail dropped, WARNING logged
 parse_llm_json('[{"a":1},{"b":2},{"c":3', expect="array")  # [{"a":1},{"b":2}]
@@ -61,7 +61,7 @@ parse_llm_json('{"quote": "She said, "Hello.""}', expect="object")
 # → {"quote": "She said, \"Hello.\""}
 
 # Strict mode — raises instead of returning None
-parse_llm_json('garbage', strict=True)  # raises InvalidInputError
+parse_llm_json("garbage", strict=True)  # raises InvalidInputError
 
 # recover=False disables BOTH truncation recovery AND json_repair
 parse_llm_json('{"q": "she said, "hi""}', recover=False)  # → None
@@ -82,7 +82,11 @@ Returns `dict | list | None`.
 Replace this pattern:
 
 ```python
-from pf_core.utils.json_recovery import extract_json_array, recover_truncated_json, strip_markdown_fences
+from pf_core.utils.json_recovery import (
+    extract_json_array,
+    recover_truncated_json,
+    strip_markdown_fences,
+)
 
 raw = strip_markdown_fences(content)
 try:

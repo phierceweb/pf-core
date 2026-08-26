@@ -8,6 +8,7 @@ the table bounded. Composed into :class:`pf_core.jobs.repo.JobRepo`.
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy import and_, func, or_, select, update
 
@@ -16,9 +17,18 @@ from pf_core.jobs import _schema as s
 from pf_core.jobs._repo_util import _coerce_row_utc, _default_lease_seconds
 from pf_core.llm.tracking.schema import _server_now_minus_seconds
 
+if TYPE_CHECKING:
+    from contextlib import _GeneratorContextManager
+
+    from sqlalchemy.engine import Connection
+
 
 class WorkerOpsMixin:
     """Claim / reclaim / purge operations. Requires ``self._tx``."""
+
+    if TYPE_CHECKING:
+        # Provided by Repository in the composed JobRepo.
+        def _tx(self) -> _GeneratorContextManager[Connection]: ...
 
     def claim_next(
         self,
@@ -94,9 +104,7 @@ class WorkerOpsMixin:
                 return None
 
             claimed = (
-                conn.execute(select(s.jobs).where(s.jobs.c.id == job_id))
-                .mappings()
-                .fetchone()
+                conn.execute(select(s.jobs).where(s.jobs.c.id == job_id)).mappings().fetchone()
             )
         return _coerce_row_utc(dict(claimed)) if claimed else None
 

@@ -87,9 +87,7 @@ def _load_config(config_path: str) -> dict[str, Any]:
         return {}
 
 
-_cache: ReloadCache[str, dict[str, Any]] = ReloadCache(
-    loader=_load_config, ttl=_reload_seconds
-)
+_cache: ReloadCache[str, dict[str, Any]] = ReloadCache(loader=_load_config, ttl=_reload_seconds)
 
 
 def _build_config(raw: dict[str, Any]) -> AgentCacheConfig:
@@ -98,9 +96,7 @@ def _build_config(raw: dict[str, Any]) -> AgentCacheConfig:
         exact=bool(raw.get("exact", _DEFAULTS.exact)),
         semantic=bool(raw.get("semantic", _DEFAULTS.semantic)),
         ttl_seconds=int(raw.get("ttl_seconds", _DEFAULTS.ttl_seconds)),
-        semantic_threshold=float(
-            raw.get("semantic_threshold", _DEFAULTS.semantic_threshold)
-        ),
+        semantic_threshold=float(raw.get("semantic_threshold", _DEFAULTS.semantic_threshold)),
         semantic_embedding_model=str(
             raw.get("semantic_embedding_model", _DEFAULTS.semantic_embedding_model)
         ),

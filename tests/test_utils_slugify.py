@@ -30,14 +30,14 @@ def test_nfkd_diacritics_fold_to_ascii():
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("Søren", "soren"),          # ø
-        ("Ångström", "angstrom"),    # å (+ ö via NFKD)
-        ("Æon", "aeon"),             # æ
-        ("œuf", "oeuf"),             # œ
-        ("Sigurður", "sigurdur"),    # ð
-        ("Þórr", "thorr"),           # þ
-        ("Łukasz", "lukasz"),        # ł
-        ("Straße", "strasse"),       # ß
+        ("Søren", "soren"),  # ø
+        ("Ångström", "angstrom"),  # å (+ ö via NFKD)
+        ("Æon", "aeon"),  # æ
+        ("œuf", "oeuf"),  # œ
+        ("Sigurður", "sigurdur"),  # ð
+        ("Þórr", "thorr"),  # þ
+        ("Łukasz", "lukasz"),  # ł
+        ("Straße", "strasse"),  # ß
     ],
 )
 def test_special_letter_map(raw, expected):

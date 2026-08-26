@@ -10,7 +10,7 @@ Because the consumer's bundled file is a packaging invariant, the resolver never
 from pathlib import Path
 from pf_core.utils.config_path import resolve_config_path
 
-_PKG = Path(__file__).parent   # the consumer's package dir (ships its config/)
+_PKG = Path(__file__).parent  # the consumer's package dir (ships its config/)
 
 spec_path = resolve_config_path(
     "drafter.yaml",
@@ -42,8 +42,12 @@ The returned path is always absolute — resolved eagerly, so a later CWD change
 from pf_core.llm.prompts import load_prompt_spec
 
 spec = load_prompt_spec(
-    resolve_config_path("drafter.yaml", env_dir_var="MYAPP_PROMPTS_DIR",
-                        bundled_dir=_PKG / "config" / "prompts", cwd_subdir="config/prompts")
+    resolve_config_path(
+        "drafter.yaml",
+        env_dir_var="MYAPP_PROMPTS_DIR",
+        bundled_dir=_PKG / "config" / "prompts",
+        cwd_subdir="config/prompts",
+    )
 )
 ```
 
@@ -54,8 +58,11 @@ import os
 
 os.environ.setdefault(
     "MODEL_ROUTER_CONFIG",
-    str(resolve_config_path("model_router.yaml", env_dir_var="MYAPP_ROUTER_DIR",
-                           bundled_dir=_PKG / "config")),
+    str(
+        resolve_config_path(
+            "model_router.yaml", env_dir_var="MYAPP_ROUTER_DIR", bundled_dir=_PKG / "config"
+        )
+    ),
 )
 ```
 

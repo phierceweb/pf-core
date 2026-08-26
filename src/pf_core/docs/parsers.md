@@ -51,6 +51,7 @@ Empty-href and empty-anchor `<a>` tags are filtered automatically (many sites sp
 # In a per-source parser module:
 from pf_core.parsers import ParseError, PaywalledPost
 
+
 def fetch_post(ref):
     resp = httpx.get(ref.url)
     if resp.status_code != 200:

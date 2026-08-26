@@ -372,6 +372,7 @@ from pf_core.clients.openrouter import get_client
 from pf_core.llm.router import get_agent_config
 from pf_core.llm.tracking import LlmRunRepo
 
+
 def summarize(item_id: int, messages: list[dict]) -> str:
     cfg = get_agent_config("summarizer")
     content, usage = get_client().chat(messages=messages, **cfg)
@@ -392,9 +393,11 @@ Or, when using the `@track_run` decorator, pass `**cfg` through the wrapped call
 ```python
 from pf_core.llm.tracking import track_run
 
+
 @track_run(agent_type="summarizer")
 def tracked_chat(*, model, messages, **sampling):
     return get_client().chat(model=model, messages=messages, **sampling)
+
 
 cfg = get_agent_config("summarizer")
 content, usage = tracked_chat(messages=msgs, **cfg)
@@ -455,9 +458,14 @@ GROUP BY m.name;
    ```python
    from pf_core.llm.router import assert_agents_registered
 
-   assert_agents_registered([
-       "summarizer", "classifier", "extractor", "reviewer",
-   ])
+   assert_agents_registered(
+       [
+           "summarizer",
+           "classifier",
+           "extractor",
+           "reviewer",
+       ]
+   )
    ```
 
 4. **No DB work needed.** Tracking auto-inserts the `llm_agent_types` row on the first call via `resolve_agent_type_id()`. If you want a human-facing description, pre-seed the row in your project's data migration.

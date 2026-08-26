@@ -5,6 +5,7 @@ per-layer allow-sets (an order-based comparison would wrongly allow
 orchestrators to import repo). Reports line numbers and a friendly hint;
 ``# lint-layers: skip`` in the first 5 lines exempts a file.
 """
+
 from __future__ import annotations
 
 import ast
@@ -20,7 +21,7 @@ ALLOWED_IMPORTS: dict[str, set[str]] = {
     "services": {"repo", "clients", "db"},
     "repo": {"db"},
     "clients": {"db"},
-    "db": set(),   # the bottom layer: imports no app layer above it
+    "db": set(),  # the bottom layer: imports no app layer above it
 }
 
 _HINTS: dict[tuple[str, str], str] = {
@@ -123,10 +124,14 @@ def layering_violations(
         pkg = a.split("/")[:-1]
         for mod, lineno in _imports(tree, pkg):
             if layer == "orchestrators" and mod in _DB_MODULES:
-                out.append(LayeringViolation(
-                    path=a, imported=mod, line=lineno,
-                    reason="orchestrator must not open transaction() directly",
-                ))
+                out.append(
+                    LayeringViolation(
+                        path=a,
+                        imported=mod,
+                        line=lineno,
+                        reason="orchestrator must not open transaction() directly",
+                    )
+                )
                 continue
             mparts = mod.split(".")
             if "app" not in mparts:
@@ -135,10 +140,14 @@ def layering_violations(
             target = mparts[j + 1] if j + 1 < len(mparts) else None
             if target in allowed and target != layer and target not in allowed[layer]:
                 hint = _HINTS.get((layer, target), "not allowed")
-                out.append(LayeringViolation(
-                    path=a, imported=mod, line=lineno,
-                    reason=f"{layer} → {target}, {hint}",
-                ))
+                out.append(
+                    LayeringViolation(
+                        path=a,
+                        imported=mod,
+                        line=lineno,
+                        reason=f"{layer} → {target}, {hint}",
+                    )
+                )
     return out
 
 
@@ -159,9 +168,7 @@ def stale_allowlist_entries(
     entry FAILs the gate until deleted (so the list only shrinks).
     """
     current = {(v.path, v.imported) for v in violations}
-    return sorted(
-        (p, m) for p, mods in allowlist.items() for m in mods if (p, m) not in current
-    )
+    return sorted((p, m) for p, mods in allowlist.items() for m in mods if (p, m) not in current)
 
 
 def check_layering(

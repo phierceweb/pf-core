@@ -14,10 +14,14 @@ class TestCheckLayering:
     def test_repo_importing_service_is_violation(self, tmp_path: Path) -> None:
         _mk(tmp_path / "app/repo/entries.py", "from app.services.x import y\n")
         out = check_layering(tmp_path)
-        assert out == [LayeringViolation(
-            path="app/repo/entries.py", imported="app.services.x",
-            reason="repo → services, repo must not import from upper layers", line=1,
-        )]
+        assert out == [
+            LayeringViolation(
+                path="app/repo/entries.py",
+                imported="app.services.x",
+                reason="repo → services, repo must not import from upper layers",
+                line=1,
+            )
+        ]
 
     def test_allowed_downward_import_is_clean(self, tmp_path: Path) -> None:
         _mk(tmp_path / "app/services/x.py", "from app.repo.entries import y\n")

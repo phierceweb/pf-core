@@ -11,6 +11,7 @@ The pattern: an LLM analyzes a snapshot of some data (the current list of record
 ```python
 from pf_core.llm.safe_apply import GatherResult, safe_apply
 
+
 # Phase 1 — gather: read current state, ask LLM, build plan
 def gather_relabels(records: list[Record]) -> GatherResult[dict[int, str]]:
     plan = llm_propose_relabels([r.text for r in records])
@@ -19,6 +20,7 @@ def gather_relabels(records: list[Record]) -> GatherResult[dict[int, str]]:
         target_texts=tuple(r.text for r in records),
         data=plan,
     )
+
 
 # Phase 2 — apply (possibly much later, after other transforms have run)
 def apply_relabels(text: str, gathered: GatherResult[dict[int, str]]) -> str:

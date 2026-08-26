@@ -51,9 +51,7 @@ def summarize_with_critic(prompt: str) -> dict:
         {"role": "system", "content": _critic_system_prompt()},
         {"role": "user", "content": f"Prompt: {prompt}\n\nSummary: {summary_content}"},
     ]
-    critic_content, critic_usage = _critic(
-        messages=critic_messages, **critic_cfg
-    )
+    critic_content, critic_usage = _critic(messages=critic_messages, **critic_cfg)
     critic_run_id = critic_usage["_llm_run_id"]
 
     # 3. Link the critic back to the summary

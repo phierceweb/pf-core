@@ -33,7 +33,7 @@ To scope the handlers to one named logger instead (e.g. to isolate your app's
 logs from third-party libraries), pass `app_logger_name`:
 
 ```python
-setup_logging(app_logger_name="myproject")   # handlers on the "myproject" logger
+setup_logging(app_logger_name="myproject")  # handlers on the "myproject" logger
 ```
 
 With a named logger, only `myproject.*` records reach the handlers, and
@@ -61,8 +61,8 @@ Attach fields to all log records within a scope:
 from pf_core.log import log_context
 
 with log_context(task_id=42, section_name="intro"):
-    logger.info("search_started")    # includes task_id=42, section_name="intro"
-    logger.info("search_complete")   # same context
+    logger.info("search_started")  # includes task_id=42, section_name="intro"
+    logger.info("search_complete")  # same context
 # Context cleared after the block
 ```
 

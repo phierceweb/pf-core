@@ -95,9 +95,7 @@ def test_start_takes_precedence_over_rerun_from() -> None:
 def test_skip_fresh_skips_leading_fresh_phases() -> None:
     log: list[str] = []
     fresh = {"a", "b"}
-    ran = run_pipeline(
-        _pipeline(log), ctx=None, skip_fresh=lambda p: p.name in fresh
-    )
+    ran = run_pipeline(_pipeline(log), ctx=None, skip_fresh=lambda p: p.name in fresh)
     assert ran == ["c", "d"]
 
 
@@ -106,9 +104,7 @@ def test_skip_fresh_only_skips_the_leading_run() -> None:
     leading contiguous fresh prefix is skipped."""
     log: list[str] = []
     fresh = {"a", "c"}  # 'a' leading-fresh, 'c' fresh but mid-run
-    ran = run_pipeline(
-        _pipeline(log), ctx=None, skip_fresh=lambda p: p.name in fresh
-    )
+    ran = run_pipeline(_pipeline(log), ctx=None, skip_fresh=lambda p: p.name in fresh)
     assert ran == ["b", "c", "d"]
 
 
@@ -121,17 +117,13 @@ def test_skip_fresh_all_fresh_returns_empty_and_runs_nothing() -> None:
 
 def test_start_takes_precedence_over_skip_fresh() -> None:
     log: list[str] = []
-    ran = run_pipeline(
-        _pipeline(log), ctx=None, start="b", skip_fresh=lambda p: True
-    )
+    ran = run_pipeline(_pipeline(log), ctx=None, start="b", skip_fresh=lambda p: True)
     assert ran == ["b", "c", "d"]
 
 
 def test_rerun_from_takes_precedence_over_skip_fresh() -> None:
     log: list[str] = []
-    ran = run_pipeline(
-        _pipeline(log), ctx=None, rerun_from="c", skip_fresh=lambda p: True
-    )
+    ran = run_pipeline(_pipeline(log), ctx=None, rerun_from="c", skip_fresh=lambda p: True)
     assert ran == ["c", "d"]
 
 

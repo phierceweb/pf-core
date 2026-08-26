@@ -18,6 +18,7 @@ take, which deadlock under concurrent writers on MySQL/InnoDB.
 from __future__ import annotations
 
 from sqlalchemy.exc import OperationalError
+
 try:
     from tenacity import (
         Retrying,
@@ -83,11 +84,15 @@ class LlmRunOutcomeRepo(Repository):
     def list_for_run(self, run_id: int) -> list[dict]:
         """All outcomes attached to ``run_id`` (most recent first)."""
         with self._tx() as conn:
-            rows = conn.execute(
-                s.llm_run_outcomes.select()
-                .where(s.llm_run_outcomes.c.llm_run_id == run_id)
-                .order_by(s.llm_run_outcomes.c.recorded_at.desc())
-            ).mappings().fetchall()
+            rows = (
+                conn.execute(
+                    s.llm_run_outcomes.select()
+                    .where(s.llm_run_outcomes.c.llm_run_id == run_id)
+                    .order_by(s.llm_run_outcomes.c.recorded_at.desc())
+                )
+                .mappings()
+                .fetchall()
+            )
         return [dict(r) for r in rows]
 
 
@@ -113,6 +118,7 @@ class LlmRunValidationRepo(Repository):
         runs) writing the same key can still rarely deadlock, and the upsert is
         safe to replay since the row key is ``(llm_run_id, validator)``.
         """
+
         def _log_retry(retry_state) -> None:
             logger.warning(
                 "llm_run_validation_deadlock_retry",
@@ -166,11 +172,15 @@ class LlmRunValidationRepo(Repository):
     def list_for_run(self, run_id: int) -> list[dict]:
         """All validations attached to ``run_id``."""
         with self._tx() as conn:
-            rows = conn.execute(
-                s.llm_run_validations.select()
-                .where(s.llm_run_validations.c.llm_run_id == run_id)
-                .order_by(s.llm_run_validations.c.validator)
-            ).mappings().fetchall()
+            rows = (
+                conn.execute(
+                    s.llm_run_validations.select()
+                    .where(s.llm_run_validations.c.llm_run_id == run_id)
+                    .order_by(s.llm_run_validations.c.validator)
+                )
+                .mappings()
+                .fetchall()
+            )
         return [dict(r) for r in rows]
 
 
@@ -202,9 +212,7 @@ class LlmRunLinkRepo(Repository):
 
     def children(self, parent_id: int, *, relation: str | None = None) -> list[dict]:
         """All child links of ``parent_id``, optionally filtered by relation."""
-        stmt = s.llm_run_links.select().where(
-            s.llm_run_links.c.parent_run_id == parent_id
-        )
+        stmt = s.llm_run_links.select().where(s.llm_run_links.c.parent_run_id == parent_id)
         if relation is not None:
             stmt = stmt.where(s.llm_run_links.c.relation == relation)
         with self._tx() as conn:
@@ -213,9 +221,7 @@ class LlmRunLinkRepo(Repository):
 
     def parents(self, child_id: int, *, relation: str | None = None) -> list[dict]:
         """All parent links of ``child_id``, optionally filtered by relation."""
-        stmt = s.llm_run_links.select().where(
-            s.llm_run_links.c.child_run_id == child_id
-        )
+        stmt = s.llm_run_links.select().where(s.llm_run_links.c.child_run_id == child_id)
         if relation is not None:
             stmt = stmt.where(s.llm_run_links.c.relation == relation)
         with self._tx() as conn:

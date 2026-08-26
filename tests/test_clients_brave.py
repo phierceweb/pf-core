@@ -1,4 +1,5 @@
 """Tests for pf_core.clients.brave."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -86,9 +87,13 @@ class TestSearchSuccess:
                 ],
             },
         }
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=200, json_data=json_data,
-        )):
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=200,
+                json_data=json_data,
+            ),
+        ):
             results, usage = c.search("product launch")
         assert len(results) == 2
         assert results[0]["url"] == "https://example.com/article/abc"
@@ -100,60 +105,88 @@ class TestSearchSuccess:
 
     def test_empty_results_returns_empty_list(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=200, json_data={"web": {"results": []}},
-        )):
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=200,
+                json_data={"web": {"results": []}},
+            ),
+        ):
             results, usage = c.search("very narrow query")
         assert results == []
         assert "duration_ms" in usage
 
     def test_count_clamped_to_brave_max(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=200, json_data={"web": {"results": []}},
-        )) as get_mock:
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=200,
+                json_data={"web": {"results": []}},
+            ),
+        ) as get_mock:
             c.search("q", count=99)
         params = get_mock.call_args.kwargs["params"]
         assert params["count"] == 20
 
     def test_count_clamped_to_one_minimum(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=200, json_data={"web": {"results": []}},
-        )) as get_mock:
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=200,
+                json_data={"web": {"results": []}},
+            ),
+        ) as get_mock:
             c.search("q", count=0)
         params = get_mock.call_args.kwargs["params"]
         assert params["count"] == 1
 
     def test_freshness_param_passed_through(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=200, json_data={"web": {"results": []}},
-        )) as get_mock:
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=200,
+                json_data={"web": {"results": []}},
+            ),
+        ) as get_mock:
             c.search("q", freshness="pw")
         params = get_mock.call_args.kwargs["params"]
         assert params["freshness"] == "pw"
 
     def test_extra_params_merged(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=200, json_data={"web": {"results": []}},
-        )) as get_mock:
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=200,
+                json_data={"web": {"results": []}},
+            ),
+        ) as get_mock:
             c.search("q", extra_params={"spellcheck": "0"})
         params = get_mock.call_args.kwargs["params"]
         assert params["spellcheck"] == "0"
 
     def test_skips_non_dict_results(self):
         c = BraveSearchClient(api_key="k")
-        json_data = {"web": {"results": [
-            "garbage_string",
-            {"url": "https://ok.com/x", "title": "ok"},
-            {"title": "no url"},
-            {"url": "", "title": "empty url"},
-        ]}}
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=200, json_data=json_data,
-        )):
+        json_data = {
+            "web": {
+                "results": [
+                    "garbage_string",
+                    {"url": "https://ok.com/x", "title": "ok"},
+                    {"title": "no url"},
+                    {"url": "", "title": "empty url"},
+                ]
+            }
+        }
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=200,
+                json_data=json_data,
+            ),
+        ):
             results, _ = c.search("q")
         assert len(results) == 1
         assert results[0]["url"] == "https://ok.com/x"
@@ -162,33 +195,49 @@ class TestSearchSuccess:
 class TestSearchErrors:
     def test_429_raises_rate_limited(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=429, text="Too Many Requests",
-        )):
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=429,
+                text="Too Many Requests",
+            ),
+        ):
             with pytest.raises(BraveSearchError, match="rate-limited"):
                 c.search("q")
 
     def test_401_raises_auth_failed(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=401, text="Unauthorized",
-        )):
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=401,
+                text="Unauthorized",
+            ),
+        ):
             with pytest.raises(BraveSearchError, match="auth failed"):
                 c.search("q")
 
     def test_403_raises_auth_failed(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=403, text="Forbidden",
-        )):
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=403,
+                text="Forbidden",
+            ),
+        ):
             with pytest.raises(BraveSearchError, match="auth failed"):
                 c.search("q")
 
     def test_500_raises_with_status(self):
         c = BraveSearchClient(api_key="k")
-        with patch("httpx.get", return_value=_mock_response(
-            status_code=500, text="Server Error",
-        )):
+        with patch(
+            "httpx.get",
+            return_value=_mock_response(
+                status_code=500,
+                text="Server Error",
+            ),
+        ):
             with pytest.raises(BraveSearchError, match="500"):
                 c.search("q")
 
@@ -256,9 +305,7 @@ class TestGetClientSingleton:
             ("BRAVE_REQUEST_TIMEOUT", "request_timeout", 30),
         ],
     )
-    def test_malformed_env_falls_back_instead_of_crashing(
-        self, monkeypatch, var, attr, expected
-    ):
+    def test_malformed_env_falls_back_instead_of_crashing(self, monkeypatch, var, attr, expected):
         """An operator typo used to raise ValueError out of get_client, taking
         down construction; the resolvers warn and use the default."""
         monkeypatch.setenv("BRAVE_API_KEY", "k")

@@ -94,9 +94,7 @@ def test_detect_decoration_basenames_missing_files_skipped(tmp_path: Path) -> No
     """A missing path is logged and skipped, not raised."""
     nonexistent = tmp_path / "no-such-image.png"
     # Should NOT raise even though file is missing.
-    result = detect_decoration_basenames(
-        [nonexistent], threshold=1, hamming_distance=4
-    )
+    result = detect_decoration_basenames([nonexistent], threshold=1, hamming_distance=4)
     assert result == set()
 
 
@@ -107,6 +105,7 @@ def _have_phash_deps() -> bool:
     try:
         import imagehash  # noqa: F401
         from PIL import Image  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -144,9 +143,7 @@ def test_detect_decoration_basenames_flags_repeated_image(tmp_path: Path) -> Non
         _make_test_png(p)
         image_paths.append(p)
 
-    decorations = detect_decoration_basenames(
-        image_paths, threshold=3, hamming_distance=4
-    )
+    decorations = detect_decoration_basenames(image_paths, threshold=3, hamming_distance=4)
     assert decorations == {"img0.png", "img1.png", "img2.png"}
 
 

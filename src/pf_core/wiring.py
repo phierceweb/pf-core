@@ -18,9 +18,7 @@ def installed_docs_dir() -> Path:
     return Path(pf_core.__file__).resolve().parent / "docs"
 
 
-def _ensure_symlink(
-    link: Path, target: Path, actions: list[str], errors: list[str]
-) -> None:
+def _ensure_symlink(link: Path, target: Path, actions: list[str], errors: list[str]) -> None:
     if link.is_symlink():
         if link.resolve() == (link.parent / target).resolve():
             actions.append(f"ok: {link}")
@@ -57,9 +55,7 @@ def check_wiring(root: Path | None = None) -> list[tuple[str, str, str]]:
         if (link / "modules.md").is_file():
             rows.append(("docs_link", "PASS", f"docs/pf-core -> {link.resolve()}"))
         else:
-            rows.append(
-                ("docs_link", "FAIL", "docs/pf-core is a broken symlink — re-run pf-setup")
-            )
+            rows.append(("docs_link", "FAIL", "docs/pf-core is a broken symlink — re-run pf-setup"))
     elif link.exists():
         rows.append(("docs_link", "FAIL", "docs/pf-core exists but is not a symlink"))
     else:
@@ -76,9 +72,7 @@ def run_cli(argv: list[str] | None = None) -> int:
         description="Link the installed pf-core's bundled docs at docs/pf-core "
         "so in-repo AI assistants can read them.",
     )
-    parser.add_argument(
-        "--project-root", default=".", help="consumer repo root (default: cwd)"
-    )
+    parser.add_argument("--project-root", default=".", help="consumer repo root (default: cwd)")
     args = parser.parse_args(argv)
     actions, errors = ensure_wiring(Path(args.project_root))
     for line in actions:

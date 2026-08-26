@@ -18,7 +18,7 @@ second consumer wants it. See [`.ai/rules/scope.md`](.ai/rules/scope.md).
 
 ## Development setup
 
-Python 3.11+ is required.
+Python 3.12+ is required.
 
 ```bash
 git clone https://github.com/phierceweb/pf-core
@@ -35,11 +35,13 @@ For lighter work, install only the extras you're touching — the base
 
 ## Before you open a pull request
 
-These three checks run in CI and as pre-commit hooks — run them locally first:
+These checks run in CI and as pre-commit hooks — run them locally first:
 
 ```bash
 bin/test                                # full suite, must be green
 bin/run ruff check src tests            # lint
+bin/run ruff format --check src tests   # formatting (apply with `ruff format src tests`)
+bin/run python -m mypy                  # type check (config in [tool.mypy])
 bin/run python -m pf_core.guards        # structural gate (reads .pf-guards.toml)
 ```
 
@@ -66,7 +68,7 @@ And hold the change to these standards:
 
 The full set lives in [`.ai/rules/`](.ai/rules/). The essentials:
 
-- Modern Python 3.11+ syntax — `X | None`, lowercase `dict`/`list`/`tuple`.
+- Modern Python 3.12+ syntax — `X | None`, lowercase `dict`/`list`/`tuple`.
 - Type hints on every public signature; Google-style docstrings on public APIs.
 - Structured logging via `pf_core.log.get_logger(__name__)` — never bare `print`
   outside CLI entry points.

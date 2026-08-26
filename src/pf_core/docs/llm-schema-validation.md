@@ -53,11 +53,13 @@ Define the response shape, register it once at import time, then call `parse_and
 from pydantic import BaseModel, Field, HttpUrl
 from pf_core.llm.validate import register
 
+
 class SummaryOutput(BaseModel):
     headline: str = Field(min_length=10, max_length=200)
     body: str = Field(min_length=200)
     citations: list[HttpUrl]
     model_config = {"extra": "forbid"}
+
 
 register(
     agent_type="summarizer",
@@ -71,12 +73,15 @@ register(
 # myapp/services/summarizer.py
 from pf_core.llm.validate import parse_and_validate
 
+
 def summarize_one(messages, *, run_id):
     content, _ = tracked_chat(messages=messages, **get_agent_config("summarizer"))
     result = parse_and_validate(content, agent_type="summarizer", run_id=run_id)
     if not result.ok:
-        raise SummarizeError("summarizer validation failed",
-                             context={"failures": [s.validator for s in result.failures]})
+        raise SummarizeError(
+            "summarizer validation failed",
+            context={"failures": [s.validator for s in result.failures]},
+        )
     return result.value  # SummaryOutput instance
 ```
 
@@ -111,10 +116,12 @@ register(
 from pydantic import BaseModel, Field
 from pf_core.llm.validate import register
 
+
 class ClassifyOutput(BaseModel):
     category: str = Field(pattern="^(guide|reference|tutorial)$")
     confidence: float = Field(ge=0.0, le=1.0)
     model_config = {"extra": "forbid"}
+
 
 register(agent_type="classifier", shape=ClassifyOutput)
 ```
@@ -163,11 +170,15 @@ Each entry in `semantic=[...]` is a colon-delimited config string. The optional 
 Append `:error`, `:warn`, or `:info` as the final token to override the default on failure (passing signals always emit `info`):
 
 ```python
-register(agent_type="summarizer", shape=SummaryOutput, semantic=[
-    "url_sanity:error",            # promote URL hallucination to a blocking failure
-    "tier1_ratio:0.6",             # default warn severity
-    "min_items:citations:3:warn",  # explicit
-])
+register(
+    agent_type="summarizer",
+    shape=SummaryOutput,
+    semantic=[
+        "url_sanity:error",  # promote URL hallucination to a blocking failure
+        "tier1_ratio:0.6",  # default warn severity
+        "min_items:citations:3:warn",  # explicit
+    ],
+)
 ```
 
 ### Configuring `tier1_ratio`
@@ -186,11 +197,14 @@ The hook is invoked once per validation, so the set can be reloaded from config 
 from pf_core.llm.validate import register_url_hallucination_rules
 from pf_core.llm.url_check import UrlHallucinationRule
 
+
 def _flag_keyword_slug_year(url: str) -> str | None:
     import re
+
     if re.search(r"/article/[a-z][a-z-]+-\d{4}$", url):
         return "keyword-year slug (source uses hash-based IDs)"
     return None
+
 
 rules: list[UrlHallucinationRule] = [_flag_keyword_slug_year]
 register_url_hallucination_rules(lambda: rules)
@@ -207,6 +221,7 @@ Cross-field validators span multiple fields or pull data from `validation_contex
 ```python
 from pf_core.llm.validate import cross_field_validator, ValidationSignal
 
+
 @cross_field_validator("within_max_words")
 def within_max_words(parsed, *, context: dict) -> ValidationSignal:
     max_words = context["summary_config"]["max_words"]
@@ -214,12 +229,14 @@ def within_max_words(parsed, *, context: dict) -> ValidationSignal:
     if 0 <= count <= max_words:
         return ValidationSignal("within_max_words", "info", passed=True)
     return ValidationSignal(
-        "within_max_words", "error", passed=False,
+        "within_max_words",
+        "error",
+        passed=False,
         details={"count": count, "max": max_words},
     )
 
-register(agent_type="summarizer", shape=SummaryOutput,
-         cross_field=["within_max_words"])
+
+register(agent_type="summarizer", shape=SummaryOutput, cross_field=["within_max_words"])
 ```
 
 The decorated function takes the validated `parsed` value (Pydantic instance when shape uses Pydantic, dict otherwise) and a keyword-only `context` dict. Return one `ValidationSignal` or a list. Pass context at call time via `parse_and_validate(..., validation_context={"summary_config": sc})`.
@@ -338,8 +355,9 @@ if not parsed.get("headline"):
 content, usage = tracked_chat(messages=msgs, **get_agent_config("summarizer"))
 result = parse_and_validate(content, agent_type="summarizer", run_id=usage["_llm_run_id"])
 if not result.ok:
-    raise SummarizeError("summarizer validation failed",
-                         context={"failures": [s.validator for s in result.failures]})
+    raise SummarizeError(
+        "summarizer validation failed", context={"failures": [s.validator for s in result.failures]}
+    )
 parsed = result.value  # SummaryOutput instance
 ```
 
@@ -402,13 +420,16 @@ For project-specific content checks, **use a cross-field validator instead.** Th
 ```python
 from pf_core.llm.validate import cross_field_validator, ValidationSignal
 
+
 @cross_field_validator("min_tagged_items_v2")
 def min_tagged_items_v2(parsed, *, context) -> ValidationSignal:
     tagged = [item for item in parsed.items if item.category]
     if len(tagged) >= 3:
         return ValidationSignal("min_tagged_items_v2", "info", passed=True)
     return ValidationSignal(
-        "min_tagged_items_v2", "warn", passed=False,
+        "min_tagged_items_v2",
+        "warn",
+        passed=False,
         details={"actual": len(tagged), "minimum": 3},
     )
 ```
@@ -425,10 +446,12 @@ If the check turns out to be useful across projects, propose promoting it to pf-
    from pydantic import BaseModel, Field
    from pf_core.llm.validate import register
 
+
    class ReviewOutput(BaseModel):
        verdict: str = Field(pattern="^(accept|revise|reject)$")
        comments: list[str] = Field(min_length=1)
        model_config = {"extra": "forbid"}
+
 
    register(
        agent_type="reviewer",

@@ -149,9 +149,7 @@ def resolve_agent(
         # goes first in the chain); only an explicit per-call backend=
         # disables the scan.
         fallback_enabled = (
-            bool(block.get("fallback"))
-            and source in ("yaml", "env")
-            and declared is not None
+            bool(block.get("fallback")) and source in ("yaml", "env") and declared is not None
         )
 
     if declared is not None and chosen not in declared:
@@ -165,7 +163,7 @@ def resolve_agent(
             return {}
         return dict(declared[name].get("client_kwargs") or {})
 
-    if not fallback_enabled:
+    if not fallback_enabled or declared is None:
         client = get_client_for_backend(chosen, **_client_kwargs(chosen))
         cfg = get_agent_config(
             slug,
@@ -191,9 +189,7 @@ def resolve_agent(
         cfg = get_agent_config(slug, backend=candidate, model_override=model_override)
         return ResolvedAgent(client, cfg, candidate)
 
-    raise ConfigurationError(
-        f"agent '{slug}': no available backend — tried " + "; ".join(failures)
-    )
+    raise ConfigurationError(f"agent '{slug}': no available backend — tried " + "; ".join(failures))
 
 
 def _candidates(
@@ -229,7 +225,7 @@ def _candidates(
         )
 
     chain = [chosen]
-    if fallback_enabled:
+    if fallback_enabled and declared is not None:
         chain += [b for b in declared if b != chosen]
 
     for candidate in chain:
@@ -316,9 +312,7 @@ def call_with_fallback(
     last_exc: BaseException | None = None
     for resolved in _candidates(slug, model_override=model_override, failures=failures):
         try:
-            content, usage = resolved.client.chat(
-                messages=messages, **resolved.chat_kwargs
-            )
+            content, usage = resolved.client.chat(messages=messages, **resolved.chat_kwargs)
         except catch as exc:
             if isinstance(exc, never_retry):
                 raise
@@ -335,6 +329,4 @@ def call_with_fallback(
 
     if last_exc is not None:
         raise last_exc
-    raise ConfigurationError(
-        f"agent '{slug}': no available backend — tried " + "; ".join(failures)
-    )
+    raise ConfigurationError(f"agent '{slug}': no available backend — tried " + "; ".join(failures))

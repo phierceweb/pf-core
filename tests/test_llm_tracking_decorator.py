@@ -167,12 +167,16 @@ def test_decorator_stores_model_name_on_new_row(tracking_db):
 
     _, usage = tracked_chat(model="openai/gpt-4o", messages=[])
     with tracking_db.connect() as conn:
-        model_row = conn.execute(
-            s.llm_models.select().where(s.llm_models.c.name == "openai/gpt-4o")
-        ).mappings().one()
-        run = conn.execute(
-            s.llm_runs.select().where(s.llm_runs.c.id == usage["_llm_run_id"])
-        ).mappings().one()
+        model_row = (
+            conn.execute(s.llm_models.select().where(s.llm_models.c.name == "openai/gpt-4o"))
+            .mappings()
+            .one()
+        )
+        run = (
+            conn.execute(s.llm_runs.select().where(s.llm_runs.c.id == usage["_llm_run_id"]))
+            .mappings()
+            .one()
+        )
     assert run["model_id"] == model_row["id"]
 
 
@@ -254,9 +258,9 @@ def test_decorator_records_failed_run_and_reraises(tracking_db):
         tracked_chat(model="claude-opus-4-7", messages=[])
 
     with tracking_db.connect() as conn:
-        rows = conn.execute(
-            s.llm_runs.select().order_by(s.llm_runs.c.id.desc())
-        ).mappings().fetchall()
+        rows = (
+            conn.execute(s.llm_runs.select().order_by(s.llm_runs.c.id.desc())).mappings().fetchall()
+        )
     assert len(rows) == 1
     row = rows[0]
     assert row["status"] == "failed"
@@ -274,9 +278,7 @@ def test_decorator_failure_captures_duration_when_no_usage(tracking_db):
         tracked_chat(model="claude-opus-4-7", messages=[])
 
     with tracking_db.connect() as conn:
-        row = conn.execute(
-            s.llm_runs.select().order_by(s.llm_runs.c.id.desc())
-        ).mappings().first()
+        row = conn.execute(s.llm_runs.select().order_by(s.llm_runs.c.id.desc())).mappings().first()
     assert row["status"] == "failed"
     assert row["error_class"] == "RuntimeError"
     assert row["duration_ms"] is not None
@@ -299,14 +301,14 @@ def test_decorator_failure_stores_rendered_prompts(tracking_db):
         )
 
     with tracking_db.connect() as conn:
-        row = conn.execute(
-            s.llm_runs.select().order_by(s.llm_runs.c.id.desc())
-        ).mappings().one()
-        payload = conn.execute(
-            s.llm_run_payloads.select().where(
-                s.llm_run_payloads.c.llm_run_id == row["id"]
+        row = conn.execute(s.llm_runs.select().order_by(s.llm_runs.c.id.desc())).mappings().one()
+        payload = (
+            conn.execute(
+                s.llm_run_payloads.select().where(s.llm_run_payloads.c.llm_run_id == row["id"])
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
     assert payload["rendered_system"] == "sys"
     assert payload["rendered_user"] == "usr"
 

@@ -14,8 +14,13 @@ with transaction() as conn:
     n = insert_ignore(conn, users, {"slug": "acme", "name": "Acme"}, conflict=["slug"])
 
     # INSERT, overwrite the named columns on conflict (replaces INSERT OR REPLACE).
-    upsert(conn, sources, {"source": "import", "account": acct, "note": note},
-           conflict=["source"], update=["account", "note"])
+    upsert(
+        conn,
+        sources,
+        {"source": "import", "account": acct, "note": note},
+        conflict=["source"],
+        update=["account", "note"],
+    )
 ```
 
 - **`conflict`** — the columns of the unique/primary-key constraint to conflict on. On MySQL/MariaDB the conflict target is implicit (`ON DUPLICATE KEY UPDATE` keys off any duplicate key), so the argument is accepted for a uniform call site but not emitted into the SQL — see the caveat below.

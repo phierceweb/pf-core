@@ -28,13 +28,15 @@ class RecordExporter(MarkdownExporter):
 
     def iter_artifacts(self):
         for a in self._records:
-            front = yaml_frontmatter({
-                "slug": a["slug"],
-                "tier": a["tier"],
-                "count": a["count"],
-                "active": a["active"],
-                "tags": a["tags"],   # list -> block sequence
-            })
+            front = yaml_frontmatter(
+                {
+                    "slug": a["slug"],
+                    "tier": a["tier"],
+                    "count": a["count"],
+                    "active": a["active"],
+                    "tags": a["tags"],  # list -> block sequence
+                }
+            )
             body = f"# {a['name']}\n\n{a['summary']}\n"
             yield f"records/{a['slug']}.md", front + body
 
@@ -72,8 +74,16 @@ Render a dict as a YAML frontmatter block delimited by `---` lines. A deliberate
 - string scalars are bare when unambiguous, and double-quoted (escaping `"` and `\`) when they contain YAML-significant characters, look numeric, or collide with a reserved word — so `"90210"` and `"- dash"` round-trip as strings.
 
 ```python
-yaml_frontmatter({"slug": "widget-a", "name": "Widget A", "tier": "standard",
-                  "count": 289, "tags": ["hardware"], "note": None})
+yaml_frontmatter(
+    {
+        "slug": "widget-a",
+        "name": "Widget A",
+        "tier": "standard",
+        "count": 289,
+        "tags": ["hardware"],
+        "note": None,
+    }
+)
 # ---
 # slug: widget-a
 # name: Widget A

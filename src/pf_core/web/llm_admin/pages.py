@@ -54,12 +54,24 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
         s, u = q.parse_window(since, until, default_days=7)
         offset = (page - 1) * per_page
         rows = q.list_runs(
-            since=s, until=u, agent_type=agent_type, model=model, status=status,
-            job_id=job_id, min_cost=min_cost, limit=per_page, offset=offset,
+            since=s,
+            until=u,
+            agent_type=agent_type,
+            model=model,
+            status=status,
+            job_id=job_id,
+            min_cost=min_cost,
+            limit=per_page,
+            offset=offset,
         )
         total = q.count_runs(
-            since=s, until=u, agent_type=agent_type, model=model, status=status,
-            job_id=job_id, min_cost=min_cost,
+            since=s,
+            until=u,
+            agent_type=agent_type,
+            model=model,
+            status=status,
+            job_id=job_id,
+            min_cost=min_cost,
         )
         return templates.TemplateResponse(
             request,
@@ -72,9 +84,13 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
                 "has_prev": page > 1,
                 "has_next": offset + per_page < total,
                 "filters": {
-                    "since": since, "until": until,
-                    "agent_type": agent_type, "model": model, "status": status,
-                    "job_id": job_id, "min_cost": min_cost,
+                    "since": since,
+                    "until": until,
+                    "agent_type": agent_type,
+                    "model": model,
+                    "status": status,
+                    "job_id": job_id,
+                    "min_cost": min_cost,
                 },
             },
         )
@@ -87,9 +103,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
         return templates.TemplateResponse(request, "run_detail.html", {"run": detail})
 
     @router.get("/cost-by-model", response_class=HTMLResponse)
-    def cost_by_model(
-        request: Request, since: str | None = None, until: str | None = None
-    ):
+    def cost_by_model(request: Request, since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return templates.TemplateResponse(
             request,
@@ -98,9 +112,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
         )
 
     @router.get("/cost-by-agent", response_class=HTMLResponse)
-    def cost_by_agent(
-        request: Request, since: str | None = None, until: str | None = None
-    ):
+    def cost_by_agent(request: Request, since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return templates.TemplateResponse(
             request,
@@ -141,9 +153,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
         return templates.TemplateResponse(request, "job_detail.html", {"job": detail})
 
     @router.get("/cache", response_class=HTMLResponse)
-    def cache_page(
-        request: Request, since: str | None = None, until: str | None = None
-    ):
+    def cache_page(request: Request, since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return templates.TemplateResponse(
             request,

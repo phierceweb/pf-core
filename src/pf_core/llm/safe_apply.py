@@ -99,9 +99,7 @@ class DriftReport:
         return self.count_changed or bool(self.drifted_indices)
 
 
-def detect_drift(
-    gathered: GatherResult[T], current_texts: Sequence[str]
-) -> DriftReport:
+def detect_drift(gathered: GatherResult[T], current_texts: Sequence[str]) -> DriftReport:
     """Compare a gathered snapshot to the current target texts.
 
     When counts differ, the per-index text comparison is short-circuited
@@ -120,9 +118,7 @@ def detect_drift(
         )
     drifted = tuple(
         i
-        for i, (g, c) in enumerate(
-            zip(gathered.target_texts, current_texts, strict=False)
-        )
+        for i, (g, c) in enumerate(zip(gathered.target_texts, current_texts, strict=False))
         if g != c
     )
     return DriftReport(

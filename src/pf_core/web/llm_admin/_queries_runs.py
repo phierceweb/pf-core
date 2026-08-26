@@ -22,9 +22,7 @@ from pf_core.llm.tracking.schema import (
 from pf_core.web.llm_admin._queries_util import _normalize, _normalize_all
 
 
-def dashboard_kpis(
-    *, since: dt.datetime, until: dt.datetime
-) -> dict:
+def dashboard_kpis(*, since: dt.datetime, until: dt.datetime) -> dict:
     """Return KPI summary for the window: total runs, cost, error rate, cache rate."""
     error_case = case((llm_runs.c.status == "success", 0.0), else_=1.0)
     cache_case = case((llm_runs.c.status == "cache_hit", 1.0), else_=0.0)
@@ -33,17 +31,13 @@ def dashboard_kpis(
         func.coalesce(func.sum(llm_runs.c.cost_usd), 0).label("total_cost"),
         func.coalesce(func.avg(error_case), 0).label("error_rate"),
         func.coalesce(func.avg(cache_case), 0).label("cache_hit_rate"),
-    ).where(
-        and_(llm_runs.c.created_at >= since, llm_runs.c.created_at < until)
-    )
+    ).where(and_(llm_runs.c.created_at >= since, llm_runs.c.created_at < until))
     with transaction() as conn:
         row = conn.execute(stmt).mappings().fetchone()
     return _normalize(row)
 
 
-def top_agents_by_cost(
-    *, since: dt.datetime, until: dt.datetime, limit: int = 5
-) -> list[dict]:
+def top_agents_by_cost(*, since: dt.datetime, until: dt.datetime, limit: int = 5) -> list[dict]:
     stmt = (
         select(
             llm_agent_types.c.slug.label("agent_type"),
@@ -52,9 +46,7 @@ def top_agents_by_cost(
             func.coalesce(func.avg(llm_runs.c.cost_usd), 0).label("avg_cost"),
         )
         .select_from(
-            llm_runs.join(
-                llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-            )
+            llm_runs.join(llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id)
         )
         .where(and_(llm_runs.c.created_at >= since, llm_runs.c.created_at < until))
         .group_by(llm_agent_types.c.slug)
@@ -92,9 +84,9 @@ def list_runs(
             llm_models.c.name.label("model"),
         )
         .select_from(
-            llm_runs.join(
-                llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-            ).join(llm_models, llm_runs.c.model_id == llm_models.c.id)
+            llm_runs.join(llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id).join(
+                llm_models, llm_runs.c.model_id == llm_models.c.id
+            )
         )
         .order_by(desc(llm_runs.c.created_at))
         .limit(limit)
@@ -129,12 +121,9 @@ def count_runs(
     job_id: int | None = None,
     min_cost: float | None = None,
 ) -> int:
-    stmt = (
-        select(func.count())
-        .select_from(
-            llm_runs.join(
-                llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-            ).join(llm_models, llm_runs.c.model_id == llm_models.c.id)
+    stmt = select(func.count()).select_from(
+        llm_runs.join(llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id).join(
+            llm_models, llm_runs.c.model_id == llm_models.c.id
         )
     )
     if since is not None:
@@ -158,52 +147,56 @@ def count_runs(
 def run_detail(run_id: int) -> dict | None:
     """Return all data about a single run: core row + payload + sidecars."""
     with transaction() as conn:
-        row = conn.execute(
-            select(
-                llm_runs,
-                llm_agent_types.c.slug.label("agent_type"),
-                llm_models.c.name.label("model"),
+        row = (
+            conn.execute(
+                select(
+                    llm_runs,
+                    llm_agent_types.c.slug.label("agent_type"),
+                    llm_models.c.name.label("model"),
+                )
+                .select_from(
+                    llm_runs.join(
+                        llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
+                    ).join(llm_models, llm_runs.c.model_id == llm_models.c.id)
+                )
+                .where(llm_runs.c.id == run_id)
             )
-            .select_from(
-                llm_runs.join(
-                    llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-                ).join(llm_models, llm_runs.c.model_id == llm_models.c.id)
-            )
-            .where(llm_runs.c.id == run_id)
-        ).mappings().fetchone()
+            .mappings()
+            .fetchone()
+        )
         if row is None:
             return None
         out = _normalize(row)
 
         # Payload
-        payload = conn.execute(
-            select(llm_run_payloads).where(llm_run_payloads.c.llm_run_id == run_id)
-        ).mappings().fetchone()
+        payload = (
+            conn.execute(select(llm_run_payloads).where(llm_run_payloads.c.llm_run_id == run_id))
+            .mappings()
+            .fetchone()
+        )
         out["payload"] = _normalize(payload) if payload else None
 
         # Configs
         out["configs"] = _normalize_all(
-            conn.execute(
-                select(llm_run_configs).where(llm_run_configs.c.llm_run_id == run_id)
-            ).mappings().fetchall()
+            conn.execute(select(llm_run_configs).where(llm_run_configs.c.llm_run_id == run_id))
+            .mappings()
+            .fetchall()
         )
 
         # Validations
         out["validations"] = _normalize_all(
             conn.execute(
-                select(llm_run_validations).where(
-                    llm_run_validations.c.llm_run_id == run_id
-                )
-            ).mappings().fetchall()
+                select(llm_run_validations).where(llm_run_validations.c.llm_run_id == run_id)
+            )
+            .mappings()
+            .fetchall()
         )
 
         # Outcomes
         out["outcomes"] = _normalize_all(
-            conn.execute(
-                select(llm_run_outcomes).where(
-                    llm_run_outcomes.c.llm_run_id == run_id
-                )
-            ).mappings().fetchall()
+            conn.execute(select(llm_run_outcomes).where(llm_run_outcomes.c.llm_run_id == run_id))
+            .mappings()
+            .fetchall()
         )
 
         # Tags
@@ -216,23 +209,21 @@ def run_detail(run_id: int) -> dict | None:
 
         # Metrics
         out["metrics"] = _normalize_all(
-            conn.execute(
-                select(llm_run_metrics).where(
-                    llm_run_metrics.c.llm_run_id == run_id
-                )
-            ).mappings().fetchall()
+            conn.execute(select(llm_run_metrics).where(llm_run_metrics.c.llm_run_id == run_id))
+            .mappings()
+            .fetchall()
         )
 
         # Links — both directions
         out["links_out"] = _normalize_all(
-            conn.execute(
-                select(llm_run_links).where(llm_run_links.c.parent_run_id == run_id)
-            ).mappings().fetchall()
+            conn.execute(select(llm_run_links).where(llm_run_links.c.parent_run_id == run_id))
+            .mappings()
+            .fetchall()
         )
         out["links_in"] = _normalize_all(
-            conn.execute(
-                select(llm_run_links).where(llm_run_links.c.child_run_id == run_id)
-            ).mappings().fetchall()
+            conn.execute(select(llm_run_links).where(llm_run_links.c.child_run_id == run_id))
+            .mappings()
+            .fetchall()
         )
 
     return out

@@ -17,7 +17,7 @@ SPEC = {
     "agent": "probe",
     "version": 4,
     "system": "You are @@ROLE@@.",
-    "user": "Grade: @@THING@@",
+    "user": "Summarize: @@THING@@",
 }
 
 MESSAGES = [
@@ -98,9 +98,7 @@ class TestSuccessPath:
         assert payload[1] == "Summarize this text."
         assert payload[2] == "summarized!"
 
-    def test_chat_kwargs_forwarded_but_not_recorded_as_sampling(
-        self, pf_tables, pf_connection
-    ):
+    def test_chat_kwargs_forwarded_but_not_recorded_as_sampling(self, pf_tables, pf_connection):
         from pf_core.llm.tracked import tracked_messages_call
 
         client = FakeChat()
@@ -131,9 +129,7 @@ class TestSuccessPath:
         run = _one_run(pf_connection)
         prompts = {
             r[0]: (r[1], r[2])
-            for r in pf_connection.execute(
-                text("SELECT part, id, version FROM llm_prompts")
-            )
+            for r in pf_connection.execute(text("SELECT part, id, version FROM llm_prompts"))
         }
         assert prompts["system"] == (run["system_prompt_id"], 4)
         assert prompts["user"] == (run["user_prompt_id"], 4)
@@ -175,18 +171,19 @@ class TestSuccessPath:
             text("SELECT config_kind, config_id FROM llm_run_configs")
         ).fetchone()
         assert tuple(cfg) == ("report_config", 7)
-        assert pf_connection.execute(
-            text("SELECT tag FROM llm_run_tags")
-        ).fetchone()[0] == "env:test"
-        assert pf_connection.execute(
-            text("SELECT metric_name, metric_value FROM llm_run_metrics")
-        ).fetchone()[1] == 3.0
+        assert (
+            pf_connection.execute(text("SELECT tag FROM llm_run_tags")).fetchone()[0] == "env:test"
+        )
+        assert (
+            pf_connection.execute(
+                text("SELECT metric_name, metric_value FROM llm_run_metrics")
+            ).fetchone()[1]
+            == 3.0
+        )
 
 
 class TestFailurePath:
-    def test_client_error_records_failed_row_and_reraises(
-        self, pf_tables, pf_connection
-    ):
+    def test_client_error_records_failed_row_and_reraises(self, pf_tables, pf_connection):
         from pf_core.llm.tracked import tracked_messages_call
 
         with pytest.raises(RuntimeError, match="boom"):
@@ -262,9 +259,7 @@ class TestMetadataAndWindow:
         from pf_core.llm.recording import begin_call_recording, end_call_recording
         from pf_core.llm.tracked import tracked_messages_call
 
-        begin_call_recording(
-            session_metadata={"source_name": "session.pdf", "batch": "b1"}
-        )
+        begin_call_recording(session_metadata={"source_name": "session.pdf", "batch": "b1"})
         try:
             tracked_messages_call(
                 client=FakeChat(),
@@ -385,9 +380,7 @@ class TestMetadataAndWindow:
             )
         tag = pf_connection.execute(text("SELECT tag FROM llm_run_tags")).fetchone()
         assert tag[0] == "source_name:report.pdf"
-        metric = pf_connection.execute(
-            text("SELECT metric_name FROM llm_run_metrics")
-        ).fetchone()
+        metric = pf_connection.execute(text("SELECT metric_name FROM llm_run_metrics")).fetchone()
         assert metric[0] == "pages"
 
     def test_no_window_no_metadata_appends_nothing(self, pf_tables, pf_connection):

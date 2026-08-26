@@ -6,7 +6,7 @@ the diagnostic event log. Composed into :class:`pf_core.jobs.repo.JobRepo`.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import and_, func, select
 
@@ -18,9 +18,18 @@ from pf_core.jobs._repo_util import (
     _step_creation_lock,
 )
 
+if TYPE_CHECKING:
+    from contextlib import _GeneratorContextManager
+
+    from sqlalchemy.engine import Connection
+
 
 class StepEventsMixin:
     """Step + event records. Requires ``self._tx``."""
+
+    if TYPE_CHECKING:
+        # Provided by Repository in the composed JobRepo.
+        def _tx(self) -> _GeneratorContextManager[Connection]: ...
 
     def find_step(self, job_id: int, *, name: str) -> dict | None:
         """Return the most recent step matching ``name`` for ``job_id``.
@@ -65,8 +74,9 @@ class StepEventsMixin:
                 # coalesce handles the "no prior steps" case; the `or` trick
                 # would incorrectly overwrite a legitimate 0.
                 max_idx = conn.execute(
-                    select(func.coalesce(func.max(s.job_steps.c.step_index), -1))
-                    .where(s.job_steps.c.job_id == job_id)
+                    select(func.coalesce(func.max(s.job_steps.c.step_index), -1)).where(
+                        s.job_steps.c.job_id == job_id
+                    )
                 ).scalar()
                 if max_idx is None:
                     max_idx = -1
@@ -79,7 +89,7 @@ class StepEventsMixin:
                         inputs=_dump_model(inputs),
                     )
                 )
-                return int(result.inserted_primary_key[0])
+                return int(result.inserted_primary_key[0])  # type: ignore[index]  # set after insert
 
     def finish_step(
         self,
@@ -114,11 +124,7 @@ class StepEventsMixin:
                         s.jobs.c.kind,
                         func.now().label("server_now"),
                     )
-                    .select_from(
-                        s.job_steps.join(
-                            s.jobs, s.jobs.c.id == s.job_steps.c.job_id
-                        )
-                    )
+                    .select_from(s.job_steps.join(s.jobs, s.jobs.c.id == s.job_steps.c.job_id))
                     .where(s.job_steps.c.id == step_id)
                 )
                 .mappings()
@@ -181,7 +187,7 @@ class StepEventsMixin:
                     context=context,
                 )
             )
-            return int(result.inserted_primary_key[0])
+            return int(result.inserted_primary_key[0])  # type: ignore[index]  # set after insert
 
     def get_events(
         self,
@@ -200,4 +206,4 @@ class StepEventsMixin:
         stmt = stmt.order_by(s.job_events.c.created_at).limit(limit)
         with self._tx() as conn:
             rows = conn.execute(stmt).mappings().fetchall()
-        return [_coerce_row_utc(dict(r)) for r in rows]
+        return [cast(dict, _coerce_row_utc(dict(r))) for r in rows]

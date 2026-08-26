@@ -24,9 +24,9 @@ concurrent tasks keep independent windows.
 
 ```python
 from pf_core.llm.recording import (
-    begin_call_recording,   # open (or reset) the window; takes session_metadata=
-    end_call_recording,     # drain + close; returns list[dict]; [] when closed
-    record_call,            # append one dict; silent no-op when closed
+    begin_call_recording,  # open (or reset) the window; takes session_metadata=
+    end_call_recording,  # drain + close; returns list[dict]; [] when closed
+    record_call,  # append one dict; silent no-op when closed
     current_session_metadata,  # copy of the window's metadata; {} when closed
 )
 ```
@@ -40,7 +40,7 @@ from pf_core.llm.recording import begin_call_recording, end_call_recording
 
 begin_call_recording(session_metadata={"source_name": "report.pdf"})
 try:
-    convert(...)   # every tracked_messages_call inside inherits the metadata
+    convert(...)  # every tracked_messages_call inside inherits the metadata
 finally:
     calls = end_call_recording()
 # calls → [{"agent_type": ..., "model": ..., "provider": ...,

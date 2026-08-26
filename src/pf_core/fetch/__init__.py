@@ -71,9 +71,7 @@ def _build_opener(verify: bool | None = None) -> urllib.request.OpenerDirector:
     if not _resolve_verify_tls(verify):
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-    return urllib.request.build_opener(
-        _NoRedirectHandler, urllib.request.HTTPSHandler(context=ctx)
-    )
+    return urllib.request.build_opener(_NoRedirectHandler, urllib.request.HTTPSHandler(context=ctx))
 
 
 def _retry_after(exc: urllib.error.HTTPError, attempt: int) -> float:
@@ -136,7 +134,9 @@ class Fetcher:
         """Return ``(final_url, text)``; decode ``encoding`` > Content-Type charset > utf-8,
         always with replacement, never raising on bad bytes."""
         final_url, raw, headers = self._fetch(url, timeout_s=timeout_s)
-        return final_url, raw.decode(encoding or headers.get_content_charset() or "utf-8", "replace")
+        return final_url, raw.decode(
+            encoding or headers.get_content_charset() or "utf-8", "replace"
+        )
 
     def get_bytes(self, url: str, *, timeout_s: float = 180.0) -> tuple[str, bytes]:
         """Return ``(final_url, raw_bytes)`` — longer default timeout for binary downloads."""
@@ -149,10 +149,14 @@ class Fetcher:
         """``get_bytes`` plus the response's cache validators, for callers that
         persist them (a later :meth:`not_modified` probe skips the re-download)."""
         final_url, raw, headers = self._fetch(url, timeout_s=timeout_s)
-        return final_url, raw, {
-            "etag": headers.get("ETag"),
-            "last_modified": headers.get("Last-Modified"),
-        }
+        return (
+            final_url,
+            raw,
+            {
+                "etag": headers.get("ETag"),
+                "last_modified": headers.get("Last-Modified"),
+            },
+        )
 
     def not_modified(
         self,
@@ -310,8 +314,7 @@ def browser_headers() -> dict[str, str]:
     return {
         "User-Agent": _BROWSER_UA,
         "Accept": (
-            "text/html,application/xhtml+xml,application/xml;q=0.9,"
-            "image/avif,image/webp,*/*;q=0.8"
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
         ),
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate",

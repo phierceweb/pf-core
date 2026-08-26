@@ -54,9 +54,7 @@ def purge_old_payloads(
             ~exists(failed_validation)
         )
 
-    stmt = s.llm_run_payloads.delete().where(
-        s.llm_run_payloads.c.llm_run_id.in_(eligible)
-    )
+    stmt = s.llm_run_payloads.delete().where(s.llm_run_payloads.c.llm_run_id.in_(eligible))
 
     with transaction() as conn:
         result = conn.execute(stmt)

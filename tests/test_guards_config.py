@@ -1,4 +1,5 @@
 """Tests for pf_core.guards.config — [tool.pf_guards] loading + limit resolution."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,9 +42,7 @@ class TestLoadGuardsConfig:
 
     def test_string_baseline_rejected(self, tmp_path: Path) -> None:
         p = tmp_path / ".pf-guards.toml"
-        p.write_text(
-            '[tool.pf_guards]\nbaseline = "some-file.json"\n', encoding="utf-8"
-        )
+        p.write_text('[tool.pf_guards]\nbaseline = "some-file.json"\n', encoding="utf-8")
         import pytest
 
         with pytest.raises(ValueError, match="baseline"):
@@ -51,9 +50,7 @@ class TestLoadGuardsConfig:
 
     def test_util_and_soft_fraction_parsed(self, tmp_path: Path) -> None:
         p = tmp_path / ".pf-guards.toml"
-        p.write_text(
-            "[tool.pf_guards]\nutil = 200\nsoft_fraction = 0.9\n", encoding="utf-8"
-        )
+        p.write_text("[tool.pf_guards]\nutil = 200\nsoft_fraction = 0.9\n", encoding="utf-8")
         cfg = load_guards_config(p)
         assert (cfg.util, cfg.soft_fraction) == (200, 0.9)
 

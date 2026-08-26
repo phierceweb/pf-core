@@ -12,7 +12,10 @@ Reporting CLIs (`report.py`, `trends.py`, daily-stats jobs, …) re-implement th
 from datetime import datetime, timezone
 
 from pf_core.utils.periods import (
-    resolve, parse_period_arg, parse_anchor_arg, days_in_period,
+    resolve,
+    parse_period_arg,
+    parse_anchor_arg,
+    days_in_period,
 )
 
 now = datetime.now(timezone.utc)

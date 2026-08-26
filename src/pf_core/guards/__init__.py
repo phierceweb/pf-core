@@ -1,4 +1,5 @@
 """Build-time structural guards: file-size and layering checks (stdlib-only)."""
+
 from __future__ import annotations
 
 from pf_core.guards.config import GuardsConfig, load_guards_config

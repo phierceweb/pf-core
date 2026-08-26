@@ -58,9 +58,7 @@ llm_budgets = Table(
     Column("enabled", Boolean, nullable=False, server_default="1"),
     Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
     Column("updated_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
-    UniqueConstraint(
-        "scope_kind", "scope_value", "period", name="uq_llm_budgets_scope_period"
-    ),
+    UniqueConstraint("scope_kind", "scope_value", "period", name="uq_llm_budgets_scope_period"),
     Index("idx_llm_budgets_enabled", "enabled"),
 )
 """Budget definitions. scope_kind ∈ {global, agent, job_kind, job_id, tag}."""
@@ -78,9 +76,7 @@ llm_budget_snapshots = Table(
     Column("period_start", Date, nullable=False),
     Column("spent_usd", Numeric(12, 4), nullable=False, server_default="0"),
     Column("run_count", Integer, nullable=False, server_default="0"),
-    Column(
-        "last_updated", _TIMESTAMP_US, nullable=False, server_default=_server_now()
-    ),
+    Column("last_updated", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
     PrimaryKeyConstraint("budget_id", "period_start", name="pk_llm_budget_snapshots"),
     Index("idx_llm_budget_snapshots_period", "period_start"),
 )
@@ -103,9 +99,7 @@ llm_cost_rates = Table(
     Column("reasoning_per_1k", Numeric(8, 6), nullable=True),
     Column("effective_from", Date, nullable=False),
     Column("effective_to", Date, nullable=True),
-    PrimaryKeyConstraint(
-        "model_id", "effective_from", name="pk_llm_cost_rates"
-    ),
+    PrimaryKeyConstraint("model_id", "effective_from", name="pk_llm_cost_rates"),
     Index("idx_llm_cost_rates_model_eff", "model_id", "effective_from"),
 )
 """Per-model price list. Multiple rows per model allowed (versioned pricing)."""

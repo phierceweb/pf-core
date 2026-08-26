@@ -22,7 +22,8 @@ pytest_plugins = ["pf_core.testing.db_fixtures"]
 
 _md = MetaData()
 _report_config = Table(
-    "report_config", _md,
+    "report_config",
+    _md,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("report_id", Integer),
     Column("version", Integer, nullable=False),
@@ -83,13 +84,18 @@ class TestAppendVersion:
     def test_carry_forward_copies_unspecified(self, report_config):
         with transaction() as c:
             append_version(
-                c, "report_config", {"report_id": 1},
+                c,
+                "report_config",
+                {"report_id": 1},
                 {"query": "q1", "extra_context": "ctx1"},
             )
             # v2 specifies only query; extra_context carries forward.
             append_version(
-                c, "report_config", {"report_id": 1},
-                {"query": "q2"}, carry_forward=True,
+                c,
+                "report_config",
+                {"report_id": 1},
+                {"query": "q2"},
+                carry_forward=True,
             )
             row = get_latest(c, "report_config", {"report_id": 1})
             assert row["version"] == 2
@@ -99,7 +105,9 @@ class TestAppendVersion:
     def test_no_carry_forward_leaves_unspecified_null(self, report_config):
         with transaction() as c:
             append_version(
-                c, "report_config", {"report_id": 1},
+                c,
+                "report_config",
+                {"report_id": 1},
                 {"query": "q1", "extra_context": "ctx1"},
             )
             append_version(c, "report_config", {"report_id": 1}, {"query": "q2"})
@@ -111,7 +119,10 @@ class TestAppendVersion:
             append_version(c, "report_config", {"report_id": 1}, {"query": "q1"})
             v1 = get_latest(c, "report_config", {"report_id": 1})
             append_version(
-                c, "report_config", {"report_id": 1}, {"query": "q2"},
+                c,
+                "report_config",
+                {"report_id": 1},
+                {"query": "q2"},
                 carry_forward=True,
             )
             v2 = get_latest(c, "report_config", {"report_id": 1})
@@ -124,7 +135,10 @@ class TestGetLatestWithFallback:
             append_version(c, "report_config", {"report_id": 5}, {"query": "specific"})
             append_version(c, "report_config", {"report_id": None}, {"query": "default"})
             row = get_latest_with_fallback(
-                c, "report_config", {"report_id": 5}, {"report_id": None},
+                c,
+                "report_config",
+                {"report_id": 5},
+                {"report_id": None},
             )
             assert row["query"] == "specific"
 
@@ -132,15 +146,24 @@ class TestGetLatestWithFallback:
         with transaction() as c:
             append_version(c, "report_config", {"report_id": None}, {"query": "default"})
             row = get_latest_with_fallback(
-                c, "report_config", {"report_id": 99}, {"report_id": None},
+                c,
+                "report_config",
+                {"report_id": 99},
+                {"report_id": None},
             )
             assert row["query"] == "default"
 
     def test_none_when_neither(self, report_config):
         with transaction() as c:
-            assert get_latest_with_fallback(
-                c, "report_config", {"report_id": 99}, {"report_id": None},
-            ) is None
+            assert (
+                get_latest_with_fallback(
+                    c,
+                    "report_config",
+                    {"report_id": 99},
+                    {"report_id": None},
+                )
+                is None
+            )
 
 
 class TestIdentifierValidation:

@@ -131,9 +131,7 @@ class TestRetryLoop:
         assert len(calls) == 1
 
     def test_429_honors_retry_after(self, monkeypatch, sleeps):
-        calls = _script_open(
-            monkeypatch, [_http_error(429, {"Retry-After": "3"}), _Resp(b"ok")]
-        )
+        calls = _script_open(monkeypatch, [_http_error(429, {"Retry-After": "3"}), _Resp(b"ok")])
         _, body = Fetcher().get_bytes(URL)
         assert body == b"ok"
         assert sleeps == [3.0]
@@ -240,9 +238,7 @@ class TestRedirects:
         assert calls[1][0].get_method() == "GET"
 
     def test_max_redirects_exceeded_raises_last_3xx(self, monkeypatch):
-        errors = [
-            _http_error(301, {"Location": f"https://example.com/hop{i}"}) for i in range(3)
-        ]
+        errors = [_http_error(301, {"Location": f"https://example.com/hop{i}"}) for i in range(3)]
         calls = _script_open(monkeypatch, list(errors))
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             Fetcher(max_redirects=2).get_bytes(URL)
@@ -299,9 +295,7 @@ class TestTextDecoding:
 
 class TestContentEncoding:
     def test_gzip_body_decoded(self, monkeypatch):
-        _script_open(
-            monkeypatch, [_Resp(gzip.compress(b"payload"), {"Content-Encoding": "gzip"})]
-        )
+        _script_open(monkeypatch, [_Resp(gzip.compress(b"payload"), {"Content-Encoding": "gzip"})])
         _, raw = Fetcher().get_bytes(URL)
         assert raw == b"payload"
 
@@ -340,11 +334,14 @@ class TestContentEncoding:
         _, raw = Fetcher().get_bytes(URL)
         assert raw == b"payload"
 
-    @pytest.mark.parametrize("body, encoding", [
-        (b"not gzip at all", "gzip"),                       # was gzip.BadGzipFile
-        (gzip.compress(b"payload" * 100)[:20], "gzip"),     # was EOFError
-        (b"\x00\x01\x02garbage", "deflate"),                # was zlib.error
-    ])
+    @pytest.mark.parametrize(
+        "body, encoding",
+        [
+            (b"not gzip at all", "gzip"),  # was gzip.BadGzipFile
+            (gzip.compress(b"payload" * 100)[:20], "gzip"),  # was EOFError
+            (b"\x00\x01\x02garbage", "deflate"),  # was zlib.error
+        ],
+    )
     def test_undecodable_body_raises_client_error(self, monkeypatch, body, encoding):
         _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": encoding})])
         with pytest.raises(ClientError) as exc_info:
@@ -356,7 +353,7 @@ class TestContentEncoding:
         # own zlib.error, which a deflate-only guard would miss.
         good = gzip.compress(bytes(range(256)) * 40)
         mid = len(good) // 2
-        body = good[:mid] + bytes([good[mid] ^ 0xFF]) + good[mid + 1:]
+        body = good[:mid] + bytes([good[mid] ^ 0xFF]) + good[mid + 1 :]
         _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": "gzip"})])
         with pytest.raises(ClientError):
             Fetcher().get_bytes(URL)
@@ -388,11 +385,14 @@ class TestMaxBytes:
         _, raw = Fetcher().get_bytes(URL)
         assert len(raw) == 4096
 
-    @pytest.mark.parametrize("encoding, compress", [
-        ("gzip", gzip.compress),
-        ("deflate", zlib.compress),
-        ("deflate", _raw_deflate),  # the except-zlib.error fallback path
-    ])
+    @pytest.mark.parametrize(
+        "encoding, compress",
+        [
+            ("gzip", gzip.compress),
+            ("deflate", zlib.compress),
+            ("deflate", _raw_deflate),  # the except-zlib.error fallback path
+        ],
+    )
     def test_decompression_bomb_over_cap_raises(self, monkeypatch, encoding, compress):
         body = compress(b"\0" * (2 * 1024 * 1024))
         cap = 64 * 1024
@@ -404,17 +404,13 @@ class TestMaxBytes:
 
     def test_decoded_body_at_cap_passes(self, monkeypatch):
         payload = b"\0" * 1000
-        _script_open(
-            monkeypatch, [_Resp(gzip.compress(payload), {"Content-Encoding": "gzip"})]
-        )
+        _script_open(monkeypatch, [_Resp(gzip.compress(payload), {"Content-Encoding": "gzip"})])
         _, raw = Fetcher(max_bytes=1000).get_bytes(URL)
         assert raw == payload
 
     def test_max_bytes_none_still_decodes_compressed_body(self, monkeypatch):
         payload = b"\0" * (1024 * 1024)
-        _script_open(
-            monkeypatch, [_Resp(gzip.compress(payload), {"Content-Encoding": "gzip"})]
-        )
+        _script_open(monkeypatch, [_Resp(gzip.compress(payload), {"Content-Encoding": "gzip"})])
         _, raw = Fetcher().get_bytes(URL)
         assert raw == payload
 
@@ -488,9 +484,7 @@ class _CountingThrottle:
 
 
 class TestThrottle:
-    def test_acquired_before_every_request_including_retries_and_hops(
-        self, monkeypatch, sleeps
-    ):
+    def test_acquired_before_every_request_including_retries_and_hops(self, monkeypatch, sleeps):
         throttle = _CountingThrottle()
         script = [
             _http_error(500),

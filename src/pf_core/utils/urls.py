@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime
 import json as _json
+from typing import cast
 
 try:
     import httpx
@@ -89,11 +90,11 @@ def check_url(url: str, *, timeout: int | None = None) -> tuple[int, str]:
             headers=headers,
         ) as client:
             try:
-                resp = guarded_head(client, url)
+                resp = cast(httpx.Response, guarded_head(client, url))
                 if resp.status_code == 405:
-                    resp = guarded_get(client, url)
+                    resp = cast(httpx.Response, guarded_get(client, url))
             except httpx.HTTPError:
-                resp = guarded_get(client, url)
+                resp = cast(httpx.Response, guarded_get(client, url))
 
             code = resp.status_code
             category = _STATUS_CATEGORIES.get(code, f"http_{code}")
@@ -152,7 +153,8 @@ def fetch_url_content(
             verify=verify_tls(),
             headers=headers,
         ) as client:
-            with guarded_stream(client, url) as resp:
+            with guarded_stream(client, url) as raw_resp:
+                resp = cast(httpx.Response, raw_resp)
                 code = resp.status_code
                 category = _STATUS_CATEGORIES.get(code, f"http_{code}")
                 if not 200 <= code < 300:
@@ -198,9 +200,7 @@ def wayback_exists_at(
     if not url:
         return False, None
     if timeout is None:
-        timeout = resolve_positive_int(
-            None, "WAYBACK_TIMEOUT", default=_WAYBACK_DEFAULT_TIMEOUT
-        )
+        timeout = resolve_positive_int(None, "WAYBACK_TIMEOUT", default=_WAYBACK_DEFAULT_TIMEOUT)
 
     params: dict[str, str] = {
         "url": url,
@@ -222,9 +222,7 @@ def wayback_exists_at(
             verify=verify_tls(),
             headers=headers,
         ) as client:
-            resp = client.get(
-                "https://web.archive.org/cdx/search/cdx", params=params
-            )
+            resp = client.get("https://web.archive.org/cdx/search/cdx", params=params)
             if resp.status_code != 200:
                 return False, None
             data = _json.loads(resp.text or "[]")

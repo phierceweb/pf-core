@@ -44,7 +44,7 @@ class TestParseBodyHtml:
         # First paragraph ends before Second starts
         assert text.index("First") < text.index("Second")
         # And there's a blank line (or paragraph break) between them
-        assert "\n" in text[text.index("First"):text.index("Second")]
+        assert "\n" in text[text.index("First") : text.index("Second")]
 
     def test_single_link_extracted(self):
         text, links = parse_body_html(
@@ -80,25 +80,21 @@ class TestParseBodyHtml:
         assert links == []
 
     def test_script_content_dropped(self):
-        text, _ = parse_body_html(
-            "<p>Real text</p><script>alert('xss')</script><p>More text</p>"
-        )
+        text, _ = parse_body_html("<p>Real text</p><script>alert('xss')</script><p>More text</p>")
         assert "Real text" in text
         assert "More text" in text
         assert "alert" not in text
         assert "xss" not in text
 
     def test_style_content_dropped(self):
-        text, _ = parse_body_html(
-            "<p>Visible</p><style>.x { color: red }</style>"
-        )
+        text, _ = parse_body_html("<p>Visible</p><style>.x { color: red }</style>")
         assert "Visible" in text
         assert "color: red" not in text
 
     def test_br_emits_newline(self):
         text, _ = parse_body_html("<p>line one<br>line two</p>")
         assert "line one" in text and "line two" in text
-        assert "\n" in text[text.index("line one"):text.index("line two")]
+        assert "\n" in text[text.index("line one") : text.index("line two")]
 
     def test_nested_link_in_block(self):
         text, links = parse_body_html(
@@ -117,16 +113,13 @@ class TestParseBodyHtml:
         assert {link.url for link in links} == {"https://a.example", "https://b.example"}
 
     def test_url_and_anchor_stripped(self):
-        _, links = parse_body_html(
-            '<p><a href="  https://example.com  ">  spaced  </a></p>'
-        )
+        _, links = parse_body_html('<p><a href="  https://example.com  ">  spaced  </a></p>')
         assert links[0].url == "https://example.com"
         assert links[0].anchor_text == "spaced"
 
     def test_surrounding_text_collapses_whitespace(self):
         _, links = parse_body_html(
-            '<p>before\n\n\n  text  here\t<a href="https://x">L</a>'
-            "  after\n\n\n</p>"
+            '<p>before\n\n\n  text  here\t<a href="https://x">L</a>  after\n\n\n</p>'
         )
         # Internal runs of whitespace become single spaces
         assert "  " not in links[0].surrounding_text

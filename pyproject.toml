@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pf-core"
-version = "0.19.0"
+version = "0.20.0"
 description = "Python foundation for LLM apps whose prompts and spend you can actually see — versioned prompts, every call recorded and replayable, budgets, evals, and resumable jobs on one schema; opt-in LLM, database, and FastAPI layers"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Mike Farr" }]
@@ -29,7 +29,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
@@ -47,11 +46,11 @@ dependencies = [
     # imported lazily), structlog (logging), nanoid (id generation), rich
     # (console output in pf_core.output). No httpx, pydantic, json-repair,
     # tenacity, or typer here — those moved to [http]/[validate]/[llm]/[cli].
-    "python-dotenv>=1.0",
-    "pyyaml>=6.0",
-    "structlog>=24.0",
+    "python-dotenv>=1.2",
+    "pyyaml>=6.0.2",
+    "structlog>=26.1",
     "nanoid>=2.0",
-    "rich>=13.7",
+    "rich>=15.0",
 ]
 
 [project.optional-dependencies]
@@ -64,14 +63,14 @@ dependencies = [
 # HTTP utils: pf_core.utils.url_liveness / pf_core.utils.urls (URL liveness +
 # Wayback round-timestamp checks). The lightest network tier — just httpx.
 # Pulled in transitively by [llm].
-http = ["httpx>=0.27"]
+http = ["httpx>=0.28"]
 
 # CLI scaffolding: pf_core.cli.create_cli. Install this to reuse pf-core's
 # Typer-based command scaffolding in your own CLI; foundation-only projects
 # can equally just depend on typer directly. Pulled in by [jobs].
 cli = [
-    "typer>=0.12",
-    "click>=8.0",
+    "typer>=0.27",
+    "click>=8.4",
 ]
 
 # Anti-slop output guards: pf_core.llm.parse (+ json-repair recovery) and
@@ -81,8 +80,8 @@ cli = [
 # members of pf_core.llm (url_check, prompts, router, safe_apply, recording)
 # need no extra at all once pf_core.llm imports lazily.
 validate = [
-    "json-repair>=0.40",
-    "pydantic>=2.0",
+    "json-repair>=0.63",
+    "pydantic>=2.13",
 ]
 
 # LLM tier: pf_core.clients.* (OpenRouter / Brave / Claude Code) on top of
@@ -93,7 +92,7 @@ validate = [
 # (= [db,llm]); importing it without [db] raises a friendly 'tracking' error.
 llm = [
     "pf-core[validate,http]",
-    "tenacity>=8.0",
+    "tenacity>=9.1",
 ]
 
 # Database layer: pf_core.db.*, pf_core.alembic, fully-functional cost guards
@@ -101,16 +100,16 @@ llm = [
 # imports and short-circuits gracefully; pf_core.db.* and pf_core.alembic
 # raise ImportError. SQLite needs no driver extra (stdlib).
 db = [
-    "sqlalchemy>=2.0",
-    "alembic>=1.13",
+    "sqlalchemy>=2.0.52",
+    "alembic>=1.19",
 ]
 
 # FastAPI web layer: pf_core.web.app_factory, error pages, markdown,
 # pagination, templates.
 web = [
-    "fastapi>=0.115",
-    "jinja2>=3.1",
-    "uvicorn[standard]>=0.30",
+    "fastapi>=0.141",
+    "jinja2>=3.1.6",
+    "uvicorn[standard]>=0.52",
 ]
 
 # Job tracker: pf_core.jobs.* (state machine, step history, worker leases)
@@ -119,7 +118,7 @@ web = [
 # [tracking] is required, not optional: jobs._schema imports
 # llm.tracking.schema at module scope so job-attribution FKs land on the shared
 # metadata, so pf_core.jobs cannot import without it.
-jobs = ["pf-core[db,cli,tracking]", "pydantic>=2.0"]
+jobs = ["pf-core[db,cli,tracking]", "pydantic>=2.13"]
 
 # DB-backed LLM run tracking: pf_core.llm.tracking.* and pf_core.llm.cache.*
 # (one row per call with prompts, tokens, cost, validations, job
@@ -139,8 +138,8 @@ eval = ["pf-core[tracking,jobs]"]
 # ---------------------------------------------------------------------------
 # Database driver extras — pick one per consumer (mutually exclusive).
 # ---------------------------------------------------------------------------
-mysql = ["pymysql>=1.1"]
-postgres = ["psycopg[binary]>=3.2"]
+mysql = ["pymysql>=1.2"]
+postgres = ["psycopg[binary]>=3.3"]
 
 # ---------------------------------------------------------------------------
 # Other capability extras
@@ -148,25 +147,25 @@ postgres = ["psycopg[binary]>=3.2"]
 
 # Redis-backed cache region: pf_core.cache (with graceful no-op fallback
 # when Redis is unreachable).
-redis = ["dogpile.cache>=1.3", "redis>=5.0"]
+redis = ["dogpile.cache>=1.5", "redis>=8.1"]
 
 # Per-IP rate limiting on FastAPI routes. Requires [web].
 ratelimit = [
     "pf-core[web]",
-    "slowapi>=0.1.9",
+    "slowapi>=0.1.10",
 ]
 
 # Strict JSON Schema validation in pf_core.llm.validate (stdlib jsonschema
 # rather than the lighter Pydantic path).
-jsonschema = ["jsonschema>=4.0"]
+jsonschema = ["jsonschema>=4.26"]
 
 # Article fetch + extract: pf_core.utils.article_fetch (title, body,
 # publish-date with Wayback Machine fallback for paywalled URLs). tenacity
 # drives the Wayback retry loop.
 articles = [
-    "trafilatura>=1.6",
-    "htmldate>=1.7",
-    "tenacity>=8.0",
+    "trafilatura>=2.2",
+    "htmldate>=1.10",
+    "tenacity>=9.1",
 ]
 
 # Intent-named meta-extra: "I want to crawl/fetch web pages." Composes the
@@ -180,15 +179,16 @@ crawl = ["pf-core[http,articles]"]
 # multimodal-capable alternative to the OpenRouter and Claude Code
 # transports for consumers that want the official SDK's vision support
 # and direct usage / cache-token reporting.
-anthropic = ["anthropic>=0.105"]
+# <1.0: SDK 1.0 removed temperature/top_p/top_k from messages.create().
+anthropic = ["anthropic>=0.105,<1.0"]
 
 # Perceptual-hash image dedup: pf_core.utils.phash (DCT-based phash via
 # ImageHash + Pillow). Used by document-processing consumers to detect
 # repeated page decorations (header logos, footer marks) and re-encoded
 # duplicates that sha256 would miss.
 image-phash = [
-    "ImageHash>=4.3",
-    "Pillow>=10.0",
+    "ImageHash>=4.3.2",
+    "Pillow>=12.3",
 ]
 
 # ---------------------------------------------------------------------------
@@ -214,14 +214,19 @@ full = [
 # Dev / test extras
 # ---------------------------------------------------------------------------
 dev = [
-    "pytest>=8.0",
-    "httpx>=0.27",
-    "factory-boy>=3.3",
-    "ruff~=0.15.0",
-    "pre-commit>=3.5",
+    "pytest>=9.1",
+    "httpx>=0.28",
+    "factory-boy>=3.3.3",
+    "ruff~=0.16.0",
+    "mypy~=2.3.0",
+    "types-PyYAML",
+    "types-PyMySQL",
+    "types-jsonschema",
+    "types-nanoid",
+    "pre-commit>=4.6",
 ]
 test-containers = [
-    "testcontainers[mysql]>=4.0",
+    "testcontainers[mysql]>=4.15",
 ]
 
 [project.urls]
@@ -252,17 +257,24 @@ testpaths = ["tests"]   # don't collect templates/consumer-*/tests/ (they hold _
 pythonpath = ["."]
 
 # ---------------------------------------------------------------------------
+# Type-check config — mypy
+# ---------------------------------------------------------------------------
+# Non-strict: annotated code is checked, untyped defs are not forced. `files`
+# scopes a bare `mypy` to the same surface CI checks.
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+
+# ---------------------------------------------------------------------------
 # Lint config — ruff
 # ---------------------------------------------------------------------------
-# Conservative starting set: what ruff catches by default (E, W, F) plus
-# bugbear (B) for common bug/antipattern checks. isort (I) and pyupgrade
-# (UP) are deferred to a separate formatting pass to keep enforcement
-# diffs reviewable. Line length (E501) is also deferred — most existing
-# code is within 100, but enforcing E501 would force a layout pass we
-# haven't decided on yet.
+# Conservative set: what ruff catches by default (E, W, F) plus bugbear (B).
+# Layout is enforced separately by `ruff format` (pre-commit + CI). isort (I)
+# and pyupgrade (UP) stay off. E501 stays off because the formatter cannot
+# break long string literals — Jinja blocks, markdown tables in docstrings, SQL.
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [

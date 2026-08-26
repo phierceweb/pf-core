@@ -66,8 +66,10 @@ class TestTick:
     def test_calls_refresh_snapshots_then_reschedules(self):
         from pf_core.budget.scheduler import _tick
 
-        with patch("pf_core.budget.scheduler.refresh_snapshots") as refresh, \
-             patch("pf_core.budget.scheduler.threading.Timer") as TimerCls:
+        with (
+            patch("pf_core.budget.scheduler.refresh_snapshots") as refresh,
+            patch("pf_core.budget.scheduler.threading.Timer") as TimerCls,
+        ):
             _tick(60)
             refresh.assert_called_once()
             TimerCls.assert_called_once()
@@ -77,10 +79,13 @@ class TestTick:
         """A failed ``refresh_snapshots()`` must not stop the loop."""
         from pf_core.budget.scheduler import _tick
 
-        with patch(
-            "pf_core.budget.scheduler.refresh_snapshots",
-            side_effect=RuntimeError("boom"),
-        ), patch("pf_core.budget.scheduler.threading.Timer") as TimerCls:
+        with (
+            patch(
+                "pf_core.budget.scheduler.refresh_snapshots",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("pf_core.budget.scheduler.threading.Timer") as TimerCls,
+        ):
             timer = TimerCls.return_value
             # _tick must not raise even when refresh_snapshots raises
             _tick(60)
@@ -91,8 +96,10 @@ class TestTick:
     def test_rescheduled_timer_is_daemon(self):
         from pf_core.budget.scheduler import _tick
 
-        with patch("pf_core.budget.scheduler.refresh_snapshots"), \
-             patch("pf_core.budget.scheduler.threading.Timer") as TimerCls:
+        with (
+            patch("pf_core.budget.scheduler.refresh_snapshots"),
+            patch("pf_core.budget.scheduler.threading.Timer") as TimerCls,
+        ):
             timer = TimerCls.return_value
             _tick(30)
             assert timer.daemon is True

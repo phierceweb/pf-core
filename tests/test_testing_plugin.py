@@ -70,9 +70,7 @@ class TestConcurrentAccess:
         run_parallel(items=list(range(50)), fn=_insert, workers=4, label="Inserted")
 
         with transaction() as conn:
-            count = conn.execute(
-                text("SELECT COUNT(*) FROM concurrent_items")
-            ).scalar()
+            count = conn.execute(text("SELECT COUNT(*) FROM concurrent_items")).scalar()
         assert count == 50
 
     @pytest.mark.pf_tables(
@@ -101,14 +99,10 @@ class TestConcurrentAccess:
         )
 
         with transaction() as conn:
-            count = conn.execute(
-                text("SELECT COUNT(*) FROM repo_concurrent")
-            ).scalar()
+            count = conn.execute(text("SELECT COUNT(*) FROM repo_concurrent")).scalar()
         assert count == 50
 
-    @pytest.mark.pf_tables(
-        "CREATE TABLE mixed_rw (id INTEGER PRIMARY KEY, val INTEGER NOT NULL)"
-    )
+    @pytest.mark.pf_tables("CREATE TABLE mixed_rw (id INTEGER PRIMARY KEY, val INTEGER NOT NULL)")
     def test_concurrent_reads_during_writes(self, pf_tables):
         """Readers must not error while writers are committing — the
         other half of the WAL contract (the regression test only
@@ -118,16 +112,12 @@ class TestConcurrentAccess:
 
         def _write_then_read(n: int) -> None:
             with transaction() as conn:
-                conn.execute(
-                    text("INSERT INTO mixed_rw (val) VALUES (:v)"), {"v": n}
-                )
+                conn.execute(text("INSERT INTO mixed_rw (val) VALUES (:v)"), {"v": n})
             # Read while other workers are mid-write — must not raise.
             with transaction() as conn:
                 conn.execute(text("SELECT COUNT(*) FROM mixed_rw")).scalar()
 
-        run_parallel(
-            items=list(range(50)), fn=_write_then_read, workers=4, label="RW"
-        )
+        run_parallel(items=list(range(50)), fn=_write_then_read, workers=4, label="RW")
 
         with transaction() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM mixed_rw")).scalar()
@@ -169,9 +159,7 @@ class TestFixtureThreadSafetyInvariant:
 class TestTablesMarker:
     """@pytest.mark.pf_tables creates tables from inline DDL."""
 
-    @pytest.mark.pf_tables(
-        "CREATE TABLE custom_table (id INTEGER PRIMARY KEY, val TEXT)"
-    )
+    @pytest.mark.pf_tables("CREATE TABLE custom_table (id INTEGER PRIMARY KEY, val TEXT)")
     def test_marker_creates_table(self, pf_tables, pf_connection):
         pf_connection.execute(
             text("INSERT INTO custom_table (val) VALUES (:v)"),

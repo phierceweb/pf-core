@@ -17,10 +17,10 @@ normalizer = SlugNormalizer(
     explicit_rejects={"advertisement", "spam", "boilerplate"},
 )
 
-normalizer.normalize("Blog Article")        # "article"
-normalizer.normalize("report")              # "report" (canonical)
-normalizer.normalize("advertisement")       # None  (explicit reject)
-normalizer.normalize("kerfuffle")           # None  (unknown free-text)
+normalizer.normalize("Blog Article")  # "article"
+normalizer.normalize("report")  # "report" (canonical)
+normalizer.normalize("advertisement")  # None  (explicit reject)
+normalizer.normalize("kerfuffle")  # None  (unknown free-text)
 ```
 
 ## Three lookup paths
@@ -98,8 +98,8 @@ _NORMALIZER = SlugNormalizer(
     },
     explicit_rejects={
         "advertisement",  # ads aren't catalogued content
-        "spam",            # junk, not content
-        "boilerplate",     # template text, not content either
+        "spam",  # junk, not content
+        "boilerplate",  # template text, not content either
         # ... ~30 more non-content categories ...
     },
 )

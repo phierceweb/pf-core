@@ -7,9 +7,11 @@
 ```python
 from pf_core.utils.env import resolve_bool, resolve_int, resolve_str
 
+
 def paginate_params(page, per_page, max_per_page=None):
     max_per_page = resolve_int(max_per_page, "MAX_PER_PAGE", default=200)
     ...
+
 
 def get_model_name(model=None):
     return resolve_str(model, "DEFAULT_MODEL", default="haiku")
@@ -30,12 +32,12 @@ Resolution order, first non-`None` wins:
 3. `default` — required.
 
 ```python
-resolve_int(7, "MAX_PER_PAGE", default=200)        # 7  (explicit wins)
-resolve_int(None, "MAX_PER_PAGE", default=200)     # 200 (env unset, default)
+resolve_int(7, "MAX_PER_PAGE", default=200)  # 7  (explicit wins)
+resolve_int(None, "MAX_PER_PAGE", default=200)  # 200 (env unset, default)
 # $MAX_PER_PAGE=50:
-resolve_int(None, "MAX_PER_PAGE", default=200)     # 50  (env wins)
+resolve_int(None, "MAX_PER_PAGE", default=200)  # 50  (env wins)
 # $MAX_PER_PAGE=garbage:
-resolve_int(None, "MAX_PER_PAGE", default=200)     # 200 (warn + default)
+resolve_int(None, "MAX_PER_PAGE", default=200)  # 200 (warn + default)
 ```
 
 ## resolve_float
@@ -49,12 +51,12 @@ The `resolve_int` contract for fractional values — durations, rates, threshold
 `nan`, `inf`, and `-inf` parse as floats but are rejected like any other malformed value: they satisfy or defeat every comparison a caller writes against the resolved value, so an operator typo would silently disable a bound rather than fall back to it.
 
 ```python
-resolve_float(2.5, "FOO_TIMEOUT_S", default=30.0)     # 2.5  (explicit wins)
-resolve_float(None, "FOO_TIMEOUT_S", default=30.0)    # 30.0 (env unset, default)
+resolve_float(2.5, "FOO_TIMEOUT_S", default=30.0)  # 2.5  (explicit wins)
+resolve_float(None, "FOO_TIMEOUT_S", default=30.0)  # 30.0 (env unset, default)
 # $FOO_TIMEOUT_S=7.5:
-resolve_float(None, "FOO_TIMEOUT_S", default=30.0)    # 7.5  (env wins)
+resolve_float(None, "FOO_TIMEOUT_S", default=30.0)  # 7.5  (env wins)
 # $FOO_TIMEOUT_S=inf:
-resolve_float(None, "FOO_TIMEOUT_S", default=30.0)    # 30.0 (warn + default)
+resolve_float(None, "FOO_TIMEOUT_S", default=30.0)  # 30.0 (warn + default)
 ```
 
 ## resolve_str
@@ -71,10 +73,10 @@ Resolution order, first non-`None` wins:
 
 ```python
 resolve_str("haiku", "DEFAULT_MODEL", default="opus")  # "haiku" (explicit)
-resolve_str(None, "DEFAULT_MODEL", default="opus")     # "opus"  (env unset)
+resolve_str(None, "DEFAULT_MODEL", default="opus")  # "opus"  (env unset)
 # $DEFAULT_MODEL=sonnet:
-resolve_str(None, "DEFAULT_MODEL", default="opus")     # "sonnet" (env)
-resolve_str(None, "DEFAULT_MODEL")                     # None    (no default)
+resolve_str(None, "DEFAULT_MODEL", default="opus")  # "sonnet" (env)
+resolve_str(None, "DEFAULT_MODEL")  # None    (no default)
 ```
 
 ## resolve_bool
@@ -94,6 +96,7 @@ from pf_core.utils.env import resolve_bool
 
 DEFAULT_ENABLE_CACHE = True
 
+
 def cache_enabled(explicit: bool | None = None) -> bool:
     return resolve_bool(explicit, "MYPROJ_CACHE_ENABLED", default=DEFAULT_ENABLE_CACHE)
 ```
@@ -111,13 +114,13 @@ A bounded form of `resolve_int` for counts and sizes that must be `>= min_value`
 3. `default` is trusted (assumed `>= min_value`) — it's the floor a bad env value lands on.
 
 ```python
-resolve_positive_int(8, "WORKERS", default=4)      # 8   (explicit wins)
-resolve_positive_int(0, "WORKERS", default=4)      # ValueError (caller bug)
-resolve_positive_int(None, "WORKERS", default=4)   # 4   (env unset, default)
+resolve_positive_int(8, "WORKERS", default=4)  # 8   (explicit wins)
+resolve_positive_int(0, "WORKERS", default=4)  # ValueError (caller bug)
+resolve_positive_int(None, "WORKERS", default=4)  # 4   (env unset, default)
 # $WORKERS=12:
-resolve_positive_int(None, "WORKERS", default=4)   # 12  (env wins)
+resolve_positive_int(None, "WORKERS", default=4)  # 12  (env wins)
 # $WORKERS=-3:
-resolve_positive_int(None, "WORKERS", default=4)   # 4   (warn env_var_out_of_range + default)
+resolve_positive_int(None, "WORKERS", default=4)  # 4   (warn env_var_out_of_range + default)
 ```
 
 Only a lower bound is provided; add an upper bound the day a consumer needs one.
@@ -131,6 +134,7 @@ from pf_core.utils.env import resolve_int
 
 _FOO_TIMEOUT_S_DEFAULT = 600
 _FOO_TIMEOUT_ENV_VAR = "MYPROJ_FOO_TIMEOUT_S"
+
 
 def _foo_timeout_s() -> int:
     n: int = resolve_int(None, _FOO_TIMEOUT_ENV_VAR, default=_FOO_TIMEOUT_S_DEFAULT)

@@ -6,6 +6,7 @@ line count so the gate can be adopted on a dirty tree and fails only on *new*
 violations or *growth* of a baselined file. ``check_layering`` flags upward
 imports that violate the four-layer call direction (for consumer apps).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,10 +36,10 @@ _DEFAULT_CONFIG = ".pf-guards.toml"
 
 @dataclass(frozen=True)
 class FileSizeViolation:
-    path: str          # POSIX, relative to scan root
+    path: str  # POSIX, relative to scan root
     lines: int
-    limit: int         # the limit that was exceeded
-    severity: str      # "hard" or "soft"
+    limit: int  # the limit that was exceeded
+    severity: str  # "hard" or "soft"
 
 
 def _line_count(p: Path) -> int:
@@ -69,7 +70,7 @@ def scan_file_sizes(
         rel = p.relative_to(root).as_posix()
         shown = f"{path_prefix}{rel}"
         a = app_rel(root, rel) if config is not None else None
-        if a is not None:
+        if config is not None and a is not None:
             file_hard = hard_limit_for(a, config)
             file_soft = int(file_hard * config.soft_fraction)
         else:
@@ -85,9 +86,7 @@ def scan_file_sizes(
     return out
 
 
-def stale_baseline_entries(
-    raw: list[FileSizeViolation], *, baseline: dict[str, int]
-) -> list[str]:
+def stale_baseline_entries(raw: list[FileSizeViolation], *, baseline: dict[str, int]) -> list[str]:
     """Baseline entries whose file is no longer over its hard limit — remove them.
 
     The ratchet's other half: once a file is split below budget, dead
@@ -166,14 +165,16 @@ def run_cli(argv: list[str] | None = None) -> int:
     parser.add_argument("--soft", type=int, default=None)
     parser.add_argument("--baseline", default=None)
     parser.add_argument(
-        "--emit-allowlist", action="store_true",
+        "--emit-allowlist",
+        action="store_true",
         help="print a paste-ready [tool.pf_guards.layering_allowlist] block for "
-             "current violations instead of failing (gate adoption helper)",
+        "current violations instead of failing (gate adoption helper)",
     )
     parser.add_argument(
-        "--emit-baseline", action="store_true",
+        "--emit-baseline",
+        action="store_true",
         help="print a paste-ready [tool.pf_guards.baseline] block grandfathering "
-             "every file currently over its hard limit (gate adoption helper)",
+        "every file currently over its hard limit (gate adoption helper)",
     )
     args = parser.parse_args(argv)
 
@@ -184,7 +185,7 @@ def run_cli(argv: list[str] | None = None) -> int:
             print(f"pf-guards: malformed config {args.config}: {e}")
             return 2
     elif args.config == _DEFAULT_CONFIG and args.root is not None:
-        cfg = GuardsConfig()   # ad-hoc run, fully flag-specified (gate adoption)
+        cfg = GuardsConfig()  # ad-hoc run, fully flag-specified (gate adoption)
     else:
         hint = (
             " — create it with a [tool.pf_guards] table (root = ...), or pass --root for an ad-hoc run"
@@ -236,8 +237,8 @@ def run_cli(argv: list[str] | None = None) -> int:
         print(f"WARN  {v.path}: {v.lines} lines (soft target {v.limit})")
     for v in hard_v:
         print(f"FAIL  {v.path}: {v.lines} lines (hard limit {v.limit})")
-    for v in layering:
-        print(f"LAYER {v.path}:{v.line}: import {v.imported} ({v.reason})")
+    for lv in layering:
+        print(f"LAYER {lv.path}:{lv.line}: import {lv.imported} ({lv.reason})")
     for p in stale_bl:
         print(f"STALE baseline entry: {p} (no longer over its hard limit — remove it)")
     for p, m in stale_al:

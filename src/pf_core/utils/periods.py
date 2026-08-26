@@ -19,6 +19,7 @@ Preset taxonomy:
 | `last_90d`       | 90 days ending at `anchor`                           | (same pattern)       |
 | `custom`         | Explicit `(start, end)` pair                         | `custom`             |
 """
+
 from __future__ import annotations
 
 import re
@@ -58,6 +59,7 @@ class Period:
     exclusive). `label` is the canonical preset descriptor — stable
     enough to be used as a cohort key on output rows.
     """
+
     start: datetime
     end: datetime
     label: str

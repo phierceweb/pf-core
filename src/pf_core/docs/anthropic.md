@@ -12,7 +12,9 @@ Optional dependency — install the extra:
 pip install 'pf-core[anthropic]'
 ```
 
-Pulls in the `anthropic` SDK (`>=0.105`, for structured-outputs support).
+Pulls in the `anthropic` SDK (`>=0.105,<1.0`). The floor is structured-outputs support; the
+ceiling is that SDK 1.0 removed `temperature` / `top_p` / `top_k` from `messages.create()`,
+which `chat()` sends — 1.0 support needs a client port, not a pin change.
 
 ## Usage
 
@@ -76,8 +78,8 @@ Prompt caching is opt-in per call:
 ```python
 content, usage = client.chat(
     messages=[{"role": "system", "content": BIG_SYSTEM}, {"role": "user", "content": q}],
-    cache_system=True,   # mark the system prompt as a cache breakpoint
-    cache_ttl="5m",      # or "1h" (2x write premium, longer reuse window)
+    cache_system=True,  # mark the system prompt as a cache breakpoint
+    cache_ttl="5m",  # or "1h" (2x write premium, longer reuse window)
 )
 ```
 

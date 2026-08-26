@@ -40,6 +40,7 @@ def _check_identifier(name: str, kind: str) -> None:
     if not _IDENT_RE.match(name):
         raise InvalidInputError(f"invalid SQL {kind}: {name!r}")
 
+
 _DEFAULT_SIZE = 12
 _MAX_ATTEMPTS = 24
 
@@ -115,6 +116,7 @@ def _default_size() -> int:
     """Read the ``ID_LENGTH`` env var (clamped to 8–36), else fall back to 12."""
     try:
         import os
+
         val = os.environ.get("ID_LENGTH", "")
         if val.strip():
             n = int(val)

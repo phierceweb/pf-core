@@ -29,14 +29,14 @@ class BudgetRepo(Repository):
     def list_enabled(self) -> list[dict]:
         """Return all enabled budgets as dicts."""
         with self._tx() as conn:
-            rows = conn.execute(
-                select(llm_budgets).where(llm_budgets.c.enabled.is_(True))
-            ).mappings().fetchall()
+            rows = (
+                conn.execute(select(llm_budgets).where(llm_budgets.c.enabled.is_(True)))
+                .mappings()
+                .fetchall()
+            )
         return [dict(r) for r in rows]
 
-    def find(
-        self, *, scope_kind: str, scope_value: str | None, period: str
-    ) -> dict | None:
+    def find(self, *, scope_kind: str, scope_value: str | None, period: str) -> dict | None:
         """Return the budget row matching (scope_kind, scope_value, period)."""
         with self._tx() as conn:
             where = [
@@ -47,9 +47,7 @@ class BudgetRepo(Repository):
                 where.append(llm_budgets.c.scope_value.is_(None))
             else:
                 where.append(llm_budgets.c.scope_value == scope_value)
-            row = conn.execute(
-                select(llm_budgets).where(and_(*where))
-            ).mappings().fetchone()
+            row = conn.execute(select(llm_budgets).where(and_(*where))).mappings().fetchone()
         return dict(row) if row else None
 
     def list_for_scopes(
@@ -95,11 +93,13 @@ class BudgetRepo(Repository):
             return []
 
         with self._tx() as conn:
-            rows = conn.execute(
-                select(llm_budgets)
-                .where(llm_budgets.c.enabled.is_(True))
-                .where(or_(*clauses))
-            ).mappings().fetchall()
+            rows = (
+                conn.execute(
+                    select(llm_budgets).where(llm_budgets.c.enabled.is_(True)).where(or_(*clauses))
+                )
+                .mappings()
+                .fetchall()
+            )
         return [dict(r) for r in rows]
 
     def sync_from_desired(self, desired: list[dict[str, Any]]) -> dict[str, int]:
@@ -134,9 +134,7 @@ class BudgetRepo(Repository):
                 else:
                     where.append(llm_budgets.c.scope_value == row["scope_value"])
 
-                existing = conn.execute(
-                    select(llm_budgets.c.id).where(and_(*where))
-                ).fetchone()
+                existing = conn.execute(select(llm_budgets.c.id).where(and_(*where))).fetchone()
 
                 values = {
                     "limit_usd": row["limit_usd"],
@@ -147,9 +145,7 @@ class BudgetRepo(Repository):
                 }
                 if existing:
                     conn.execute(
-                        update(llm_budgets)
-                        .where(llm_budgets.c.id == existing[0])
-                        .values(**values)
+                        update(llm_budgets).where(llm_budgets.c.id == existing[0]).values(**values)
                     )
                     updated += 1
                 else:
@@ -203,14 +199,18 @@ class BudgetSnapshotRepo(Repository):
 
     def get(self, *, budget_id: int, period_start: dt.date) -> dict | None:
         with self._tx() as conn:
-            row = conn.execute(
-                select(llm_budget_snapshots).where(
-                    and_(
-                        llm_budget_snapshots.c.budget_id == budget_id,
-                        llm_budget_snapshots.c.period_start == period_start,
+            row = (
+                conn.execute(
+                    select(llm_budget_snapshots).where(
+                        and_(
+                            llm_budget_snapshots.c.budget_id == budget_id,
+                            llm_budget_snapshots.c.period_start == period_start,
+                        )
                     )
                 )
-            ).mappings().fetchone()
+                .mappings()
+                .fetchone()
+            )
         return dict(row) if row else None
 
     def upsert(
@@ -267,9 +267,7 @@ class BudgetSnapshotRepo(Repository):
 class CostRateRepo(Repository):
     """Reads and writes :data:`llm_cost_rates` rows."""
 
-    def get_effective(
-        self, *, model: str, on_date: dt.date | None = None
-    ) -> dict | None:
+    def get_effective(self, *, model: str, on_date: dt.date | None = None) -> dict | None:
         """Return the cost rate row in effect for *model* on *on_date*.
 
         Falls back to ``today`` when *on_date* omitted.
@@ -278,18 +276,22 @@ class CostRateRepo(Repository):
             on_date = dt.date.today()
         model_id = resolve_llm_model_id(model)
         with self._tx() as conn:
-            row = conn.execute(
-                select(llm_cost_rates)
-                .where(llm_cost_rates.c.model_id == model_id)
-                .where(llm_cost_rates.c.effective_from <= on_date)
-                .where(
-                    or_(
-                        llm_cost_rates.c.effective_to.is_(None),
-                        llm_cost_rates.c.effective_to >= on_date,
+            row = (
+                conn.execute(
+                    select(llm_cost_rates)
+                    .where(llm_cost_rates.c.model_id == model_id)
+                    .where(llm_cost_rates.c.effective_from <= on_date)
+                    .where(
+                        or_(
+                            llm_cost_rates.c.effective_to.is_(None),
+                            llm_cost_rates.c.effective_to >= on_date,
+                        )
                     )
+                    .order_by(llm_cost_rates.c.effective_from.desc())
                 )
-                .order_by(llm_cost_rates.c.effective_from.desc())
-            ).mappings().fetchone()
+                .mappings()
+                .fetchone()
+            )
         return dict(row) if row else None
 
     def upsert(
@@ -374,23 +376,21 @@ def apply_scope_filter(q, budget: dict):
     if scope_kind == "global":
         return q
     if scope_kind == "agent":
-        return q.join(
-            llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-        ).where(llm_agent_types.c.slug == scope_value)
+        return q.join(llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id).where(
+            llm_agent_types.c.slug == scope_value
+        )
     if scope_kind == "job_kind":
         from pf_core.jobs._schema import jobs
 
-        return q.join(jobs, llm_runs.c.job_id == jobs.c.id).where(
-            jobs.c.kind == scope_value
-        )
+        return q.join(jobs, llm_runs.c.job_id == jobs.c.id).where(jobs.c.kind == scope_value)
     if scope_kind == "job_id":
         if scope_value is None:
             raise InvalidInputError("budget scope 'job_id' requires a scope_value")
         return q.where(llm_runs.c.job_id == int(scope_value))
     if scope_kind == "tag":
-        return q.join(
-            llm_run_tags, llm_runs.c.id == llm_run_tags.c.llm_run_id
-        ).where(llm_run_tags.c.tag == scope_value)
+        return q.join(llm_run_tags, llm_runs.c.id == llm_run_tags.c.llm_run_id).where(
+            llm_run_tags.c.tag == scope_value
+        )
     raise InvalidInputError(f"unknown budget scope_kind: {scope_kind!r}")
 
 

@@ -50,14 +50,17 @@ def _dialect_insert(name: str):
     Imports the dialect lazily — the construct compiles without a DBAPI driver installed.
     """
     if name == "postgresql":
-        from sqlalchemy.dialects.postgresql import insert
-        return insert
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        return pg_insert
     if name == "sqlite":
-        from sqlalchemy.dialects.sqlite import insert
-        return insert
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        return sqlite_insert
     if name in _MYSQL_DIALECTS:
-        from sqlalchemy.dialects.mysql import insert
-        return insert
+        from sqlalchemy.dialects.mysql import insert as mysql_insert
+
+        return mysql_insert
     raise NotImplementedError(
         f"pf_core.db upsert: dialect {name!r} not supported — "
         "use SQLite, PostgreSQL, or MySQL/MariaDB."

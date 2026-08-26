@@ -12,7 +12,10 @@ Validates and normalizes pagination query parameters.
 from pf_core.web.pagination import paginate_params
 
 p = paginate_params(
-    page, per_page, sort, dir,
+    page,
+    per_page,
+    sort,
+    dir,
     allowed_sorts={"date", "title", "tier"},
     default_sort="date",
 )
@@ -61,6 +64,7 @@ result = paginate_result(rows, total=total, page=p["page"], per_page=p["per_page
 from fastapi import Query, Request
 from pf_core.web.pagination import paginate_params, paginate_result
 
+
 @router.get("/incidents")
 async def incidents_page(
     request: Request,
@@ -70,23 +74,32 @@ async def incidents_page(
     dir: str = Query("desc"),
 ):
     p = paginate_params(
-        page, per_page, sort, dir,
+        page,
+        per_page,
+        sort,
+        dir,
         allowed_sorts={"date", "tier", "section", "type"},
         default_sort="date",
     )
     rows = repo.list_incidents(
-        sort_by=p["sort"], sort_dir=p["dir"],
-        limit=p["limit"], offset=p["offset"],
+        sort_by=p["sort"],
+        sort_dir=p["dir"],
+        limit=p["limit"],
+        offset=p["offset"],
     )
     total = repo.count_incidents()
     pg = paginate_result(rows, total=total, page=p["page"], per_page=p["per_page"])
 
-    return templates.TemplateResponse(request, "pages/incidents.html", {
-        "incidents": pg["items"],
-        "sort": p["sort"],
-        "dir": p["dir"],
-        **pg,  # page, per_page, total, total_pages, has_prev, has_next
-    })
+    return templates.TemplateResponse(
+        request,
+        "pages/incidents.html",
+        {
+            "incidents": pg["items"],
+            "sort": p["sort"],
+            "dir": p["dir"],
+            **pg,  # page, per_page, total, total_pages, has_prev, has_next
+        },
+    )
 ```
 
 ## Full example — JSON API endpoint
@@ -94,6 +107,7 @@ async def incidents_page(
 ```python
 from pf_core.web.pagination import paginate_params, paginate_result
 from pf_core.web.json import safe_json_response
+
 
 @router.get("/api/entries")
 async def list_entries(
@@ -103,9 +117,13 @@ async def list_entries(
     dir: str = Query("desc"),
 ):
     p = paginate_params(page, per_page, sort, dir, allowed_sorts={"created_at", "title"})
-    rows = repo.list_entries(sort_by=p["sort"], sort_dir=p["dir"], limit=p["limit"], offset=p["offset"])
+    rows = repo.list_entries(
+        sort_by=p["sort"], sort_dir=p["dir"], limit=p["limit"], offset=p["offset"]
+    )
     total = repo.count_entries()
-    return safe_json_response(paginate_result(rows, total=total, page=p["page"], per_page=p["per_page"]))
+    return safe_json_response(
+        paginate_result(rows, total=total, page=p["page"], per_page=p["per_page"])
+    )
 ```
 
 Response:

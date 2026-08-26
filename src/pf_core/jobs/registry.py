@@ -164,8 +164,7 @@ def register_kind(
 
     if not (0 <= default_priority <= 100):
         raise ConfigurationError(
-            f"register_kind({kind!r}): default_priority must be 0-100, "
-            f"got {default_priority}",
+            f"register_kind({kind!r}): default_priority must be 0-100, got {default_priority}",
         )
 
     descriptor = JobKind(
@@ -236,8 +235,7 @@ def _validate_against_schema(value: Any, schema: Any, *, label: str) -> Any:
         from pydantic import BaseModel, ValidationError
     except ImportError as e:  # pragma: no cover - pydantic is a pf-core dep
         raise ConfigurationError(
-            "Pydantic is required for job input/output validation but is "
-            "not installed",
+            "Pydantic is required for job input/output validation but is not installed",
         ) from e
 
     if isinstance(schema, type) and issubclass(schema, BaseModel):

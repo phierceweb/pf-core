@@ -74,12 +74,11 @@ class ReloadCache(Generic[K, T]):
                 return value
 
             try:
-                loaded = self._loader(key)
+                # keyless caches call get() with no key; loader tolerates None
+                loaded = self._loader(key)  # type: ignore[arg-type]
             except self._stale_on as exc:
                 if self._value is not _UNSET and self._key == key:
-                    logger.warning(
-                        "reload_cache_kept_stale", key=key, error=str(exc)
-                    )
+                    logger.warning("reload_cache_kept_stale", key=key, error=str(exc))
                     self._loaded_at = now
                     return self._value
                 raise

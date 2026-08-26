@@ -26,10 +26,12 @@ def cross_field_validator(name: str) -> Callable[[Callable], Callable]:
     ``.name`` to the function so :func:`parse_and_validate` can reference
     the registered name in error signals if the function raises.
     """
+
     def _decorator(fn: Callable) -> Callable:
         fn.name = name  # type: ignore[attr-defined]
         _CROSS_FIELD_VALIDATORS[name] = fn
         return fn
+
     return _decorator
 
 

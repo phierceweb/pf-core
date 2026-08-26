@@ -58,26 +58,30 @@ def test_eval_config_empty():
 
 
 def test_eval_config_defaults_propagate():
-    cfg = EvalConfig({
-        "defaults": {"pass_threshold": 0.70, "parallelism": 2},
-        "agents": {},
-    })
+    cfg = EvalConfig(
+        {
+            "defaults": {"pass_threshold": 0.70, "parallelism": 2},
+            "agents": {},
+        }
+    )
     agent_cfg = cfg.for_agent("unknown_agent")
     assert agent_cfg.pass_threshold == 0.70
     assert agent_cfg.parallelism == 2
 
 
 def test_eval_config_agent_overrides_defaults():
-    cfg = EvalConfig({
-        "defaults": {"pass_threshold": 0.80, "compare": "structured_diff"},
-        "agents": {
-            "drafter": {
-                "compare": "llm_judge",
-                "judge_agent_type": "drafter_judge",
-                "pass_threshold": 0.75,
-            }
-        },
-    })
+    cfg = EvalConfig(
+        {
+            "defaults": {"pass_threshold": 0.80, "compare": "structured_diff"},
+            "agents": {
+                "drafter": {
+                    "compare": "llm_judge",
+                    "judge_agent_type": "drafter_judge",
+                    "pass_threshold": 0.75,
+                }
+            },
+        }
+    )
     drafter_cfg = cfg.for_agent("drafter")
     assert drafter_cfg.compare == "llm_judge"
     assert drafter_cfg.judge_agent_type == "drafter_judge"
@@ -90,16 +94,18 @@ def test_eval_config_agent_overrides_defaults():
 
 
 def test_eval_config_metrics_gates():
-    cfg = EvalConfig({
-        "agents": {
-            "drafter": {
-                "metrics": [
-                    {"name": "tier1_ratio", "min": 0.70},
-                    {"name": "n_sources", "min": 3, "max": 20},
-                ]
+    cfg = EvalConfig(
+        {
+            "agents": {
+                "drafter": {
+                    "metrics": [
+                        {"name": "tier1_ratio", "min": 0.70},
+                        {"name": "n_sources", "min": 3, "max": 20},
+                    ]
+                }
             }
         }
-    })
+    )
     drafter_cfg = cfg.for_agent("drafter")
     assert len(drafter_cfg.metrics) == 2
     assert drafter_cfg.metrics[0].name == "tier1_ratio"
@@ -108,14 +114,16 @@ def test_eval_config_metrics_gates():
 
 
 def test_eval_config_diff_fields_and_tolerances():
-    cfg = EvalConfig({
-        "agents": {
-            "reviewer": {
-                "diff_fields": ["score", "category"],
-                "tolerances": {"score": 3.0},
+    cfg = EvalConfig(
+        {
+            "agents": {
+                "reviewer": {
+                    "diff_fields": ["score", "category"],
+                    "tolerances": {"score": 3.0},
+                }
             }
         }
-    })
+    )
     reviewer_cfg = cfg.for_agent("reviewer")
     assert reviewer_cfg.diff_fields == ["score", "category"]
     assert reviewer_cfg.tolerances == {"score": 3.0}

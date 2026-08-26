@@ -182,8 +182,7 @@ class EvalReport:
             for r in failures[:10]:
                 err = f"   error: {r.error[:80]}" if r.error else ""
                 lines.append(
-                    f"  replay {r.run_id} ← golden {r.golden_id}"
-                    f"   score: {r.score:.3f}{err}"
+                    f"  replay {r.run_id} ← golden {r.golden_id}   score: {r.score:.3f}{err}"
                 )
         return "\n".join(lines)
 

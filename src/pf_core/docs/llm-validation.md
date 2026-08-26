@@ -9,13 +9,16 @@ A rule is any `Callable[[str], str | None]`. It receives a URL and returns a sho
 ```python
 from pf_core.llm.url_check import UrlHallucinationRule
 
+
 def flag_keyword_slug_year(url: str) -> str | None:
     import re
+
     # A keyword-year slug is a common LLM fabrication when the real source
     # uses opaque hash IDs.
     if re.search(r"/article/[a-z][a-z-]+-\d{4}$", url):
         return "keyword-year slug (this source uses hash-based article IDs)"
     return None
+
 
 rules: list[UrlHallucinationRule] = [flag_keyword_slug_year]
 ```
@@ -58,8 +61,10 @@ The built-in `url_sanity` semantic validator (see `llm-schema-validation.md`) de
 ```python
 from pf_core.llm.validate import register_url_hallucination_rules
 
+
 def _project_rules():
     return [flag_keyword_slug_year, ...]  # consumer rules
+
 
 register_url_hallucination_rules(_project_rules)
 ```

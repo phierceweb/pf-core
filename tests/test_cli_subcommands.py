@@ -74,9 +74,7 @@ def myapp_config() -> BaselineConfig:
     return BaselineConfig(run_record_filename=".myapp-run.json")
 
 
-def _populate_invalidate_dir(
-    out: Path, *, run_record_filename: str, stem: str = "doc"
-) -> None:
+def _populate_invalidate_dir(out: Path, *, run_record_filename: str, stem: str = "doc") -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{stem}.raw.md").write_text("raw")
     (out / "sections").mkdir()
@@ -147,9 +145,7 @@ class TestInvalidateSubcommand:
         (out / "sections").mkdir()
 
         app = self._app(registry)
-        result = runner.invoke(
-            app, ["invalidate", str(out), "split", "--source-stem", "mydoc"]
-        )
+        result = runner.invoke(app, ["invalidate", str(out), "split", "--source-stem", "mydoc"])
 
         assert result.exit_code == 0, result.output
         assert not (out / "sections").exists()
@@ -169,9 +165,7 @@ class TestInvalidateSubcommand:
         assert not (out / "INDEX.md").exists()
         assert (out / "doc.raw.md").exists()
 
-    def test_invalid_stage_errors(
-        self, registry: StageRegistry, tmp_path: Path
-    ) -> None:
+    def test_invalid_stage_errors(self, registry: StageRegistry, tmp_path: Path) -> None:
         out = tmp_path / "out"
         _populate_invalidate_dir(out, run_record_filename="run.json")
 
@@ -182,9 +176,7 @@ class TestInvalidateSubcommand:
         combined = result.output + str(result.exception)
         assert "must be one of" in combined
 
-    def test_no_run_record_no_stem_errors(
-        self, registry: StageRegistry, tmp_path: Path
-    ) -> None:
+    def test_no_run_record_no_stem_errors(self, registry: StageRegistry, tmp_path: Path) -> None:
         out = tmp_path / "out"
         out.mkdir()
         (out / "doc.raw.md").write_text("raw")
@@ -217,18 +209,14 @@ class TestInvalidateSubcommand:
 
         app = self._app(registry, command_name="bust")
         # `invalidate` should NOT be registered.
-        result = runner.invoke(
-            app, ["invalidate", str(out), "split", "--source-stem", "doc"]
-        )
+        result = runner.invoke(app, ["invalidate", str(out), "split", "--source-stem", "doc"])
         assert result.exit_code != 0
 
         # `bust` SHOULD be registered.
         result = runner.invoke(app, ["bust", str(out), "split", "--source-stem", "doc"])
         assert result.exit_code == 0
 
-    def test_custom_run_record_filename(
-        self, registry: StageRegistry, tmp_path: Path
-    ) -> None:
+    def test_custom_run_record_filename(self, registry: StageRegistry, tmp_path: Path) -> None:
         out = tmp_path / "out"
         _populate_invalidate_dir(out, run_record_filename=".myapp-run.json")
 
@@ -250,9 +238,7 @@ class TestInvalidateSubcommand:
 
         assert result.exit_code != 0
 
-    def test_lists_deleted_paths_in_stdout(
-        self, registry: StageRegistry, tmp_path: Path
-    ) -> None:
+    def test_lists_deleted_paths_in_stdout(self, registry: StageRegistry, tmp_path: Path) -> None:
         out = tmp_path / "out"
         _populate_invalidate_dir(out, run_record_filename="run.json")
 
@@ -300,9 +286,7 @@ class TestBaselineSubcommandGroup:
         _populate_baseline_dir(out)
 
         app = self._app()
-        result = runner.invoke(
-            app, ["baseline", "save", str(out), "--label", "corpus-final"]
-        )
+        result = runner.invoke(app, ["baseline", "save", str(out), "--label", "corpus-final"])
 
         assert result.exit_code == 0
         assert (out / ".baselines" / "corpus-final" / "doc.md").exists()
@@ -396,9 +380,7 @@ class TestBaselineSubcommandGroup:
 
         app = self._app()
         runner.invoke(app, ["baseline", "save", str(out), "--label", "v1"])
-        (out / "sections" / "Intro.md").write_text(
-            "## Intro\n\nMODIFIED body.\n", encoding="utf-8"
-        )
+        (out / "sections" / "Intro.md").write_text("## Intro\n\nMODIFIED body.\n", encoding="utf-8")
 
         result = runner.invoke(
             app, ["baseline", "diff", str(out), "v1", "--show-section", "Intro.md"]
@@ -417,18 +399,14 @@ class TestBaselineSubcommandGroup:
         runner.invoke(app, ["baseline", "save", str(out), "--label", "v1"])
         (out / "doc.md").write_text("# Doc\n\nMODIFIED.\n", encoding="utf-8")
 
-        result = runner.invoke(
-            app, ["baseline", "diff", str(out), "v1", "--show-consolidated"]
-        )
+        result = runner.invoke(app, ["baseline", "diff", str(out), "v1", "--show-consolidated"])
 
         assert result.exit_code == 0
         assert "---" in result.output
         assert "+++" in result.output
         assert "MODIFIED" in result.output
 
-    def test_diff_show_section_and_consolidated_together_errors(
-        self, tmp_path: Path
-    ) -> None:
+    def test_diff_show_section_and_consolidated_together_errors(self, tmp_path: Path) -> None:
         out = tmp_path / "out"
         _populate_baseline_dir(out)
 

@@ -20,7 +20,7 @@ report = runner.run(
     tag_as="experiment:opus47",
 )
 
-print(report.summary())     # pass/fail, mean score, distribution
+print(report.summary())  # pass/fail, mean score, distribution
 report.write_html("out/summarizer_opus47.html")
 ```
 
@@ -91,9 +91,9 @@ repo.remove(run_id=1042, version="golden_v2")
 seeded = repo.seed_from_outcomes(
     version="golden_v1",
     outcome_kind="summary_accepted",  # any outcome_kind your project writes
-    agent_type="summarizer",          # optional: restrict to one agent
-    limit=50,                         # cap at N most-recent matches
-    dry_run=False,                    # True → list candidates without promoting
+    agent_type="summarizer",  # optional: restrict to one agent
+    limit=50,  # cap at N most-recent matches
+    dry_run=False,  # True → list candidates without promoting
 )
 # returns list[int] of run_ids promoted
 
@@ -121,7 +121,7 @@ report = runner.run(
     version="golden_v2",
     agent_type="summarizer",
     target={"model": "anthropic/claude-opus-4-7"},
-    tag_as="experiment:opus47-v5",   # optional experiment label
+    tag_as="experiment:opus47-v5",  # optional experiment label
 )
 ```
 
@@ -143,14 +143,14 @@ pairs = runner.compare_experiments(
 ## `EvalReport`
 
 ```python
-report.mean_score     # float
-report.median_score   # float
-report.pass_rate      # fraction of runs above threshold
-report.passed         # bool — mean_score >= pass_threshold
+report.mean_score  # float
+report.median_score  # float
+report.pass_rate  # fraction of runs above threshold
+report.passed  # bool — mean_score >= pass_threshold
 
-report.summary()                   # human-readable text block
+report.summary()  # human-readable text block
 report.write_html("out/rep.html")  # self-contained HTML diff file
-report.results                     # list[EvalResult]
+report.results  # list[EvalResult]
 ```
 
 ---
@@ -161,8 +161,8 @@ report.results                     # list[EvalResult]
 @dataclass
 class EvalResult:
     golden_id: int
-    run_id: int       # -1 if the replay call failed before recording
-    score: float      # 0.0-1.0
+    run_id: int  # -1 if the replay call failed before recording
+    score: float  # 0.0-1.0
     passed: bool
     error: str | None  # short message if replay failed outright
 ```
@@ -249,6 +249,7 @@ that builds an `EvalRunner`, prints `report.summary()`, and exits `0` when
 ```python
 from pf_core.eval import register_comparator
 
+
 @register_comparator("amount_compare")
 def amount_compare(golden: dict, replay: dict, *, context: dict) -> float:
     """Pass only when the extracted amount is within tolerance."""
@@ -298,7 +299,7 @@ for (run_id,) in rows:
 # Every input with a reviewed_values row is a candidate.
 # Seed with the expected value as ground_truth.
 for item in reviewed_items:
-    run_id = get_run_id(item.id)   # your project lookup
+    run_id = get_run_id(item.id)  # your project lookup
     repo.add(
         run_id,
         version="golden_v1",
@@ -450,14 +451,16 @@ from pf_core.db import transaction
 
 # Find extractor runs paired with a reviewed value
 with transaction() as conn:
-    rows = conn.execute(text("""
+    rows = conn.execute(
+        text("""
         SELECT r.llm_run_id, g.amount
         FROM extractor_results r
         JOIN reviewed_values g ON g.input_id = r.input_id
         WHERE g.amount IS NOT NULL
         ORDER BY r.created_at DESC
         LIMIT 100
-    """)).fetchall()
+    """)
+    ).fetchall()
 
 repo = GoldenSetRepo()
 for run_id, reviewed_amount in rows:
@@ -500,18 +503,22 @@ from pf_core.eval import EvalRunner
 runner = EvalRunner(config_path="config/eval.yaml")
 
 # Baseline against the current production model (empty target = router config)
-baseline = runner.run(version="golden_v1", agent_type="summarizer",
-                      target={}, tag_as="experiment:baseline")
+baseline = runner.run(
+    version="golden_v1", agent_type="summarizer", target={}, tag_as="experiment:baseline"
+)
 
 # Candidate model
-candidate = runner.run(version="golden_v1", agent_type="summarizer",
-                       target={"model": "anthropic/claude-opus-4-7"},
-                       tag_as="experiment:opus47")
+candidate = runner.run(
+    version="golden_v1",
+    agent_type="summarizer",
+    target={"model": "anthropic/claude-opus-4-7"},
+    tag_as="experiment:opus47",
+)
 
 # Compare, paired by golden member
-pairs = runner.compare_experiments(baseline="experiment:baseline",
-                                   candidate="experiment:opus47",
-                                   agent_type="summarizer")
+pairs = runner.compare_experiments(
+    baseline="experiment:baseline", candidate="experiment:opus47", agent_type="summarizer"
+)
 ```
 
 (Wrap this in your project runner script for command-line / CI use — see

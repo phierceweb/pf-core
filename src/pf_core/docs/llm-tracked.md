@@ -97,11 +97,11 @@ content, usage, run_id = tracked_messages_call(
     agent_type="summarizer",
     messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     model=cfg["model"],
-    sampling=sampling,                                   # forwarded to chat AND recorded
+    sampling=sampling,  # forwarded to chat AND recorded
     chat_kwargs={"response_format": {"type": "json_object"}, "timeout": 120},  # forwarded only
-    spec=spec,                                           # registers system (+ user) prompt ids
+    spec=spec,  # registers system (+ user) prompt ids
     provider="openrouter",
-    input_hash=input_hash,                               # pair with your cache lookup
+    input_hash=input_hash,  # pair with your cache lookup
     configs={"report_config": config_id},
 )
 ```

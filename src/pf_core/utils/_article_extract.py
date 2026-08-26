@@ -31,9 +31,14 @@ def _quiet_extractor_loggers() -> None:
     ``setup_logging`` binds handlers to the root logger, so those records
     surface in every consumer's output as if the app had failed.
     """
-    name = resolve_str(
-        None, _EXTRACTOR_LOG_LEVEL_ENV, default=_EXTRACTOR_LOG_LEVEL_DEFAULT,
-    ) or _EXTRACTOR_LOG_LEVEL_DEFAULT
+    name = (
+        resolve_str(
+            None,
+            _EXTRACTOR_LOG_LEVEL_ENV,
+            default=_EXTRACTOR_LOG_LEVEL_DEFAULT,
+        )
+        or _EXTRACTOR_LOG_LEVEL_DEFAULT
+    )
     level = logging.getLevelNamesMapping().get(name.strip().upper())
     if level is None:
         logger.warning(
@@ -54,6 +59,7 @@ def _quiet_extractor_loggers() -> None:
 try:
     import trafilatura  # type: ignore
     import htmldate  # type: ignore
+
     _HAS_DEPS = True
     _quiet_extractor_loggers()
 except ImportError:
@@ -70,16 +76,18 @@ FETCHER_VERSION = 4
 
 # The complete `FetchedArticle.fetch_status` vocabulary. Exported so a
 # consumer can assert mechanically that it still handles every value.
-FETCH_STATUSES: frozenset[str] = frozenset({
-    "ok",
-    "paywalled",
-    "not_found",
-    "blocked",
-    "timeout",
-    "error",
-    "unsupported_content_type",
-    "no_content",
-})
+FETCH_STATUSES: frozenset[str] = frozenset(
+    {
+        "ok",
+        "paywalled",
+        "not_found",
+        "blocked",
+        "timeout",
+        "error",
+        "unsupported_content_type",
+        "no_content",
+    }
+)
 
 # POST-DECODE form — the transport hands us ``resp.text``, so a non-ASCII
 # signature byte has already collapsed to U+FFFD. JPEG/gzip decode to bare
@@ -102,6 +110,7 @@ def looks_binary(text: str) -> str | None:
         if head.startswith(prefix):
             return label
     return None
+
 
 # Upper bound on the extracted body we keep. Trim saves tokens for
 # downstream LLM consumers; raise it project-side if you need full text.
@@ -148,14 +157,19 @@ def _trafi_extract(html: str, url: str, *, favor_recall: bool) -> dict | None:
     """Run trafilatura with precision or recall preference; None on failure."""
     try:
         doc = trafilatura.bare_extraction(
-            html, url=url, with_metadata=True,
-            include_comments=False, include_tables=False,
-            favor_precision=not favor_recall, favor_recall=favor_recall,
+            html,
+            url=url,
+            with_metadata=True,
+            include_comments=False,
+            include_tables=False,
+            favor_precision=not favor_recall,
+            favor_recall=favor_recall,
             as_dict=True,
         )
     except Exception as e:
-        logger.debug("trafilatura_extract_failed", url=url,
-                     favor_recall=favor_recall, error=str(e)[:200])
+        logger.debug(
+            "trafilatura_extract_failed", url=url, favor_recall=favor_recall, error=str(e)[:200]
+        )
         return None
     return doc if isinstance(doc, dict) else None
 
@@ -184,6 +198,7 @@ def _extract_from_html(
     title = ""
     body = ""
     date_published: _dt.date | None = None
+    date_raw: str | None
 
     doc = _trafi_extract(html, url, favor_recall=False)
     if not (isinstance(doc, dict) and _first_str(doc.get("text"))):
@@ -201,8 +216,11 @@ def _extract_from_html(
     if date_published is None:
         try:
             date_raw = htmldate.find_date(
-                html, url=url, outputformat="%Y-%m-%d",
-                extensive_search=True, original_date=True,
+                html,
+                url=url,
+                outputformat="%Y-%m-%d",
+                extensive_search=True,
+                original_date=True,
             )
         except Exception as e:
             logger.debug("htmldate_failed", url=url, error=str(e)[:200])

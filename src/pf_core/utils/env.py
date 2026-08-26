@@ -197,9 +197,7 @@ def resolve_bool(arg: bool | None, env_var: str, *, default: bool) -> bool:
     return default
 
 
-def resolve_positive_int(
-    arg: int | None, env_var: str, *, default: int, min_value: int = 1
-) -> int:
+def resolve_positive_int(arg: int | None, env_var: str, *, default: int, min_value: int = 1) -> int:
     """Resolve an int that must be ``>= min_value`` (arg → env → default).
 
     A bounded form of :func:`resolve_int`. The asymmetry is deliberate:

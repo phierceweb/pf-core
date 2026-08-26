@@ -48,7 +48,9 @@ def job_detail(job_id: int) -> dict | None:
                 select(job_steps)
                 .where(job_steps.c.job_id == job_id)
                 .order_by(job_steps.c.step_index)
-            ).mappings().fetchall()
+            )
+            .mappings()
+            .fetchall()
         )
         out["events"] = _normalize_all(
             conn.execute(
@@ -56,15 +58,21 @@ def job_detail(job_id: int) -> dict | None:
                 .where(job_events.c.job_id == job_id)
                 .order_by(desc(job_events.c.created_at))
                 .limit(200)
-            ).mappings().fetchall()
+            )
+            .mappings()
+            .fetchall()
         )
         # Child runs summary
-        child_cost = conn.execute(
-            select(
-                func.count().label("runs"),
-                func.coalesce(func.sum(llm_runs.c.cost_usd), 0).label("total_cost"),
-            ).where(llm_runs.c.job_id == job_id)
-        ).mappings().fetchone()
+        child_cost = (
+            conn.execute(
+                select(
+                    func.count().label("runs"),
+                    func.coalesce(func.sum(llm_runs.c.cost_usd), 0).label("total_cost"),
+                ).where(llm_runs.c.job_id == job_id)
+            )
+            .mappings()
+            .fetchone()
+        )
         out["runs_summary"] = _normalize(child_cost) if child_cost else {}
 
     return out

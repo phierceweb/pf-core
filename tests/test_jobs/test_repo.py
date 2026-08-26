@@ -117,9 +117,7 @@ def test_transition_records_outputs_and_error(jobs_db, simple_kind):
     repo = JobRepo()
     job_id = repo.create(kind="simple_pass")
     repo.transition(job_id, "running")
-    repo.transition(
-        job_id, "failed", error="database unreachable", error_class="OperationalError"
-    )
+    repo.transition(job_id, "failed", error="database unreachable", error_class="OperationalError")
     row = repo.get(job_id)
     assert row["status"] == "failed"
     assert row["error"] == "database unreachable"
@@ -227,9 +225,7 @@ def test_reclaim_stale_resets_expired_running_jobs(jobs_db, simple_kind):
     # Simulate a stale claim by back-dating claimed_at far beyond the lease.
     past = datetime(2000, 1, 1, 0, 0, 0)
     with transaction() as conn:
-        conn.execute(
-            update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_at=past)
-        )
+        conn.execute(update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_at=past))
 
     reclaimed = repo.reclaim_stale(lease_seconds=10)
     assert reclaimed == 1
@@ -297,11 +293,11 @@ def test_start_and_finish_step(jobs_db, simple_kind):
     job_id = repo.create(kind="simple_pass")
     repo.transition(job_id, "running")
 
-    step_id = repo.start_step(job_id, name="grade_1", inputs={"submission_id": 1})
+    step_id = repo.start_step(job_id, name="summarize_1", inputs={"item_id": 1})
     time.sleep(0.01)
     repo.finish_step(step_id, outputs={"result": 28})
 
-    step = repo.find_step(job_id, name="grade_1")
+    step = repo.find_step(job_id, name="summarize_1")
     assert step["status"] == "succeeded"
     assert step["outputs"] == {"result": 28}
     # Tight upper bound catches TZ drift: a 10 ms sleep should land under
@@ -425,9 +421,7 @@ def test_finish_step_clamps_negative_duration(jobs_db, simple_kind):
     future = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=1)
     with transaction() as conn:
         conn.execute(
-            update(s.job_steps)
-            .where(s.job_steps.c.id == step_id)
-            .values(started_at=future)
+            update(s.job_steps).where(s.job_steps.c.id == step_id).values(started_at=future)
         )
 
     repo.finish_step(step_id, outputs={"result": 1})
@@ -578,9 +572,7 @@ def test_reclaim_stale_uses_server_side_cutoff(jobs_db, simple_kind):
     # Back-date claimed_at ~1 hour to make it clearly past a 1-second lease.
     past = datetime(2000, 1, 1, 0, 0, 0)
     with transaction() as conn:
-        conn.execute(
-            update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_at=past)
-        )
+        conn.execute(update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_at=past))
 
     assert repo.reclaim_stale(lease_seconds=1) == 1
 
@@ -602,9 +594,7 @@ def test_purge_uses_server_side_cutoff(jobs_db, simple_kind):
     # so the test doesn't depend on SQLite's seconds-precision CURRENT_TIMESTAMP.
     past = datetime(2000, 1, 1, 0, 0, 0)
     with transaction() as conn:
-        conn.execute(
-            update(s.jobs).where(s.jobs.c.id == job_id).values(finished_at=past)
-        )
+        conn.execute(update(s.jobs).where(s.jobs.c.id == job_id).values(finished_at=past))
 
     assert repo.purge(older_than=timedelta(seconds=60)) == 1
     assert repo.get(job_id) is None

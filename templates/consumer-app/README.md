@@ -5,7 +5,7 @@ A pf-core full-stack app (FastAPI + SQLAlchemy, app-layout).
 ## Setup
 
 ```bash
-bin/setup        # venv (3.11+) + editable install + .env
+bin/setup        # venv (3.12+) + editable install + .env
 bin/web          # start the server → http://127.0.0.1:8000/
 ```
 

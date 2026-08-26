@@ -22,7 +22,7 @@ from pf_core.utils.phash import detect_decoration_basenames
 
 decoration_basenames = detect_decoration_basenames(
     list(Path("./images").iterdir()),
-    threshold=10,         # ≥ N occurrences across the set → decoration
+    threshold=10,  # ≥ N occurrences across the set → decoration
     hamming_distance=12,  # cluster phashes within 12 bits
 )
 # {"header_logo.png", "footer_mark.png", ...}
@@ -52,9 +52,9 @@ from pf_core.utils.phash import (
     cluster_phashes,
 )
 
-a = compute_phash(Path("logo_v1.png"))    # "8c3a7e1d04f29b56" — 16 hex chars (64 bits)
+a = compute_phash(Path("logo_v1.png"))  # "8c3a7e1d04f29b56" — 16 hex chars (64 bits)
 b = compute_phash(Path("logo_v2.png"))
-hamming_distance_hex(a, b)                # int 0–64
+hamming_distance_hex(a, b)  # int 0–64
 
 clusters = cluster_phashes([a, b, ...], max_distance=12)
 # list[set[str]] — each cluster is a set of phash strings within max_distance

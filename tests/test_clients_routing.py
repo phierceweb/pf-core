@@ -66,7 +66,8 @@ class TestLazyImport:
         """
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
         with patch.object(
-            claude_code, "get_client",
+            claude_code,
+            "get_client",
             side_effect=AssertionError("claude_code.get_client should not run"),
         ):
             client = get_routed_client(False)

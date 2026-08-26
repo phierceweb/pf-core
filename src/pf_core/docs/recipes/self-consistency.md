@@ -63,7 +63,7 @@ def classify_consistent(text: str, *, n: int = 5) -> dict:
 
     return {
         "label": winner,
-        "agreement": agreement,          # 0.6 = 3/5 agreed
+        "agreement": agreement,  # 0.6 = 3/5 agreed
         "all_labels": labels,
         "winning_run_id": winning_run_id,
     }
@@ -105,7 +105,7 @@ content, usage, run_id = tracked_messages_call(
     messages=messages,
     model=cfg["model"],
     sampling={"temperature": 0.7},
-    metadata={"consistency": f"n={n}"},   # → tag "consistency:n=5"
+    metadata={"consistency": f"n={n}"},  # → tag "consistency:n=5"
 )
 ```
 

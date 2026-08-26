@@ -40,7 +40,7 @@ Exit code: `0` when no check FAILs (WARNs don't flip it), `1` otherwise.
 | Check | Attests |
 |---|---|
 | `copy.loaded` | Which pf-core is actually imported (path, editable/source vs site-packages, `importlib.metadata` version). WARNs when an editable install's metadata version disagrees with the adjacent `pyproject.toml` — the stale-editable trap. |
-| `python.interpreter` | Interpreter version (FAIL below the 3.11 floor) and active venv path. |
+| `python.interpreter` | Interpreter version (FAIL below the 3.12 floor) and active venv path. |
 | `extras.available` | Which optional-dependency extras are importable (probed via `find_spec`, nothing gets imported). Informational — absence is legitimate. |
 | `env.resolution` | The pf-core-recognized env vars as the app would see them — a `.env` in the working directory is loaded first (shell values win), and the report names which. Values redacted: key/token/secret vars presence-only, URL credentials masked. |
 | `router.config` | Model-router config path (loader's chain), parse + schema validation, agent slugs, `default_client`. SKIPs when no config exists. |
@@ -80,8 +80,8 @@ any time, in any state, including mid-incident.
 
 ## Adding a new check
 
-Write a function returning `list[CheckResult]` in `pf_core/doctor.py` and
-append it to the internal checks tuple (or gate it behind a new flag like
-`--db`). Do not build a plugin system — an append is the extension model.
-Keep new checks inside the invariants above: read-only, no network by
-default, no consumer-code imports.
+Write a function returning `list[CheckResult]` in `pf_core/doctor.py` (or
+`_doctor_release.py` for a `--release` check) and append it to the internal
+checks tuple (or gate it behind a new flag like `--db`). Do not build a
+plugin system — an append is the extension model. Keep new checks inside the
+invariants above: read-only, no network by default, no consumer-code imports.

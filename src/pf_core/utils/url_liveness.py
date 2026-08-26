@@ -42,7 +42,7 @@ infrastructure. Consumers wrap this function with their own short-circuit.
 from __future__ import annotations
 
 import json
-from typing import Protocol
+from typing import Protocol, cast
 
 try:
     import httpx
@@ -112,7 +112,7 @@ def _get_with_browser_ua(url: str, timeout: int = 10) -> tuple[int, str]:
             verify=verify_tls(),
             headers=_BROWSER_HEADERS,
         ) as client:
-            resp = guarded_get(client, url)
+            resp = cast(httpx.Response, guarded_get(client, url))
             code = resp.status_code
             if 200 <= code < 300:
                 return code, "ok"

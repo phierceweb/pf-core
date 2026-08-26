@@ -96,10 +96,7 @@ class EvalConfig:
         return AgentEvalConfig(**merged)
 
     def __repr__(self) -> str:
-        return (
-            f"EvalConfig(agents={sorted(self._agents_raw)}, "
-            f"defaults={self._defaults_raw})"
-        )
+        return f"EvalConfig(agents={sorted(self._agents_raw)}, defaults={self._defaults_raw})"
 
 
 def load_eval_config(path: str | None = None) -> EvalConfig:
@@ -128,9 +125,7 @@ def load_eval_config(path: str | None = None) -> EvalConfig:
 
             data = yaml.safe_load(p.read_text()) or {}
         except Exception as exc:
-            raise ConfigurationError(
-                f"Cannot parse eval config {config_path!r}: {exc}"
-            ) from exc
+            raise ConfigurationError(f"Cannot parse eval config {config_path!r}: {exc}") from exc
         cfg = EvalConfig(data)
         _cache[config_path] = cfg
         return cfg

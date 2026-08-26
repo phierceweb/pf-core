@@ -34,8 +34,18 @@ __all__ = [
 ]
 
 _IMAGE_EXTENSIONS = (
-    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
-    ".avif", ".heic", ".bmp", ".tiff", ".ico", ".jxl",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".avif",
+    ".heic",
+    ".bmp",
+    ".tiff",
+    ".ico",
+    ".jxl",
 )
 
 _EXTENSION_RE = re.compile(r"\.[A-Za-z0-9]{1,5}$")

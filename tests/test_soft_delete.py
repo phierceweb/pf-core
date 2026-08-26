@@ -35,10 +35,14 @@ class TestSoftDelete:
         )
         result = soft_delete(pf_connection, "products", "id", "abc", reason="bad data")
         assert result is True
-        row = pf_connection.execute(
-            text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
-            {"id": "abc"},
-        ).mappings().fetchone()
+        row = (
+            pf_connection.execute(
+                text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
+                {"id": "abc"},
+            )
+            .mappings()
+            .fetchone()
+        )
         assert row["deleted_at"] is not None
         assert row["deleted_reason"] == "bad data"
 
@@ -64,10 +68,14 @@ class TestSoftDelete:
         )
         result = soft_delete(pf_connection, "products", "id", "abc")
         assert result is True
-        row = pf_connection.execute(
-            text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
-            {"id": "abc"},
-        ).mappings().fetchone()
+        row = (
+            pf_connection.execute(
+                text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
+                {"id": "abc"},
+            )
+            .mappings()
+            .fetchone()
+        )
         assert row["deleted_at"] is not None
         assert row["deleted_reason"] is None
 
@@ -79,10 +87,14 @@ class TestSoftDelete:
         )
         result = soft_delete(pf_connection, "notes", "id", "abc", reason_column=None)
         assert result is True
-        row = pf_connection.execute(
-            text("SELECT deleted_at FROM notes WHERE id = :id"),
-            {"id": "abc"},
-        ).mappings().fetchone()
+        row = (
+            pf_connection.execute(
+                text("SELECT deleted_at FROM notes WHERE id = :id"),
+                {"id": "abc"},
+            )
+            .mappings()
+            .fetchone()
+        )
         assert row["deleted_at"] is not None
 
 
@@ -90,15 +102,21 @@ class TestRestore:
     @pytest.mark.pf_tables(_PRODUCTS_TABLE)
     def test_restore_deleted_row(self, pf_tables, pf_connection):
         pf_connection.execute(
-            text("INSERT INTO products (id, name, deleted_at, deleted_reason) VALUES (:id, :name, :ts, :reason)"),
+            text(
+                "INSERT INTO products (id, name, deleted_at, deleted_reason) VALUES (:id, :name, :ts, :reason)"
+            ),
             {"id": "abc", "name": "thing", "ts": "2026-01-01T00:00:00Z", "reason": "oops"},
         )
         result = restore(pf_connection, "products", "id", "abc")
         assert result is True
-        row = pf_connection.execute(
-            text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
-            {"id": "abc"},
-        ).mappings().fetchone()
+        row = (
+            pf_connection.execute(
+                text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
+                {"id": "abc"},
+            )
+            .mappings()
+            .fetchone()
+        )
         assert row["deleted_at"] is None
         assert row["deleted_reason"] is None
 
@@ -124,10 +142,14 @@ class TestRestore:
         )
         result = restore(pf_connection, "notes", "id", "abc", reason_column=None)
         assert result is True
-        row = pf_connection.execute(
-            text("SELECT deleted_at FROM notes WHERE id = :id"),
-            {"id": "abc"},
-        ).mappings().fetchone()
+        row = (
+            pf_connection.execute(
+                text("SELECT deleted_at FROM notes WHERE id = :id"),
+                {"id": "abc"},
+            )
+            .mappings()
+            .fetchone()
+        )
         assert row["deleted_at"] is None
 
 
@@ -140,10 +162,14 @@ class TestRoundTrip:
         )
         assert soft_delete(pf_connection, "products", "id", "abc", reason="test") is True
         assert restore(pf_connection, "products", "id", "abc") is True
-        row = pf_connection.execute(
-            text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
-            {"id": "abc"},
-        ).mappings().fetchone()
+        row = (
+            pf_connection.execute(
+                text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
+                {"id": "abc"},
+            )
+            .mappings()
+            .fetchone()
+        )
         assert row["deleted_at"] is None
         assert row["deleted_reason"] is None
 

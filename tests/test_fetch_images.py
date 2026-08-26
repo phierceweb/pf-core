@@ -40,7 +40,9 @@ def _no_network(monkeypatch):
     """Fake DNS resolution and make any real request attempt fail the test."""
 
     def fake_getaddrinfo(host, port, *args, **kwargs):
-        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))
+        ]
 
     monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
 
@@ -128,28 +130,47 @@ class TestSniffImageExt:
         # disk and then skipped on the next pass.
         sniffable = {
             sniff_image_ext(d)
-            for d in (PNG, JPG, GIF, WEBP, SVG, b"BM\x36\x00", b"II*\x00rest",
-                      b"\x00\x00\x01\x00rest", bytes(4) + b"ftypavif",
-                      bytes(4) + b"ftypheic", b"\xff\x0apayload")
+            for d in (
+                PNG,
+                JPG,
+                GIF,
+                WEBP,
+                SVG,
+                b"BM\x36\x00",
+                b"II*\x00rest",
+                b"\x00\x00\x01\x00rest",
+                bytes(4) + b"ftypavif",
+                bytes(4) + b"ftypheic",
+                b"\xff\x0apayload",
+            )
         }
         assert sniffable <= set(_IMAGE_EXTENSIONS)
 
-    @pytest.mark.parametrize("preamble_len,expected", [
-        (100, ".svg"), (600, ".svg"), (3000, ".svg"), (5000, None),
-    ])
+    @pytest.mark.parametrize(
+        "preamble_len,expected",
+        [
+            (100, ".svg"),
+            (600, ".svg"),
+            (3000, ".svg"),
+            (5000, None),
+        ],
+    )
     def test_svg_root_is_found_past_a_preamble(self, preamble_len, expected):
         # A DOCTYPE plus an embedded license header pushes <svg> well past the
         # first 512 bytes; only an implausibly long preamble gives up.
         data = b'<?xml version="1.0"?>\n<!--' + b"x" * preamble_len + b"-->\n<svg/>"
         assert sniff_image_ext(data) == expected
 
-    @pytest.mark.parametrize("data", [
-        b"unrecognized-bytes",
-        b"<!DOCTYPE html><html><body>Login required</body></html>",
-        b'{"error": "forbidden"}',
-        b'<?xml version="1.0"?><error>nope</error>',   # xml prolog alone isn't an SVG
-        b"",
-    ])
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"unrecognized-bytes",
+            b"<!DOCTYPE html><html><body>Login required</body></html>",
+            b'{"error": "forbidden"}',
+            b'<?xml version="1.0"?><error>nope</error>',  # xml prolog alone isn't an SVG
+            b"",
+        ],
+    )
     def test_non_image_bodies_are_unrecognized(self, data):
         assert sniff_image_ext(data) is None
 
@@ -427,9 +448,7 @@ class TestHtmlRefs:
             '<img src="https://example.com/images/b/two.png">\n'
         )
         result = localize_images(doc, tmp_path / "images", fetcher=FakeFetcher())
-        assert result.markdown == (
-            "![fig](images/a-one.png)\n<img src=\"images/b-two.png\">\n"
-        )
+        assert result.markdown == ('![fig](images/a-one.png)\n<img src="images/b-two.png">\n')
         assert sorted(p.name for p in result.saved) == ["a-one.png", "b-two.png"]
 
 
@@ -568,9 +587,7 @@ class TestMalformedBodyContainment:
         urls = [f"https://example.com/images/a/fig-{i}.png" for i in range(5)]
         bad = urls[2]
         doc = tmp_path / "guide.md"
-        doc.write_text(
-            "\n".join(f"![f{i}]({url})" for i, url in enumerate(urls)), encoding="utf-8"
-        )
+        doc.write_text("\n".join(f"![f{i}]({url})" for i, url in enumerate(urls)), encoding="utf-8")
         # Default checkpoint_every=50: nothing is written before the failure, so
         # only the final write can preserve the four successes.
         saved = localize_file(
@@ -618,9 +635,7 @@ class TestNonImageBodies:
     def test_localize_file_leaves_the_ref_remote(self, tmp_path):
         doc = tmp_path / "guide.md"
         doc.write_text("![c](https://cdn.example.com/assets/v2/x)\n", encoding="utf-8")
-        saved = localize_file(
-            doc, tmp_path / "images", fetcher=FakeFetcher(default=self.HTML)
-        )
+        saved = localize_file(doc, tmp_path / "images", fetcher=FakeFetcher(default=self.HTML))
         assert saved == 0
         assert count_remote_images(doc.read_text(encoding="utf-8")) == 1
 

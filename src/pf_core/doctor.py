@@ -18,14 +18,14 @@ import argparse
 import importlib.metadata
 import importlib.util
 import os
-import re
-import subprocess
 import sys
 import tomllib
-from dataclasses import dataclass
 from pathlib import Path
 
-_MIN_PY = (3, 11)
+from pf_core._doctor_release import release_checks
+from pf_core._doctor_types import CheckResult, redact_value
+
+_MIN_PY = (3, 12)
 
 # Env vars pf-core features read, reported by the `env` check.
 _ENV_VARS = (
@@ -75,25 +75,6 @@ _DEP_VERSIONS = (
     "tenacity",
     "typer",
 )
-
-_SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASSWORD", re.IGNORECASE)
-_URL_CREDS = re.compile(r"^([a-z0-9+.-]+://)[^@/]+@", re.IGNORECASE)
-
-
-@dataclass(frozen=True)
-class CheckResult:
-    group: str
-    name: str
-    status: str  # PASS | WARN | FAIL | SKIP
-    detail: str
-
-
-def redact_value(name: str, value: str) -> str:
-    """Redact secrets: key-like vars to presence-only, URL credentials masked."""
-    if _SECRET_NAME.search(name):
-        return "set (redacted)"
-    return _URL_CREDS.sub(r"\1***@", value)
-
 
 # ---------------------------------------------------------------------------
 # Core checks — local, read-only, no network.
@@ -155,7 +136,9 @@ def check_python() -> list[CheckResult]:
     if cur < _MIN_PY:
         return [
             CheckResult(
-                "python", "interpreter", "FAIL",
+                "python",
+                "interpreter",
+                "FAIL",
                 f"{detail} — pf-core requires >= {_MIN_PY[0]}.{_MIN_PY[1]}",
             )
         ]
@@ -184,9 +167,7 @@ def check_env() -> list[CheckResult]:
     lines = [source]
     for var in _ENV_VARS:
         value = os.environ.get(var)
-        lines.append(
-            f"{var}={redact_value(var, value)}" if value else f"{var} unset"
-        )
+        lines.append(f"{var}={redact_value(var, value)}" if value else f"{var} unset")
     return [CheckResult("env", "resolution", "PASS", "; ".join(lines))]
 
 
@@ -204,7 +185,9 @@ def check_router() -> list[CheckResult]:
     default_client = doc.get("default_client") or "(unset)"
     return [
         CheckResult(
-            "router", "config", "PASS",
+            "router",
+            "config",
+            "PASS",
             f"{path}: {len(agents)} agent(s) [{', '.join(agents)}], "
             f"default_client={default_client}",
         )
@@ -232,7 +215,9 @@ def db_checks() -> list[CheckResult]:
 
         return [
             CheckResult(
-                "db", "extra", "SKIP",
+                "db",
+                "extra",
+                "SKIP",
                 f"sqlalchemy not installed — pip install {install_target('db')}",
             )
         ]
@@ -306,116 +291,19 @@ def _migration_result(current_rev: str | None) -> CheckResult:
         return CheckResult("db", "migrations", "WARN", f"cannot read script head: {e}")
     if current_rev is None:
         return CheckResult(
-            "db", "migrations", "WARN",
+            "db",
+            "migrations",
+            "WARN",
             f"db has no alembic_version table; script head is {head}",
         )
     if current_rev != head:
         return CheckResult(
-            "db", "migrations", "WARN",
+            "db",
+            "migrations",
+            "WARN",
             f"db at {current_rev}, script head {head} — run migrations",
         )
     return CheckResult("db", "migrations", "PASS", f"at head {head}")
-
-
-# ---------------------------------------------------------------------------
-# --release group — opt-in; read-only git introspection of the cwd project.
-# ---------------------------------------------------------------------------
-
-
-def _git(*args: str) -> tuple[int, str]:
-    try:
-        proc = subprocess.run(
-            ["git", *args], capture_output=True, text=True, cwd=Path.cwd()
-        )
-    except FileNotFoundError:
-        return 127, ""
-    return proc.returncode, proc.stdout.strip()
-
-
-def _changelog_version() -> str | None:
-    changelog = Path.cwd() / "CHANGELOG.md"
-    if not changelog.is_file():
-        return None
-    match = re.search(r"^## v(\S+)", changelog.read_text(), re.MULTILINE)
-    return match.group(1) if match else None
-
-
-def _cwd_pyproject_version() -> str | None:
-    pyproject = Path.cwd() / "pyproject.toml"
-    if not pyproject.is_file():
-        return None
-    try:
-        with pyproject.open("rb") as fh:
-            return tomllib.load(fh)["project"]["version"]
-    except Exception:
-        return None
-
-
-def release_checks() -> list[CheckResult]:
-    rc, _ = _git("rev-parse", "--git-dir")
-    if rc != 0:
-        return [CheckResult("release", "repo", "SKIP", "not a git repo (or git absent)")]
-
-    results: list[CheckResult] = []
-    pkg_version = _cwd_pyproject_version()
-    cl_version = _changelog_version()
-    if pkg_version is None:
-        results.append(
-            CheckResult("release", "versions", "SKIP", "no pyproject.toml version in cwd")
-        )
-    elif cl_version is None:
-        results.append(
-            CheckResult(
-                "release", "versions", "WARN",
-                f"pyproject {pkg_version}; no v-heading found in CHANGELOG.md",
-            )
-        )
-    elif pkg_version == cl_version:
-        results.append(
-            CheckResult(
-                "release", "versions", "PASS",
-                f"pyproject {pkg_version} == CHANGELOG v{cl_version}",
-            )
-        )
-    else:
-        results.append(
-            CheckResult(
-                "release", "versions", "FAIL",
-                f"pyproject {pkg_version} != CHANGELOG v{cl_version} — sync before tagging",
-            )
-        )
-
-    _, tags_out = _git("tag", "--points-at", "HEAD", "--list", "v*")
-    tags = [t for t in tags_out.splitlines() if t]
-    if not tags:
-        results.append(
-            CheckResult("release", "tag", "SKIP", "no v-tag at HEAD (nothing tagged yet)")
-        )
-    elif pkg_version is not None and f"v{pkg_version}" in tags:
-        results.append(
-            CheckResult("release", "tag", "PASS", f"HEAD tagged {', '.join(tags)}")
-        )
-    else:
-        results.append(
-            CheckResult(
-                "release", "tag", "FAIL",
-                f"HEAD tagged {', '.join(tags)} but pyproject says {pkg_version} — "
-                "a build of this tag will not match",
-            )
-        )
-
-    _, status_out = _git("status", "--porcelain")
-    changes = [line for line in status_out.splitlines() if line]
-    if changes:
-        results.append(
-            CheckResult(
-                "release", "tree", "WARN",
-                f"{len(changes)} uncommitted change(s) — NOT part of any build of HEAD",
-            )
-        )
-    else:
-        results.append(CheckResult("release", "tree", "PASS", "working tree clean"))
-    return results
 
 
 def check_consumer_wiring() -> list[CheckResult]:
@@ -455,11 +343,13 @@ def run_cli(argv: list[str] | None = None) -> int:
         prog="pf-doctor", description="pf-core runtime ground-truth attestation"
     )
     parser.add_argument(
-        "--db", action="store_true",
+        "--db",
+        action="store_true",
         help="include read-only database checks (connect + migration state)",
     )
     parser.add_argument(
-        "--release", action="store_true",
+        "--release",
+        action="store_true",
         help="include release-state checks (tag vs pyproject vs CHANGELOG, dirty tree)",
     )
     args = parser.parse_args(argv)
@@ -474,9 +364,7 @@ def run_cli(argv: list[str] | None = None) -> int:
     table.add_column("detail", overflow="fold")
     styles = {"PASS": "green", "WARN": "yellow", "FAIL": "red", "SKIP": "dim"}
     for r in results:
-        table.add_row(
-            f"[{styles[r.status]}]{r.status}[/]", f"{r.group}.{r.name}", r.detail
-        )
+        table.add_row(f"[{styles[r.status]}]{r.status}[/]", f"{r.group}.{r.name}", r.detail)
     console = Console()
     console.print(table)
 

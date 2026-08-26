@@ -25,9 +25,7 @@ from pf_core.utils.url_liveness import (
 @pytest.fixture(autouse=True)
 def _bypass_ssrf_guard(monkeypatch):
     """Neutralize the SSRF guard here (covered in test_url_safety.py)."""
-    monkeypatch.setattr(
-        "pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None)
 
 
 # ---------------------------------------------------------------------------
@@ -75,9 +73,7 @@ class TestCheckUrlCached:
         assert cache.get_calls == []
 
     def test_ok_passes_through(self):
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(200, "ok")
-        ):
+        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             assert check_url_cached("https://example.com/ok") == (200, "ok")
 
     def test_404_passes_through(self):
@@ -89,45 +85,52 @@ class TestCheckUrlCached:
 
     def test_forbidden_triggers_get_fallback_success(self):
         """HEAD 403 → GET with browser UA → 200 = real content."""
-        with patch(
-            "pf_core.utils.url_liveness.check_url",
-            return_value=(403, "forbidden"),
-        ), patch(
-            "pf_core.utils.url_liveness._get_with_browser_ua",
-            return_value=(200, "ok"),
-        ) as mock_get:
+        with (
+            patch(
+                "pf_core.utils.url_liveness.check_url",
+                return_value=(403, "forbidden"),
+            ),
+            patch(
+                "pf_core.utils.url_liveness._get_with_browser_ua",
+                return_value=(200, "ok"),
+            ) as mock_get,
+        ):
             code, cat = check_url_cached("https://paywalled.example/real")
         assert (code, cat) == (200, "ok")
         mock_get.assert_called_once()
 
     def test_forbidden_get_fallback_still_forbidden(self):
         """HEAD 403 → GET 403 → stays forbidden (real bot-block)."""
-        with patch(
-            "pf_core.utils.url_liveness.check_url",
-            return_value=(403, "forbidden"),
-        ), patch(
-            "pf_core.utils.url_liveness._get_with_browser_ua",
-            return_value=(403, "forbidden"),
+        with (
+            patch(
+                "pf_core.utils.url_liveness.check_url",
+                return_value=(403, "forbidden"),
+            ),
+            patch(
+                "pf_core.utils.url_liveness._get_with_browser_ua",
+                return_value=(403, "forbidden"),
+            ),
         ):
             assert check_url_cached("https://paywalled.example/x") == (403, "forbidden")
 
     def test_401_also_triggers_get_fallback(self):
         """HEAD 401 → GET fallback. 404 via GET indicates fabrication."""
-        with patch(
-            "pf_core.utils.url_liveness.check_url",
-            return_value=(401, "http_401"),
-        ), patch(
-            "pf_core.utils.url_liveness._get_with_browser_ua",
-            return_value=(404, "not_found"),
+        with (
+            patch(
+                "pf_core.utils.url_liveness.check_url",
+                return_value=(401, "http_401"),
+            ),
+            patch(
+                "pf_core.utils.url_liveness._get_with_browser_ua",
+                return_value=(404, "not_found"),
+            ),
         ):
             assert check_url_cached("https://x.example/y") == (404, "not_found")
 
 
 class TestCacheBehavior:
     def test_cache_none_skips_read_and_write(self):
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(200, "ok")
-        ):
+        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             # No cache passed; nothing to inspect, but also nothing should error.
             assert check_url_cached("https://example.com/x", cache=None) == (200, "ok")
 
@@ -141,9 +144,7 @@ class TestCacheBehavior:
 
     def test_cache_miss_writes_through(self):
         cache = FakeCache()
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(200, "ok")
-        ):
+        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             check_url_cached("https://example.com/new", cache=cache)
         assert cache.setex_calls
         key, ttl, value = cache.setex_calls[0]
@@ -153,9 +154,7 @@ class TestCacheBehavior:
 
     def test_custom_cache_key_prefix(self):
         cache = FakeCache()
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(200, "ok")
-        ):
+        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             check_url_cached(
                 "https://example.com/x",
                 cache=cache,
@@ -165,9 +164,7 @@ class TestCacheBehavior:
 
     def test_custom_cache_ttl(self):
         cache = FakeCache()
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(200, "ok")
-        ):
+        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             check_url_cached(
                 "https://example.com/x",
                 cache=cache,
@@ -179,9 +176,7 @@ class TestCacheBehavior:
         """Garbage in cache shouldn't crash — silently re-check."""
         cache = FakeCache()
         cache._data["url_liveness:https://example.com/x"] = "not-json"
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(200, "ok")
-        ) as mock_check:
+        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")) as mock_check:
             assert check_url_cached("https://example.com/x", cache=cache) == (200, "ok")
             mock_check.assert_called_once()
 
@@ -195,12 +190,8 @@ class TestCacheBehavior:
             def setex(self, key, time, value):
                 raise RuntimeError("redis down")
 
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(200, "ok")
-        ):
-            assert check_url_cached(
-                "https://example.com/x", cache=BrokenCache()
-            ) == (200, "ok")
+        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
+            assert check_url_cached("https://example.com/x", cache=BrokenCache()) == (200, "ok")
 
     def test_cache_backend_protocol_runtime_compatibility(self):
         """``CacheBackend`` is a Protocol — duck-typing is what matters."""
@@ -254,8 +245,8 @@ class TestGetWithBrowserUa:
 
     def test_other_exception_returns_error(self):
         with patch("httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.side_effect = (
-                RuntimeError("transport failure")
+            mock_client.return_value.__enter__.return_value.get.side_effect = RuntimeError(
+                "transport failure"
             )
             assert _get_with_browser_ua("https://x.example") == (0, "error")
 
@@ -304,13 +295,16 @@ class TestNegativeCacheTtl:
         assert cache.setex_calls, "verdict was not cached at all"
         return cache.setex_calls[0][1]
 
-    @pytest.mark.parametrize("result", [
-        (0, "error"),
-        (0, "timeout"),
-        (503, "http_503"),
-        (429, "http_429"),
-        (500, "http_500"),
-    ])
+    @pytest.mark.parametrize(
+        "result",
+        [
+            (0, "error"),
+            (0, "timeout"),
+            (503, "http_503"),
+            (429, "http_429"),
+            (500, "http_500"),
+        ],
+    )
     def test_transient_verdicts_get_the_short_ttl(self, result):
         assert self._ttl(result) == DEFAULT_NEGATIVE_CACHE_TTL_SECONDS
 
@@ -325,10 +319,9 @@ class TestNegativeCacheTtl:
 
     def test_browser_ua_fallback_verdict_also_short_ttl(self):
         cache = FakeCache()
-        with patch(
-            "pf_core.utils.url_liveness.check_url", return_value=(403, "forbidden")
-        ), patch(
-            "pf_core.utils.url_liveness._get_with_browser_ua", return_value=(0, "timeout")
+        with (
+            patch("pf_core.utils.url_liveness.check_url", return_value=(403, "forbidden")),
+            patch("pf_core.utils.url_liveness._get_with_browser_ua", return_value=(0, "timeout")),
         ):
             check_url_cached("https://example.com/x", cache=cache)
         assert cache.setex_calls[0][1] == DEFAULT_NEGATIVE_CACHE_TTL_SECONDS

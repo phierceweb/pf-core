@@ -23,7 +23,10 @@ CREATE TABLE report_config (
 ```python
 from pf_core.db import transaction
 from pf_core.db.versioned_config import (
-    get_latest, append_version, latest_version, get_latest_with_fallback,
+    get_latest,
+    append_version,
+    latest_version,
+    get_latest_with_fallback,
 )
 
 with transaction() as conn:
@@ -32,8 +35,11 @@ with transaction() as conn:
 
     # Append a new version (only query changes; the rest carries forward)
     v = append_version(
-        conn, "report_config", {"report_id": 5},
-        {"query": "new query"}, carry_forward=True,
+        conn,
+        "report_config",
+        {"report_id": 5},
+        {"query": "new query"},
+        carry_forward=True,
     )
 
     # Has it changed since I cached version N?
@@ -48,7 +54,7 @@ Highest-`version` row for a scope, as a dict (or `None`).
 
 ```python
 get_latest(conn, "report_config", {"report_id": 5})
-get_latest(conn, "singleton_config", {})        # empty scope = whole table is one scope
+get_latest(conn, "singleton_config", {})  # empty scope = whole table is one scope
 ```
 
 | Parameter | Type | Default | Description |
@@ -68,9 +74,10 @@ Highest `version` for a scope, or `0` if no rows. Use for staleness checks.
 
 ```python
 get_latest_with_fallback(
-    conn, "scoped_config",
-    {"scope_id": 7},          # specific
-    {"scope_id": None},       # project default (NULL scope_id)
+    conn,
+    "scoped_config",
+    {"scope_id": 7},  # specific
+    {"scope_id": None},  # project default (NULL scope_id)
 )
 ```
 
@@ -80,8 +87,9 @@ Insert a new version row and return its number (prior max + 1; `1` for a new sco
 
 ```python
 append_version(conn, "report_config", {"report_id": 5}, {"query": "q"})
-append_version(conn, "report_config", {"report_id": 5}, {"query": "q2"},
-               carry_forward=True)   # copy unspecified columns from the prior version
+append_version(
+    conn, "report_config", {"report_id": 5}, {"query": "q2"}, carry_forward=True
+)  # copy unspecified columns from the prior version
 ```
 
 | Parameter | Type | Default | Description |

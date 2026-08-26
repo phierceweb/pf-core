@@ -25,11 +25,11 @@ Parse a `YYYY-MM-DD` string into a `date` object. Raises `InvalidInputError` on 
 ```python
 from pf_core.utils.dates import parse_date
 
-d = parse_date("2026-04-14")       # date(2026, 4, 14)
-d = parse_date("  2026-04-14  ")   # whitespace stripped
-parse_date("04-14-2026")           # InvalidInputError: Invalid date format
-parse_date("2026-02-30")           # InvalidInputError: Invalid calendar date
-parse_date(None)                   # InvalidInputError: Date is required
+d = parse_date("2026-04-14")  # date(2026, 4, 14)
+d = parse_date("  2026-04-14  ")  # whitespace stripped
+parse_date("04-14-2026")  # InvalidInputError: Invalid date format
+parse_date("2026-02-30")  # InvalidInputError: Invalid calendar date
+parse_date(None)  # InvalidInputError: Date is required
 ```
 
 Rejects month=00, day=00, impossible calendar dates (e.g. Feb 30), and non-leap-year Feb 29.
@@ -41,9 +41,9 @@ Like `parse_date` but returns `None` instead of raising:
 ```python
 from pf_core.utils.dates import try_parse_date
 
-try_parse_date("2026-04-14")   # date(2026, 4, 14)
-try_parse_date("nope")         # None
-try_parse_date(None)           # None
+try_parse_date("2026-04-14")  # date(2026, 4, 14)
+try_parse_date("nope")  # None
+try_parse_date(None)  # None
 ```
 
 Useful for best-effort parsing where invalid dates should be silently skipped.
@@ -55,12 +55,12 @@ The date-*time* counterpart to `parse_date`. Parses an ISO-ish timestamp into a 
 ```python
 from pf_core.utils.dates import parse_timestamp
 
-parse_timestamp("2026-04-14T09:30:00Z")   # datetime(2026,4,14,9,30, tzinfo=utc)
-parse_timestamp("2026-04-14T09:30:00")    # same — trailing Z optional
-parse_timestamp("2026-04-14T09:30")       # minute precision
-parse_timestamp("2026-04-14")             # midnight UTC
-parse_timestamp("14-04-2026 09:30")       # InvalidInputError: Invalid timestamp
-parse_timestamp(None)                     # InvalidInputError: Timestamp is required
+parse_timestamp("2026-04-14T09:30:00Z")  # datetime(2026,4,14,9,30, tzinfo=utc)
+parse_timestamp("2026-04-14T09:30:00")  # same — trailing Z optional
+parse_timestamp("2026-04-14T09:30")  # minute precision
+parse_timestamp("2026-04-14")  # midnight UTC
+parse_timestamp("14-04-2026 09:30")  # InvalidInputError: Invalid timestamp
+parse_timestamp(None)  # InvalidInputError: Timestamp is required
 ```
 
 UTC-only by design — every result is stamped `timezone.utc`. A naive local time would be a bug in a system that stores and compares timestamps in UTC.
@@ -74,7 +74,7 @@ from datetime import datetime, timezone
 from pf_core.utils.dates import to_iso
 
 to_iso(datetime(2026, 4, 14, 9, 30, tzinfo=timezone.utc))  # "2026-04-14T09:30:00Z"
-to_iso(datetime(2026, 4, 14, 9, 30))                       # naive → assumed UTC
+to_iso(datetime(2026, 4, 14, 9, 30))  # naive → assumed UTC
 # tz-aware non-UTC input is converted to UTC first
 ```
 
@@ -87,10 +87,10 @@ Convert `YYYY-MM` to a human-readable label:
 ```python
 from pf_core.utils.dates import month_label
 
-month_label("2026-04")   # "April 2026"
-month_label("2025-01")   # "January 2025"
-month_label("bad")       # "bad" (returns input on failure)
-month_label("")          # ""
+month_label("2026-04")  # "April 2026"
+month_label("2025-01")  # "January 2025"
+month_label("bad")  # "bad" (returns input on failure)
+month_label("")  # ""
 ```
 
 ### date_range

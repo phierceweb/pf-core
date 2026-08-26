@@ -6,13 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "__NAME__"
 version = "0.1.0"
 description = "A pf-core full-stack app (FastAPI + SQLAlchemy)."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     # pf-core with the whole framework surface. Add a DB driver extra
     # ([postgres] or [mysql]) for non-SQLite backends. Pinned to a compatible
     # PyPI release (picks up patch/minor within the line). 0.4+ carries the
     # config-driven structural gate (config in .pf-guards.toml).
-    "pf-core[__EXTRAS__]~=0.19.0",
+    "pf-core[__EXTRAS__]~=0.20.0",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +29,7 @@ pythonpath = ["."]
 # Ruff config mirrors pf-core's conservative set (see .ai/rules/code-style.md).
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "B"]

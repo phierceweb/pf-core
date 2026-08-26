@@ -110,10 +110,7 @@ def price_call(
                 ),
             )
         return None
-    cost = (
-        prompt_tokens * rates.input / 1_000_000
-        + completion_tokens * rates.output / 1_000_000
-    )
+    cost = prompt_tokens * rates.input / 1_000_000 + completion_tokens * rates.output / 1_000_000
     if rates.cache_read is not None:
         cost += cache_read_tokens * rates.cache_read / 1_000_000
     cache_write_rate = rates.cache_write

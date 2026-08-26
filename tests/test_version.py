@@ -3,6 +3,7 @@
 ``__version__`` derives from the installed distribution metadata — the single
 source of truth. Fails if a hand-maintained literal is reintroduced.
 """
+
 from __future__ import annotations
 
 from importlib.metadata import version

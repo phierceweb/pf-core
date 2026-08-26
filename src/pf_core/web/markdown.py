@@ -22,8 +22,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from typing import Any, Protocol
 
 from markupsafe import Markup, escape
+
+
+class _SupportsJinjaEnv(Protocol):
+    env: Any
+
 
 # --- Inline patterns ---
 
@@ -91,9 +97,7 @@ def _apply_links(text: str) -> tuple[str, list[str]]:
         if _is_safe_href(href):
             hrefs.append(href)
             slot = _HREF_SLOT.format(len(hrefs) - 1)
-            out.append(
-                f'<a href="{slot}" rel="nofollow noopener" target="_blank">{label}</a>'
-            )
+            out.append(f'<a href="{slot}" rel="nofollow noopener" target="_blank">{label}</a>')
         else:
             # Unsafe scheme — drop the link, keep the (already-escaped) label text.
             out.append(label)
@@ -216,7 +220,7 @@ def safe_markdown(
 
 
 def setup_markdown_filter(
-    templates: object,
+    templates: _SupportsJinjaEnv,
     *,
     filter_name: str = "markdown",
     extra_transforms: list[Callable[[str], str]] | None = None,
@@ -238,4 +242,4 @@ def setup_markdown_filter(
             heading_offset=heading_offset,
         )
 
-    templates.env.filters[filter_name] = _filter  # type: ignore[union-attr]
+    templates.env.filters[filter_name] = _filter

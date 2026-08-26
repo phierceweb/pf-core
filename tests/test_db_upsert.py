@@ -33,7 +33,8 @@ pytest_plugins = ["pf_core.testing.db_fixtures"]
 
 _md = MetaData()
 _widgets = Table(
-    "widgets", _md,
+    "widgets",
+    _md,
     Column("slug", Text, primary_key=True),
     Column("name", Text),
     Column("n", Integer),
@@ -55,7 +56,9 @@ def test_insert_ignore_inserts_then_skips(widgets):
     with transaction() as c:
         assert insert_ignore(c, widgets, {"slug": "a", "name": "A", "n": 1}, conflict=["slug"]) == 1
         # conflict on the same slug → not inserted, original preserved
-        assert insert_ignore(c, widgets, {"slug": "a", "name": "A2", "n": 2}, conflict=["slug"]) == 0
+        assert (
+            insert_ignore(c, widgets, {"slug": "a", "name": "A2", "n": 2}, conflict=["slug"]) == 0
+        )
     with transaction() as c:
         row = c.execute(text("SELECT name, n FROM widgets WHERE slug = 'a'")).fetchone()
     assert tuple(row) == ("A", 1)
@@ -63,8 +66,12 @@ def test_insert_ignore_inserts_then_skips(widgets):
 
 def test_upsert_inserts_then_updates(widgets):
     with transaction() as c:
-        upsert(c, widgets, {"slug": "b", "name": "B", "n": 1}, conflict=["slug"], update=["name", "n"])
-        upsert(c, widgets, {"slug": "b", "name": "B2", "n": 2}, conflict=["slug"], update=["name", "n"])
+        upsert(
+            c, widgets, {"slug": "b", "name": "B", "n": 1}, conflict=["slug"], update=["name", "n"]
+        )
+        upsert(
+            c, widgets, {"slug": "b", "name": "B2", "n": 2}, conflict=["slug"], update=["name", "n"]
+        )
     with transaction() as c:
         row = c.execute(text("SELECT name, n FROM widgets WHERE slug = 'b'")).fetchone()
     assert tuple(row) == ("B2", 2)
@@ -95,7 +102,9 @@ def _up(name):
     return _upsert_stmt(name, _widgets, {"slug": "b", "name": "B", "n": 1}, ["slug"], ["name", "n"])
 
 
-@pytest.mark.parametrize("name,dialect", [("postgresql", postgresql.dialect()), ("sqlite", sqlite.dialect())])
+@pytest.mark.parametrize(
+    "name,dialect", [("postgresql", postgresql.dialect()), ("sqlite", sqlite.dialect())]
+)
 def test_on_conflict_dialects(name, dialect):
     ii = _sql(_ii(name), dialect)
     assert "ON CONFLICT (SLUG) DO NOTHING" in ii
@@ -170,7 +179,8 @@ def test_mysql_roundtrip(mysql_engine):
     assert mysql_engine.dialect.name in ("mysql", "mariadb")  # really a MySQL family server
     md = MetaData()
     t = Table(
-        "pf_core_upsert_test", md,
+        "pf_core_upsert_test",
+        md,
         Column("slug", String(64), primary_key=True),  # MySQL PKs need a bounded length
         Column("name", Text),
         Column("n", Integer),
@@ -182,10 +192,16 @@ def test_mysql_roundtrip(mysql_engine):
             assert insert_ignore(c, t, {"slug": "a", "name": "A", "n": 1}, conflict=["slug"]) == 1
             # second insert conflicts → skipped (rowcount 0) AND the original row is untouched
             assert insert_ignore(c, t, {"slug": "a", "name": "A2", "n": 2}, conflict=["slug"]) == 0
-            row = c.execute(text("SELECT name, n FROM pf_core_upsert_test WHERE slug = 'a'")).fetchone()
+            row = c.execute(
+                text("SELECT name, n FROM pf_core_upsert_test WHERE slug = 'a'")
+            ).fetchone()
             assert tuple(row) == ("A", 1)
-            upsert(c, t, {"slug": "a", "name": "A3", "n": 3}, conflict=["slug"], update=["name", "n"])
-            row = c.execute(text("SELECT name, n FROM pf_core_upsert_test WHERE slug = 'a'")).fetchone()
+            upsert(
+                c, t, {"slug": "a", "name": "A3", "n": 3}, conflict=["slug"], update=["name", "n"]
+            )
+            row = c.execute(
+                text("SELECT name, n FROM pf_core_upsert_test WHERE slug = 'a'")
+            ).fetchone()
             assert tuple(row) == ("A3", 3)
     finally:
         md.drop_all(mysql_engine)

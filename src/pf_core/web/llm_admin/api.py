@@ -43,18 +43,33 @@ def register_api_routes(router: APIRouter) -> None:
     ):
         s, u = q.parse_window(since, until, default_days=7)
         rows = q.list_runs(
-            since=s, until=u, agent_type=agent_type, model=model, status=status,
-            job_id=job_id, min_cost=min_cost, limit=limit, offset=offset,
+            since=s,
+            until=u,
+            agent_type=agent_type,
+            model=model,
+            status=status,
+            job_id=job_id,
+            min_cost=min_cost,
+            limit=limit,
+            offset=offset,
         )
         total = q.count_runs(
-            since=s, until=u, agent_type=agent_type, model=model, status=status,
-            job_id=job_id, min_cost=min_cost,
+            since=s,
+            until=u,
+            agent_type=agent_type,
+            model=model,
+            status=status,
+            job_id=job_id,
+            min_cost=min_cost,
         )
         return {
             "data": rows,
             "meta": {
-                "since": s.isoformat(), "until": u.isoformat(),
-                "total": total, "limit": limit, "offset": offset,
+                "since": s.isoformat(),
+                "until": u.isoformat(),
+                "total": total,
+                "limit": limit,
+                "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None,
             },
         }
@@ -94,7 +109,9 @@ def register_api_routes(router: APIRouter) -> None:
         return {
             "data": rows,
             "meta": {
-                "total": total, "limit": limit, "offset": offset,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None,
             },
         }

@@ -42,9 +42,7 @@ def _request() -> httpx.Request:
 
 
 def _status_error(cls, code: int):
-    return cls(
-        f"{code}", response=httpx.Response(code, request=_request()), body=None
-    )
+    return cls(f"{code}", response=httpx.Response(code, request=_request()), body=None)
 
 
 def _timeout(cause: Exception) -> APITimeoutError:
@@ -155,9 +153,7 @@ class TestRetryBacksOff:
 
     def test_sleeps_between_attempts(self, _no_sleep):
         with patch("anthropic.Anthropic") as mock_sdk:
-            mock_sdk.return_value.messages.create.side_effect = _status_error(
-                RateLimitError, 429
-            )
+            mock_sdk.return_value.messages.create.side_effect = _status_error(RateLimitError, 429)
             client = AnthropicClient(api_key="k", model="m", retry=2)
             with pytest.raises(AnthropicError):
                 client.chat(messages=[{"role": "user", "content": "x"}])

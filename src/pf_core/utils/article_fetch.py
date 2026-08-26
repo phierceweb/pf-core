@@ -151,9 +151,7 @@ def fetch_article(
     outlet = domain_of(url)
 
     if wayback_fallback is None:
-        wayback_fallback = os.environ.get(
-            "PF_ARTICLE_WAYBACK_FALLBACK", "1"
-        ).strip() != "0"
+        wayback_fallback = os.environ.get("PF_ARTICLE_WAYBACK_FALLBACK", "1").strip() != "0"
 
     # ── live fetch with retry ──
     fetch_status, body_text = _live_fetch_with_retry(url)
@@ -231,8 +229,7 @@ def _live_fetch_with_retry(url: str) -> tuple[str, str]:
                 raise _TransientFetchError("empty body on 2xx")
             kind = looks_binary(text)
             if kind:
-                logger.debug("article_unsupported_content_type",
-                             url=url, kind=kind)
+                logger.debug("article_unsupported_content_type", url=url, kind=kind)
                 return "unsupported_content_type", ""
             return "ok", text
         if code == 401 or category == "forbidden":
@@ -244,7 +241,8 @@ def _live_fetch_with_retry(url: str) -> tuple[str, str]:
     retryer = Retrying(
         stop=stop_after_attempt(_RETRY_ATTEMPTS),
         wait=wait_exponential_jitter(
-            initial=_RETRY_INITIAL_WAIT, max=_RETRY_MAX_WAIT,
+            initial=_RETRY_INITIAL_WAIT,
+            max=_RETRY_MAX_WAIT,
         ),
         retry=retry_if_exception_type(_TransientFetchError),
         reraise=True,
@@ -263,7 +261,9 @@ def _live_fetch_with_retry(url: str) -> tuple[str, str]:
 
 
 def _try_wayback(
-    url: str, *, event_date: _dt.date | None,
+    url: str,
+    *,
+    event_date: _dt.date | None,
 ) -> FetchedArticle | None:
     """Look up the Wayback Machine; if a snapshot exists, fetch + extract it.
 
@@ -277,7 +277,9 @@ def _try_wayback(
     if status != "ok" or not body:
         logger.debug(
             "wayback_fetch_failed",
-            url=url, snapshot=snapshot, status=status,
+            url=url,
+            snapshot=snapshot,
+            status=status,
         )
         return None
 

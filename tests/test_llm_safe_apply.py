@@ -112,9 +112,7 @@ class TestDetectDrift:
 
 class TestDriftReport:
     def test_has_drift_true_on_count_change(self) -> None:
-        r = DriftReport(
-            count_changed=True, gathered_count=2, current_count=3, drifted_indices=()
-        )
+        r = DriftReport(count_changed=True, gathered_count=2, current_count=3, drifted_indices=())
         assert r.has_drift is True
 
     def test_has_drift_true_on_text_drift(self) -> None:
@@ -124,9 +122,7 @@ class TestDriftReport:
         assert r.has_drift is True
 
     def test_has_drift_false_when_clean(self) -> None:
-        r = DriftReport(
-            count_changed=False, gathered_count=3, current_count=3, drifted_indices=()
-        )
+        r = DriftReport(count_changed=False, gathered_count=3, current_count=3, drifted_indices=())
         assert r.has_drift is False
 
 

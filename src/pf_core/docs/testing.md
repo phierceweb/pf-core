@@ -40,6 +40,7 @@ Setup also clears the `pf_core.llm.tracking` resolver caches (when the tracking 
 @pytest.fixture
 def pf_engine_teardown():
     from app.jobs import wait_all
+
     return lambda: wait_all(timeout=10.0)
 ```
 
@@ -51,9 +52,10 @@ Tests that exercise pf-core's jobs / tracking / cache / budget subsystems need t
 # conftest.py
 from pf_core.testing.db_fixtures import framework_ddl
 
+
 @pytest.fixture
 def pf_schema():
-    return framework_ddl() + PROJECT_DDL   # framework first: project FKs may reference jobs(id)
+    return framework_ddl() + PROJECT_DDL  # framework first: project FKs may reference jobs(id)
 ```
 
 `framework_ddl(dialect="sqlite", if_not_exists=True)` emits every pf-core-owned table (tracking, jobs, cache, budget) in dependency order, then indexes. `metadata_ddl(metadata, ...)` does the same for any SQLAlchemy `MetaData` — use it for a project's own declarative metadata, or with `pf_core.jobs._schema.metadata` in a jobs-only consumer that doesn't install the `[tracking]` closure.
@@ -96,11 +98,8 @@ Creates tables before the test runs. Two ways to provide DDL:
 **Via marker** (per-test):
 
 ```python
-@pytest.mark.pf_tables(
-    "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
-)
-def test_items(pf_tables, pf_connection):
-    ...
+@pytest.mark.pf_tables("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+def test_items(pf_tables, pf_connection): ...
 ```
 
 **Via fixture** (project-wide):
@@ -114,8 +113,8 @@ def pf_schema():
         "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE)",
     ]
 
-def test_items(pf_tables, pf_connection):
-    ...
+
+def test_items(pf_tables, pf_connection): ...
 ```
 
 Both can be combined — marker DDL runs after `pf_schema`.
@@ -129,7 +128,9 @@ httpx `AsyncClient` bound to your FastAPI app. Requires you to define a `pf_app`
 @pytest.fixture
 def pf_app():
     from app.api import app
+
     return app
+
 
 # test_api.py
 async def test_health(pf_app_client):
@@ -145,6 +146,7 @@ import pytest
 from pf_core.db import transaction
 from sqlalchemy import text
 
+
 @pytest.fixture
 def pf_schema():
     return [
@@ -152,20 +154,22 @@ def pf_schema():
         "CREATE TABLE entries (id TEXT PRIMARY KEY, section_id INTEGER REFERENCES sections(id))",
     ]
 
+
 @pytest.fixture
 def pf_app():
     from app import create_app
+
     return create_app()
+
 
 # test_entries.py
 def test_create_entry(pf_tables, pf_connection):
     pf_connection.execute(text("INSERT INTO sections (id, name) VALUES (1, 'Test')"))
     pf_connection.execute(text("INSERT INTO entries (id, section_id) VALUES ('E001', 1)"))
 
-    row = pf_connection.execute(
-        text("SELECT * FROM entries WHERE id = 'E001'")
-    ).fetchone()
+    row = pf_connection.execute(text("SELECT * FROM entries WHERE id = 'E001'")).fetchone()
     assert row is not None
+
 
 async def test_api_sections(pf_tables, pf_app_client):
     resp = await pf_app_client.get("/api/sections")
@@ -197,8 +201,8 @@ from pf_core.db.models import clear_cache
 from pf_core.clients.openrouter import reset_client
 from pf_core.cache.redis import reset_cache
 
-reset_engine()     # dispose and reset the DB engine singleton
-clear_cache()      # clear the model name → ID cache
-reset_client()     # reset the OpenRouter client singleton
-reset_cache()      # reset the RedisCache singleton
+reset_engine()  # dispose and reset the DB engine singleton
+clear_cache()  # clear the model name → ID cache
+reset_client()  # reset the OpenRouter client singleton
+reset_cache()  # reset the RedisCache singleton
 ```

@@ -62,8 +62,12 @@ def client():
     @app.get("/budget-exceeded")
     async def raise_budget_exceeded():
         raise CostBudgetExceeded(
-            scope_kind="agent", scope_value="drafter", period="daily",
-            limit_usd=10.0, spent_usd=9.5, projected_usd=1.0,
+            scope_kind="agent",
+            scope_value="drafter",
+            period="daily",
+            limit_usd=10.0,
+            spent_usd=9.5,
+            projected_usd=1.0,
         )
 
     @app.get("/app-error")

@@ -385,9 +385,7 @@ def test_call_with_fallback_respects_retry_on_filter(tmp_path, monkeypatch, fake
     _point_at(tmp_path, monkeypatch, ROUTED_YAML)
 
     with pytest.raises(RuntimeError, match="boom-a"):
-        call_with_fallback(
-            "routed", [{"role": "user", "content": "hi"}], retry_on=(ValueError,)
-        )
+        call_with_fallback("routed", [{"role": "user", "content": "hi"}], retry_on=(ValueError,))
 
     assert fakes["fake_b"].instances == []
 

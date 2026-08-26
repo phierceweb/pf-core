@@ -8,8 +8,10 @@ Shared LLM cost estimation. One home for per-model rates, used by the clients to
 from pf_core.pricing import estimate_cost
 
 cost = estimate_cost(
-    "anthropic", "claude-opus-4-7",
-    prompt_tokens=51_096, completion_tokens=2_628,
+    "anthropic",
+    "claude-opus-4-7",
+    prompt_tokens=51_096,
+    completion_tokens=2_628,
 )
 ```
 

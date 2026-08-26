@@ -36,8 +36,11 @@ my_config = BaselineConfig(
 
 make_baseline_subcommand_group(app, config=my_config)
 make_invalidate_subcommand(
-    app, registry=REGISTRY, run_record_filename=".myapp-run.json",
+    app,
+    registry=REGISTRY,
+    run_record_filename=".myapp-run.json",
 )
+
 
 def main():
     run_cli(app)

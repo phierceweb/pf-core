@@ -7,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -15,6 +15,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[full,articles,anthropic,image-phash,dev]"
       - run: python -m pytest tests/ -q
+      # Typecheck needs the full closure above; config in [tool.mypy].
+      - run: python -m mypy
+        if: matrix.python-version == '3.12'
 
   # The extras-tiering claims stay honest: the base install must import and
   # pass the bare smoke without the LLM/db/web stacks present.
@@ -24,6 +27,6 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - run: pip install -e .
       - run: python bin/bare_install_smoke.py

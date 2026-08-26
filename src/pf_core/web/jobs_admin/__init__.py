@@ -8,7 +8,7 @@ mounted into a consumer app with one call::
 
     app.include_router(make_jobs_router(
         auth_dep=require_admin,            # required; allow_unauthenticated=True to run open
-        kind_labels={"grading_pass": "grade"},
+        kind_labels={"report_pass": "report"},
         describe=lambda job: {"label": short_scope(job), "href": section_url(job)},
         terminate_hook=terminate_job,      # subprocess-mode consumers only
     ))
@@ -104,9 +104,10 @@ def make_jobs_router(
 
     def _display(job: dict) -> dict:
         scope = describe(job) if describe is not None else None
+        kind = job.get("kind")
         return {
             **job,
-            "action": labels.get(job.get("kind"), job.get("kind")),
+            "action": labels.get(kind, kind) if kind is not None else None,
             "scope": scope or {},
         }
 
@@ -119,12 +120,19 @@ def make_jobs_router(
         dir: str = Query("desc"),
     ):
         pg = paginate_params(
-            page, per_page, sort, dir,
-            allowed_sorts=_SORTS, default_sort="created_at", default_dir="desc",
+            page,
+            per_page,
+            sort,
+            dir,
+            allowed_sorts=_SORTS,
+            default_sort="created_at",
+            default_dir="desc",
         )
         rows, total = JobRepo().find_page(
-            sort=pg["sort"], direction=pg["dir"],
-            limit=pg["per_page"], offset=pg["offset"],
+            sort=pg["sort"],
+            direction=pg["dir"],
+            limit=pg["per_page"],
+            offset=pg["offset"],
         )
         total_pages = max(1, math.ceil(total / pg["per_page"]))
         return templates.TemplateResponse(

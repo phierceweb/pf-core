@@ -46,15 +46,10 @@ class TestExportWrite:
 
 
 class TestExportIncremental:
-    def test_reexport_identical_is_unchanged_and_preserves_mtime(
-        self, tmp_path: Path
-    ) -> None:
+    def test_reexport_identical_is_unchanged_and_preserves_mtime(self, tmp_path: Path) -> None:
         exp = _FakeExporter([("a.md", "alpha"), ("b.md", "bravo")])
         exp.export(tmp_path)
-        mtimes = {
-            p.name: (tmp_path / p.name).stat().st_mtime_ns
-            for p in tmp_path.iterdir()
-        }
+        mtimes = {p.name: (tmp_path / p.name).stat().st_mtime_ns for p in tmp_path.iterdir()}
 
         result = exp.export(tmp_path)
 
@@ -65,9 +60,7 @@ class TestExportIncremental:
     def test_only_changed_artifact_is_rewritten(self, tmp_path: Path) -> None:
         _FakeExporter([("a.md", "alpha"), ("b.md", "bravo")]).export(tmp_path)
 
-        result = _FakeExporter(
-            [("a.md", "alpha"), ("b.md", "BRAVO-2")]
-        ).export(tmp_path)
+        result = _FakeExporter([("a.md", "alpha"), ("b.md", "BRAVO-2")]).export(tmp_path)
 
         assert (result.written, result.unchanged) == (1, 1)
         assert (tmp_path / "b.md").read_text() == "BRAVO-2"
@@ -92,9 +85,7 @@ class TestExportPrune:
 
         assert (tmp_path / "keep.txt").read_text() == "hand-written, not ours"
 
-    def test_prune_does_not_touch_unproduced_directories(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_does_not_touch_unproduced_directories(self, tmp_path: Path) -> None:
         """A managed file in a directory the exporter never wrote to survives."""
         (tmp_path / "other").mkdir()
         (tmp_path / "other" / "keep.md").write_text("not in the export's subtree")

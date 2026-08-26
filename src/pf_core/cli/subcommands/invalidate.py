@@ -69,9 +69,7 @@ def make_invalidate_subcommand(
     ) -> None:
         """Bust pipeline caches without re-running."""
         if stage not in stage_names:
-            raise typer.BadParameter(
-                f"stage must be one of {stage_names}; got {stage!r}"
-            )
+            raise typer.BadParameter(f"stage must be one of {stage_names}; got {stage!r}")
 
         if source_stem is None:
             source_stem = _infer_source_stem(output_dir, run_record_filename)

@@ -109,6 +109,7 @@ Handles types the stdlib JSON encoder can't serialize: `date`, `datetime`, `Deci
 ```python
 from pf_core.web.json import safe_json_response
 
+
 @router.get("/api/events")
 async def list_events():
     rows = repo.list_events()  # may contain dates, Decimals, Row objects
@@ -140,10 +141,10 @@ from pf_core.web.rate_limit import setup_rate_limit
 app = create_app(title="My App")
 limiter = setup_rate_limit(app)
 
+
 @app.get("/expensive")
 @limiter.limit("5/minute")
-async def expensive(request: Request):
-    ...
+async def expensive(request: Request): ...
 ```
 
 Storage backend: Redis if `REDIS_URL` is set, otherwise in-memory. If `slowapi` is not installed, rate limiting is silently skipped.
@@ -189,9 +190,9 @@ For routes that need the database, use `require_db` as a FastAPI dependency. Ret
 from fastapi import Depends
 from pf_core.web.health import require_db
 
+
 @app.get("/data", dependencies=[Depends(require_db)])
-async def get_data():
-    ...
+async def get_data(): ...
 ```
 
 `require_db_sync` is the plain-function twin for guards **called inline** rather than declared as dependencies (`require_db_sync()` as the first statement of a route or helper). Calling the async variant inline would return an un-awaited coroutine and silently skip the check — use the sync twin anywhere you call it yourself. It also works under `Depends()` (FastAPI runs sync dependencies in the threadpool).
@@ -223,6 +224,7 @@ Returns the value if not None, raises `NotFoundError` (mapped to 404) otherwise:
 
 ```python
 from pf_core.web.helpers import resolve_or_404
+
 
 @router.get("/entries/{entry_id}")
 async def get_entry(entry_id: str):
@@ -269,6 +271,7 @@ templates = setup_templates(
 app.include_router(health_router())
 
 from app.api import pages, entries, admin  # noqa: E402
+
 app.include_router(pages.router)
 app.include_router(entries.router, prefix="/api")
 app.include_router(admin.router, prefix="/api/admin")

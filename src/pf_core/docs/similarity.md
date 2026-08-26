@@ -29,8 +29,8 @@ Create character k-grams from text for set-based comparison.
 ```python
 from pf_core.utils.similarity import shingle
 
-shingle("abcdef")        # {"abcd", "bcde", "cdef"}  (k=4 default)
-shingle("abcdef", k=2)   # {"ab", "bc", "cd", "de", "ef"}
+shingle("abcdef")  # {"abcd", "bcde", "cdef"}  (k=4 default)
+shingle("abcdef", k=2)  # {"ab", "bc", "cd", "de", "ef"}
 ```
 
 | Parameter | Type | Default | Description |
@@ -66,7 +66,7 @@ from pf_core.utils.similarity import is_near_duplicate
 
 is_near_duplicate("hello world", "hello world")  # True
 is_near_duplicate(text_a, text_b, threshold=0.9)  # stricter
-is_near_duplicate(text_a, text_b, k=2)            # more forgiving
+is_near_duplicate(text_a, text_b, k=2)  # more forgiving
 ```
 
 | Parameter | Type | Default | Description |
@@ -94,6 +94,7 @@ Replace a hand-rolled `similarity` helper in your project:
 # Before
 def shingle(text, k=4): ...
 def jaccard(a, b): ...
+
 
 # After — re-export from pf-core
 from pf_core.utils.similarity import shingle, jaccard

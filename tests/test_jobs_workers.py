@@ -75,6 +75,7 @@ class TestRunSubprocessJob:
         run_subprocess_job(row, _spec(tmp_path, _py(code)))
         assert out.read_text() == str(job_id)
 
+
 class TestTerminate:
     def test_returns_false_when_not_running(self):
         assert terminate_job(999999) is False
@@ -120,7 +121,10 @@ class TestWorkerPool:
 
         job_id = JobRepo().create(kind=KIND, created_by="test")
         handle = start_workers(
-            kinds=[KIND], run=run, concurrency=1, poll_seconds=0.05,
+            kinds=[KIND],
+            run=run,
+            concurrency=1,
+            poll_seconds=0.05,
             reclaim_on_start=False,
         )
         try:
@@ -135,9 +139,7 @@ class TestWorkerPool:
 
     def test_reclaim_on_start_invoked(self, monkeypatch):
         calls: list[int] = []
-        monkeypatch.setattr(
-            JobRepo, "reclaim_stale", lambda self, **kw: calls.append(1) or 0
-        )
+        monkeypatch.setattr(JobRepo, "reclaim_stale", lambda self, **kw: calls.append(1) or 0)
         handle = start_workers(kinds=[KIND], run=lambda row: None, poll_seconds=0.05)
         stop_workers(handle)
         assert calls == [1]
@@ -155,9 +157,7 @@ class TestWorkerPool:
 
         first = JobRepo().create(kind=KIND, created_by="test")
         second = JobRepo().create(kind=KIND, created_by="test")
-        handle = start_workers(
-            kinds=[KIND], run=run, poll_seconds=0.05, reclaim_on_start=False
-        )
+        handle = start_workers(kinds=[KIND], run=run, poll_seconds=0.05, reclaim_on_start=False)
         try:
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline and len(seen) < 2:

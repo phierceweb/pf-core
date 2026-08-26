@@ -120,10 +120,7 @@ def run_parallel(
             # is called in the parent thread per submission — sharing one
             # ``Context`` across workers raises "already entered" under
             # concurrent execution.
-            futures = [
-                executor.submit(copy_context().run, collecting_fn, item)
-                for item in items
-            ]
+            futures = [executor.submit(copy_context().run, collecting_fn, item) for item in items]
             for future in as_completed(futures):
                 future.result()
 
@@ -257,7 +254,9 @@ def resilient(
                 )
                 if reporter is not None:
                     reporter.error(
-                        "  ✗ {item}: {reason}", item=label, reason=reason,
+                        "  ✗ {item}: {reason}",
+                        item=label,
+                        reason=reason,
                     )
                 with lock:
                     failures.append((label, reason))

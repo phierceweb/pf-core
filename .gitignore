@@ -1,30 +1,30 @@
-# ─── Python ────────────────────────────────────────────────────────────────
+# Python
 __pycache__/
 *.pyc
 *.egg-info/
 dist/
 build/
 
-# ─── Virtual environments ──────────────────────────────────────────────────
+# Virtual environments
 .venv/
 venv/
 
-# ─── Secrets & environment ─────────────────────────────────────────────────
+# Secrets & environment
 .env
 
-# ─── Databases ─────────────────────────────────────────────────────────────
+# Databases
 *.db
 *.sqlite
 
-# ─── Logs ──────────────────────────────────────────────────────────────────
+# Logs
 logs/
 
-# ─── OS & editor cruft ─────────────────────────────────────────────────────
+# OS & editor cruft
 .DS_Store
 .idea/
 .vscode/
 
-# ─── AI / agent workspace ──────────────────────────────────────────────────
+# AI / agent workspace
 # .ai/docs/, .ai/plans/, .ai/reviews/, .ai/scripts/, .ai/skills/ are local-only working docs.
 # Tracked: .ai/rules/ (project conventions, useful to contributors) + .gitkeep
 # markers.
@@ -38,7 +38,7 @@ logs/
 .ai/skills/*
 !.ai/skills/.gitkeep
 
-# ─── Claude Code local-only state ──────────────────────────────────────────
+# Claude Code local-only state
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/

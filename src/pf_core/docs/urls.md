@@ -16,7 +16,7 @@ The helpers that make requests — `check_url`, `fetch_url_content`,
 ```python
 from pf_core.utils import domain_of
 
-domain_of("https://www.example.com/page")   # "example.com"
+domain_of("https://www.example.com/page")  # "example.com"
 domain_of("https://blog.example.com/page")  # "blog.example.com"
 domain_of("https://example.com:8080/path")  # "example.com"
 ```
@@ -101,9 +101,9 @@ Returns `bool`.
 ```python
 from pf_core.utils.urls import check_url
 
-status, category = check_url("https://example.com")           # (200, "ok")
-status, category = check_url("https://example.com/missing")   # (404, "not_found")
-status, category = check_url("https://down.invalid")          # (0, "error")
+status, category = check_url("https://example.com")  # (200, "ok")
+status, category = check_url("https://example.com/missing")  # (404, "not_found")
+status, category = check_url("https://down.invalid")  # (0, "error")
 ```
 
 HEAD request with GET fallback on 405 or transport error. Browser-like User-Agent. Follows redirects.
@@ -129,7 +129,9 @@ The guard resolves the host to decide, then httpx resolves it again to open the 
 ```python
 from pf_core.utils.url_safety import assert_public_url
 
-ips = assert_public_url("https://example.com/x")   # ("<ip>", …) in resolution order, may be IPv6 first
+ips = assert_public_url(
+    "https://example.com/x"
+)  # ("<ip>", …) in resolution order, may be IPv6 first
 ```
 
 ### check_url
@@ -153,13 +155,14 @@ check_url_cached("https://example.com/article/x")  # (200, "ok") via GET-fallbac
 
 # With redis-py (or anything matching CacheBackend):
 import redis
+
 r = redis.from_url("redis://localhost:6379/0")
 check_url_cached(
     "https://example.com/x",
     cache=r,
     cache_key_prefix="myapp:url_liveness:",
     cache_ttl_seconds=86400,
-    negative_cache_ttl_seconds=300,   # timeouts/5xx expire fast, not tomorrow
+    negative_cache_ttl_seconds=300,  # timeouts/5xx expire fast, not tomorrow
 )
 
 # Operator kill switch — caller derives the boolean however it wants
@@ -180,9 +183,11 @@ Tiny Protocol — anything with `get(key) -> bytes | str | None` and `setex(key,
 ```python
 from pf_core.utils.url_liveness import CacheBackend
 
+
 class MyCache:
     def get(self, key: str) -> bytes | None: ...
     def setex(self, key: str, time: int, value: str) -> None: ...
+
 
 # Pass any CacheBackend-shaped object:
 check_url_cached(url, cache=MyCache())
@@ -333,6 +338,7 @@ Returns `dict[str, str]` with keys `title`, `description`, `og_title`, `og_descr
 # Before
 def domain_of(url): ...
 def archive_timestamp_is_round(url): ...
+
 
 # After
 from pf_core.utils import archive_timestamp_is_round, domain_of  # noqa: F401

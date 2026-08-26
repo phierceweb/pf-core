@@ -70,11 +70,13 @@ class TestIsSqlite:
 class TestIsPostgres:
     def test_postgresql_url(self):
         from pf_core.db.connection import is_postgres
+
         assert is_postgres("postgresql+psycopg://localhost/db") is True
         assert is_postgres("postgres://localhost/db") is True
 
     def test_non_postgres_urls(self):
         from pf_core.db.connection import is_postgres
+
         assert is_postgres("sqlite:///x.db") is False
         assert is_postgres("mysql://localhost/db") is False
 
@@ -82,21 +84,25 @@ class TestIsPostgres:
 class TestDialectOf:
     def test_sqlite(self):
         from pf_core.db.connection import dialect_of
+
         assert dialect_of("sqlite:///x.db") == "sqlite"
 
     def test_mysql(self):
         from pf_core.db.connection import dialect_of
+
         assert dialect_of("mysql://localhost/db") == "mysql"
         assert dialect_of("mariadb://localhost/db") == "mysql"
 
     def test_postgresql(self):
         from pf_core.db.connection import dialect_of
+
         assert dialect_of("postgresql+psycopg://localhost/db") == "postgresql"
         assert dialect_of("postgres://localhost/db") == "postgresql"
 
     def test_unknown_raises(self):
         from pf_core.db.connection import dialect_of
         from pf_core.exceptions import ConfigurationError
+
         with pytest.raises(ConfigurationError):
             dialect_of("oracle://localhost/db")
 
@@ -109,6 +115,7 @@ class TestPostgresEngine:
         psycopg = pytest.importorskip("psycopg")  # noqa: F841
 
         from pf_core.db.connection import get_engine, reset_engine
+
         reset_engine()
         try:
             engine = get_engine("postgresql+psycopg://demo:demo@127.0.0.1:5432/nope")
@@ -121,11 +128,13 @@ class TestPublicReExports:
     def test_is_postgres_re_exported(self):
         from pf_core.db import is_postgres as exported
         from pf_core.db.connection import is_postgres
+
         assert exported is is_postgres
 
     def test_dialect_of_re_exported(self):
         from pf_core.db import dialect_of as exported
         from pf_core.db.connection import dialect_of
+
         assert exported is dialect_of
 
 
@@ -166,8 +175,7 @@ class TestGetEngineConcurrency:
         reset_engine()
         try:
             threads = [
-                threading.Thread(target=lambda: got.append(get_engine(url)))
-                for _ in range(2)
+                threading.Thread(target=lambda: got.append(get_engine(url))) for _ in range(2)
             ]
             for t in threads:
                 t.start()
@@ -212,9 +220,7 @@ class TestMysqldbShim:
     because this process's sys.modules is already polluted."""
 
     def _run(self, code: str) -> None:
-        proc = subprocess.run(
-            [sys.executable, "-c", code], capture_output=True, text=True
-        )
+        proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
         assert proc.returncode == 0, proc.stderr
 
     def test_import_pf_core_db_does_not_install_shim(self):

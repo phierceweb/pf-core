@@ -109,9 +109,7 @@ def test_ttl_zero_reloads_every_call(fake_time):
 def test_ttl_read_per_call_env_change_lands(fake_time, monkeypatch):
     monkeypatch.setenv("PF_TEST_RELOAD_SECONDS", "60")
     loader = _CountingLoader()
-    cache = ReloadCache(
-        loader, ttl=lambda: int(os.environ["PF_TEST_RELOAD_SECONDS"])
-    )
+    cache = ReloadCache(loader, ttl=lambda: int(os.environ["PF_TEST_RELOAD_SECONDS"]))
 
     cache.get("alpha")
     cache.get("alpha")

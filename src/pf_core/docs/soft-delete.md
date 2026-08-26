@@ -91,13 +91,14 @@ CREATE INDEX idx_entries_active_section_date
 def soft_delete_entry(entry_id: str, reason: str | None = None) -> bool:
     with transaction() as conn:
         result = conn.execute(
-            text("UPDATE entries SET deleted_at=NOW(6), deleted_reason=:reason ..."),
-            ...
+            text("UPDATE entries SET deleted_at=NOW(6), deleted_reason=:reason ..."), ...
         )
         return result.rowcount > 0
 
+
 # After
 from pf_core.db.soft_delete import soft_delete
+
 
 def soft_delete_entry(entry_id: str, reason: str | None = None) -> bool:
     with transaction() as conn:

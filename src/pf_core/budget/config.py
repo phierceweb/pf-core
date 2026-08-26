@@ -128,8 +128,7 @@ def _flatten_scopes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 limit = float(block[period])
             except (TypeError, ValueError) as exc:
                 raise ConfigurationError(
-                    f"budget config '{where}.{period}' must be a number, "
-                    f"got {block[period]!r}"
+                    f"budget config '{where}.{period}' must be a number, got {block[period]!r}"
                 ) from exc
             rows.append(
                 {

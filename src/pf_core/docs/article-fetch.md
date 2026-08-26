@@ -31,10 +31,10 @@ from pf_core.utils.article_fetch import fetch_article
 art = fetch_article("https://example.com/news/fusion-milestone")
 
 if art.fetch_status == "ok":
-    print(art.title)              # "Scientists report fusion milestone..."
-    print(art.date_published)     # date(2026, 4, 15)
-    print(art.body[:500])         # extracted prose
-    print(art.outlet)             # "example.com"
+    print(art.title)  # "Scientists report fusion milestone..."
+    print(art.date_published)  # date(2026, 4, 15)
+    print(art.body[:500])  # extracted prose
+    print(art.outlet)  # "example.com"
 elif art.fetch_status == "paywalled":
     # Article exists but content is behind a paywall.
     # Wayback may have been tried already (check art.used_wayback).
@@ -81,18 +81,18 @@ art = fetch_article(
 ```python
 @dataclass
 class FetchedArticle:
-    url: str                              # original URL caller passed
-    final_url: str                        # what we actually fetched
-    fetch_status: str                     # see FETCH_STATUSES — ok | paywalled | not_found |
-                                          # blocked | timeout | error |
-                                          # unsupported_content_type | no_content
-    used_wayback: bool                    # True if content came from web.archive.org
-    title: str                            # extracted title or ""
-    date_published: date | None           # extracted publication date
-    body: str                             # extracted body, trimmed to 8000 chars
-    outlet: str                           # domain of url (e.g. "example.com")
-    canonical_url: str                    # dedup-key form via canonical_url()
-    raw_meta: dict                        # full extractor output for debugging
+    url: str  # original URL caller passed
+    final_url: str  # what we actually fetched
+    fetch_status: str  # see FETCH_STATUSES — ok | paywalled | not_found |
+    # blocked | timeout | error |
+    # unsupported_content_type | no_content
+    used_wayback: bool  # True if content came from web.archive.org
+    title: str  # extracted title or ""
+    date_published: date | None  # extracted publication date
+    body: str  # extracted body, trimmed to 8000 chars
+    outlet: str  # domain of url (e.g. "example.com")
+    canonical_url: str  # dedup-key form via canonical_url()
+    raw_meta: dict  # full extractor output for debugging
 ```
 
 ## Status values

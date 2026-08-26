@@ -181,12 +181,12 @@ When each agent's spec lives at `config/prompts/<slug>.yaml` (the standard layou
 ```python
 from pf_core.llm.prompts import clear_prompt_cache, load_prompt
 
-spec = load_prompt("summarizer")                      # ./config/prompts/summarizer.yaml
-spec = load_prompt("summarizer", dir=PROMPTS_DIR)     # fixed project directory
-spec = load_prompt(                                   # packaged tool with overrides:
+spec = load_prompt("summarizer")  # ./config/prompts/summarizer.yaml
+spec = load_prompt("summarizer", dir=PROMPTS_DIR)  # fixed project directory
+spec = load_prompt(  # packaged tool with overrides:
     "summarizer",
-    env_dir_var="MYAPP_PROMPTS_DIR",                  #   operator override dir →
-    bundled_dir=Path(__file__).parent,                #   CWD config/prompts/ → bundled floor
+    env_dir_var="MYAPP_PROMPTS_DIR",  #   operator override dir →
+    bundled_dir=Path(__file__).parent,  #   CWD config/prompts/ → bundled floor
 )
 ```
 
@@ -260,12 +260,16 @@ Returns the `llm_prompts.id`, or `None` when `content` is empty.
 ```python
 # Before
 import yaml
+
+
 def load_prompts() -> dict:
     path = project_root() / "config" / "prompts.yaml"
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
+
 # After
 from pf_core.llm.prompts import load_prompts
+
 prompts = load_prompts("config/prompts.yaml")
 ```
 
@@ -275,14 +279,14 @@ prompts = load_prompts("config/prompts.yaml")
 # Before
 def _inject_domain(text: str) -> str:
     return (
-        text
-        .replace("@@APP_NAME@@", cfg.APP_NAME)
-        .replace("@@START_DATE@@", str(START_DATE))
+        text.replace("@@APP_NAME@@", cfg.APP_NAME).replace("@@START_DATE@@", str(START_DATE))
         # ... more .replace() calls
     )
 
+
 # After
 from pf_core.llm.prompts import render
+
 
 def _inject_domain(text: str) -> str:
     return render(

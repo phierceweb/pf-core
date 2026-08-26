@@ -35,7 +35,7 @@ See ``docs/jobs.md`` for the implementation reference.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from typing import Any, Iterator
 
 from pf_core.exceptions import PreconditionError
@@ -49,9 +49,7 @@ from pf_core.jobs.repo import JobRepo
 #: The currently active job id. Set by ``Job.__enter__`` and read by
 #: ``pf_core.llm.tracking.track_run`` so that ``llm_runs.job_id`` is
 #: populated without the service knowing a job is active.
-current_job_id: ContextVar[int | None] = ContextVar(
-    "pf_core_current_job_id", default=None
-)
+current_job_id: ContextVar[int | None] = ContextVar("pf_core_current_job_id", default=None)
 
 
 def get_current_job_id() -> int | None:
@@ -107,7 +105,7 @@ class Job:
     def __init__(self, job_id: int, *, repo: JobRepo | None = None):
         self._job_id = job_id
         self._repo = repo if repo is not None else JobRepo()
-        self._token = None
+        self._token: Token[int | None] | None = None
         self._row: dict | None = None
         # Settable by the caller before transition("succeeded") — the
         # transition picks it up.
@@ -178,9 +176,14 @@ class Job:
         """Delegate to ``JobRepo.transition``. Picks up ``self.outputs`` when
         entering a terminal state.
         """
-        if "outputs" not in kwargs and self.outputs is not None and to_status in (
-            "succeeded",
-            "partial",
+        if (
+            "outputs" not in kwargs
+            and self.outputs is not None
+            and to_status
+            in (
+                "succeeded",
+                "partial",
+            )
         ):
             kwargs["outputs"] = self.outputs
         self._repo.transition(self._job_id, to_status, **kwargs)
@@ -195,9 +198,7 @@ class Job:
         step: str | None = None,
     ) -> None:
         """Update progress without changing status."""
-        self._repo.set_progress(
-            self._job_id, current=current, total=total, step=step
-        )
+        self._repo.set_progress(self._job_id, current=current, total=total, step=step)
 
     def event(
         self,
@@ -237,17 +238,23 @@ class Job:
             yield handle
         except Exception as exc:
             self._repo.finish_step(
-                step_id, status="failed", error=str(exc)[:10_000],
+                step_id,
+                status="failed",
+                error=str(exc)[:10_000],
             )
             raise
         else:
             if handle.error is not None:
                 self._repo.finish_step(
-                    step_id, status="failed", error=handle.error,
+                    step_id,
+                    status="failed",
+                    error=handle.error,
                 )
             else:
                 self._repo.finish_step(
-                    step_id, status="succeeded", outputs=handle.outputs,
+                    step_id,
+                    status="succeeded",
+                    outputs=handle.outputs,
                 )
 
     # -- internals -----------------------------------------------------
@@ -266,9 +273,7 @@ class Job:
 
         with self._repo._tx() as conn:
             row = (
-                conn.execute(
-                    s.jobs.select().where(s.jobs.c.id == self._job_id)
-                )
+                conn.execute(s.jobs.select().where(s.jobs.c.id == self._job_id))
                 .mappings()
                 .fetchone()
             )

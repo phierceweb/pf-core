@@ -5,7 +5,7 @@
 #
 # Functions:
 #   pf_info, pf_ok, pf_warn, pf_header   — output helpers
-#   pf_pick_python [ENV_VAR_NAME]         — find Python 3.11+ interpreter
+#   pf_pick_python [ENV_VAR_NAME]         — find Python 3.12+ interpreter
 #   pf_ensure_venv                        — create or validate .venv
 #   pf_install_deps                       — pip install from requirements.txt
 #   pf_sync_env                           — copy/sync .env from .env.example
@@ -22,7 +22,7 @@ pf_warn()   { echo "  ! $*"; }
 pf_header() { echo; echo "── $* ──────────────────────────────────────────"; }
 
 # ── Python detection ──────────────────────────────────────────────────────────
-# Finds a Python >= 3.11 interpreter.  Honours an optional env-var override
+# Finds a Python >= 3.12 interpreter.  Honours an optional env-var override
 # whose name is passed as the first argument (e.g. pf_pick_python MYPROJECT_PYTHON).
 # Prints the path to stdout; exits 1 if nothing suitable is found.
 pf_pick_python() {
@@ -34,7 +34,7 @@ pf_pick_python() {
     candidates+=("${!env_var}")
   fi
 
-  for i in python3.13 python3.12 python3.11; do
+  for i in python3.13 python3.12; do
     p="$(command -v "$i" 2>/dev/null || true)"
     [[ -n "$p" ]] && candidates+=("$p")
   done
@@ -45,17 +45,17 @@ pf_pick_python() {
     [[ -n "$p" && -x "$p" ]] || continue
     case " $tried " in *" $p "*) continue ;; esac
     tried+=" $p"
-    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
       echo "$p"
       return 0
     fi
   done
 
   if [[ -n "$env_var" && -n "${!env_var:-}" ]]; then
-    pf_warn "$env_var (${!env_var}) is not Python 3.11+ — no other interpreter worked."
+    pf_warn "$env_var (${!env_var}) is not Python 3.12+ — no other interpreter worked."
   fi
-  echo "No Python 3.11+ interpreter found. Install 3.11 or newer (e.g. brew install python@3.12)" >&2
-  echo "or set ${env_var:-PYTHON} to a 3.11+ binary, then run bin/setup again." >&2
+  echo "No Python 3.12+ interpreter found. Install 3.12 or newer (e.g. brew install python@3.12)" >&2
+  echo "or set ${env_var:-PYTHON} to a 3.12+ binary, then run bin/setup again." >&2
   exit 1
 }
 
@@ -72,8 +72,8 @@ pf_ensure_venv() {
     "$py" -m venv .venv
     pf_ok "Created .venv"
   elif [[ -x ".venv/bin/python3" ]]; then
-    if ! .venv/bin/python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
-      echo "This project requires Python 3.11+. Your .venv uses an older interpreter." >&2
+    if ! .venv/bin/python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
+      echo "This project requires Python 3.12+. Your .venv uses an older interpreter." >&2
       echo "Recreate the venv, then run bin/setup again:" >&2
       echo "  rm -rf .venv && bin/setup" >&2
       exit 1

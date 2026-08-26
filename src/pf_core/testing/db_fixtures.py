@@ -100,9 +100,7 @@ def _dialect(name: str):
 
     mods = {"sqlite": sqlite, "postgresql": postgresql, "mysql": mysql}
     if name not in mods:
-        raise ValueError(
-            f"unknown dialect {name!r}; expected one of {sorted(mods)}"
-        )
+        raise ValueError(f"unknown dialect {name!r}; expected one of {sorted(mods)}")
     return mods[name].dialect()
 
 
@@ -119,18 +117,11 @@ def metadata_ddl(
     restricts output to the named tables (and their indexes).
     """
     d = _dialect(dialect)
-    tables = [
-        t for t in metadata.sorted_tables if only is None or t.name in only
-    ]
-    stmts = [
-        str(CreateTable(t, if_not_exists=if_not_exists).compile(dialect=d))
-        for t in tables
-    ]
+    tables = [t for t in metadata.sorted_tables if only is None or t.name in only]
+    stmts = [str(CreateTable(t, if_not_exists=if_not_exists).compile(dialect=d)) for t in tables]
     for t in tables:
         for idx in t.indexes:
-            stmts.append(
-                str(CreateIndex(idx, if_not_exists=if_not_exists).compile(dialect=d))
-            )
+            stmts.append(str(CreateIndex(idx, if_not_exists=if_not_exists).compile(dialect=d)))
     return stmts
 
 
@@ -153,9 +144,7 @@ def framework_ddl(
     """
     import pf_core.llm.tracking as tracking
 
-    return metadata_ddl(
-        tracking.metadata, dialect=dialect, if_not_exists=if_not_exists, only=only
-    )
+    return metadata_ddl(tracking.metadata, dialect=dialect, if_not_exists=if_not_exists, only=only)
 
 
 # ---------------------------------------------------------------------------

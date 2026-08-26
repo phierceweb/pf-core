@@ -338,9 +338,7 @@ class EvalRunner:
 
         t0 = time.monotonic()
         try:
-            raw_content, usage_raw = client.chat(
-                messages=messages, model=model, **merged
-            )
+            raw_content, usage_raw = client.chat(messages=messages, model=model, **merged)
             status = "success"
             error_msg: str | None = None
         except Exception as exc:

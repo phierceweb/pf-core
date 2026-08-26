@@ -54,23 +54,23 @@ from pf_core.budget.config import (  # noqa: F401
 # free because we cache into ``globals()``.
 _LAZY: dict[str, str] = {
     # Repos (DB-required)
-    "BudgetRepo":           "pf_core.budget.repo",
-    "BudgetSnapshotRepo":   "pf_core.budget.repo",
-    "CostRateRepo":         "pf_core.budget.repo",
-    "aggregate_spent":      "pf_core.budget.repo",
+    "BudgetRepo": "pf_core.budget.repo",
+    "BudgetSnapshotRepo": "pf_core.budget.repo",
+    "CostRateRepo": "pf_core.budget.repo",
+    "aggregate_spent": "pf_core.budget.repo",
     # Audit logging (DB-required)
-    "record_blocked_run":   "pf_core.budget.audit",
-    "record_override":      "pf_core.budget.audit",
+    "record_blocked_run": "pf_core.budget.audit",
+    "record_override": "pf_core.budget.audit",
     # Snapshot / scheduler jobs (DB-required)
-    "refresh_snapshots":    "pf_core.budget.snapshot_job",
+    "refresh_snapshots": "pf_core.budget.snapshot_job",
     "start_budget_refresh_loop": "pf_core.budget.scheduler",
     # YAML→DB sync (DB-required path within the otherwise-kernel config module)
     "sync_budgets_from_yaml": "pf_core.budget.config",
     # Schema tables (DB-required — registers on shared MetaData on first access)
-    "ALL_BUDGET_TABLES":    "pf_core.budget._schema",
-    "llm_budgets":          "pf_core.budget._schema",
+    "ALL_BUDGET_TABLES": "pf_core.budget._schema",
+    "llm_budgets": "pf_core.budget._schema",
     "llm_budget_snapshots": "pf_core.budget._schema",
-    "llm_cost_rates":       "pf_core.budget._schema",
+    "llm_cost_rates": "pf_core.budget._schema",
 }
 
 

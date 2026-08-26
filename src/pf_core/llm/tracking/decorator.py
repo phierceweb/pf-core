@@ -126,9 +126,7 @@ def track_run(
             usage.setdefault("duration_ms", int((time.monotonic() - t0) * 1000))
             fingerprint = usage.get("system_fingerprint")
             record_usage = {
-                k: v
-                for k, v in usage.items()
-                if k not in ("system_fingerprint", "_llm_run_id")
+                k: v for k, v in usage.items() if k not in ("system_fingerprint", "_llm_run_id")
             }
 
             run_id = _repo.record(
@@ -181,11 +179,7 @@ def _unpack_result(result: Any) -> tuple[str | None, dict]:
       - ``(content, usage)`` tuple — ``OpenRouterClient.chat()`` shape.
       - ``{"content": ..., "usage": {...}}`` dict.
     """
-    if (
-        isinstance(result, tuple)
-        and len(result) == 2
-        and isinstance(result[1], dict)
-    ):
+    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], dict):
         return result[0], result[1]
     if isinstance(result, dict):
         usage = result.get("usage")

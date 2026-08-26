@@ -70,9 +70,9 @@ def all_job_ids(summary_pass_id: int) -> list[int]:
     """Full chain of job_ids (includes retries) — chronological."""
     with transaction() as conn:
         return [
-            int(r[0]) for r in conn.execute(
-                "SELECT job_id FROM summary_job_refs "
-                "WHERE summary_pass_id=:p ORDER BY created_at",
+            int(r[0])
+            for r in conn.execute(
+                "SELECT job_id FROM summary_job_refs WHERE summary_pass_id=:p ORDER BY created_at",
                 {"p": summary_pass_id},
             ).fetchall()
         ]
@@ -90,6 +90,7 @@ def all_job_ids(summary_pass_id: int) -> list[int]:
 # myapp/services/summarizer.py
 from pf_core.jobs.runtime import Job
 from app.repo.job_refs import create_summary_job
+
 
 def run_summary(summary_pass_id: int) -> None:
     job_id = create_summary_job(summary_pass_id=summary_pass_id, kind="summary_pass")

@@ -37,10 +37,10 @@ PHASES = [
 
 
 def _base_python() -> str | None:
-    """A Python >=3.11 to build the venv with (pf-core's floor)."""
-    if sys.version_info >= (3, 11):
+    """A Python >=3.12 to build the venv with (pf-core's floor)."""
+    if sys.version_info >= (3, 12):
         return sys.executable
-    for name in ("python3.13", "python3.12", "python3.11"):
+    for name in ("python3.13", "python3.12"):
         found = shutil.which(name)
         if found:
             return found
@@ -73,7 +73,7 @@ def _run_phase(base_py: str, label: str, spec: str, smoke: Path) -> int:
 def main() -> int:
     base_py = _base_python()
     if base_py is None:
-        print("ERROR: need Python >=3.11 to build the verification venvs", file=sys.stderr)
+        print("ERROR: need Python >=3.12 to build the verification venvs", file=sys.stderr)
         return 2
 
     worst = 0

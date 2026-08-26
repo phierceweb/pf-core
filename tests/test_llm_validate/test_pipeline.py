@@ -22,7 +22,8 @@ from .conftest import Doc, PydOk, payload
 def test_pipeline_happy_path_returns_model_instance():
     register(agent_type="hp", shape=PydOk)
     res = parse_and_validate(
-        json.dumps({"headline": "hi", "score": 1}), agent_type="hp",
+        json.dumps({"headline": "hi", "score": 1}),
+        agent_type="hp",
     )
     assert res.ok is True
     assert isinstance(res.value, PydOk)
@@ -53,7 +54,9 @@ def test_pipeline_unregistered_agent_raise_lists_known_agents():
 
 def test_pipeline_unregistered_agent_fallback_returns_signal():
     res = parse_and_validate(
-        '{"a":1}', agent_type="never", run_id=999,
+        '{"a":1}',
+        agent_type="never",
+        run_id=999,
         missing_pipeline="fallback",
     )
     assert res.ok is False
@@ -69,7 +72,8 @@ def test_pipeline_unregistered_agent_fallback_returns_signal():
 def test_pipeline_fallback_signal_lists_known_agents():
     register(agent_type="real", shape=PydOk)
     res = parse_and_validate(
-        '{"a":1}', agent_type="typo",
+        '{"a":1}',
+        agent_type="typo",
         missing_pipeline="fallback",
     )
     sig = res.signals[0]
@@ -91,8 +95,7 @@ def test_pipeline_shape_failure_skips_semantic_and_cross_field():
     def _xf(parsed, *, context):  # noqa: ARG001
         raise AssertionError("should not run when shape fails")
 
-    register(agent_type="sf", shape=PydOk,
-             semantic=["url_sanity"], cross_field=["xf_skip"])
+    register(agent_type="sf", shape=PydOk, semantic=["url_sanity"], cross_field=["xf_skip"])
     res = parse_and_validate(json.dumps({"headline": "hi"}), agent_type="sf")
     assert res.ok is False
     validators = {s.validator for s in res.signals}
@@ -106,11 +109,11 @@ def test_pipeline_stages_shape_only_skips_other_stages():
     def _xf(parsed, *, context):  # noqa: ARG001
         raise AssertionError("cross_field should not run")
 
-    register(agent_type="so", shape=PydOk,
-             semantic=["url_sanity"], cross_field=["xf_skip2"])
+    register(agent_type="so", shape=PydOk, semantic=["url_sanity"], cross_field=["xf_skip2"])
     res = parse_and_validate(
         json.dumps({"headline": "hi", "score": 1}),
-        agent_type="so", stages=("shape",),
+        agent_type="so",
+        stages=("shape",),
     )
     validators = {s.validator for s in res.signals}
     assert "so_shape" in validators
@@ -123,10 +126,10 @@ def test_pipeline_stages_shape_semantic_skips_cross_field():
     def _xf(parsed, *, context):  # noqa: ARG001
         raise AssertionError("cross_field should not run")
 
-    register(agent_type="ss", shape=Doc,
-             semantic=["url_sanity"], cross_field=["xf_skip3"])
+    register(agent_type="ss", shape=Doc, semantic=["url_sanity"], cross_field=["xf_skip3"])
     res = parse_and_validate(
-        payload(headline="x"), agent_type="ss",
+        payload(headline="x"),
+        agent_type="ss",
         stages=("shape", "semantic"),
     )
     validators = {s.validator for s in res.signals}
@@ -174,7 +177,8 @@ def test_pipeline_run_id_none_runs_in_memory_no_db():
     register(agent_type="mem", shape=PydOk, semantic=["url_sanity"])
     res = parse_and_validate(
         json.dumps({"headline": "hi", "score": 1}),
-        agent_type="mem", run_id=None,
+        agent_type="mem",
+        run_id=None,
     )
     assert res.ok is True
     assert isinstance(res.value, PydOk)
@@ -183,7 +187,8 @@ def test_pipeline_run_id_none_runs_in_memory_no_db():
 
 def test_validation_result_failures_and_warnings_split():
     res = ValidationResult(
-        ok=False, value=None,
+        ok=False,
+        value=None,
         signals=[
             ValidationSignal("a", "error", passed=False),
             ValidationSignal("b", "warn", passed=False),

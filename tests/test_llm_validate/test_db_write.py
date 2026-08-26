@@ -14,28 +14,33 @@ from .conftest import PydOk
 
 def test_pipeline_writes_signals_and_tag_to_db(tracking_db):
     register(
-        agent_type="db_a", shape=PydOk,
-        semantic=["url_sanity"], schema_version=3,
+        agent_type="db_a",
+        shape=PydOk,
+        semantic=["url_sanity"],
+        schema_version=3,
     )
     run_id = LlmRunRepo().record(agent_type="db_a", model="claude-opus-4-7")
 
     res = parse_and_validate(
         json.dumps({"headline": "hi", "score": 1}),
-        agent_type="db_a", run_id=run_id,
+        agent_type="db_a",
+        run_id=run_id,
     )
     assert res.ok is True
 
     with tracking_db.connect() as conn:
-        rows = conn.execute(
-            ts.llm_run_validations.select().where(
-                ts.llm_run_validations.c.llm_run_id == run_id
+        rows = (
+            conn.execute(
+                ts.llm_run_validations.select().where(ts.llm_run_validations.c.llm_run_id == run_id)
             )
-        ).mappings().fetchall()
-        tags = conn.execute(
-            ts.llm_run_tags.select().where(
-                ts.llm_run_tags.c.llm_run_id == run_id
-            )
-        ).mappings().fetchall()
+            .mappings()
+            .fetchall()
+        )
+        tags = (
+            conn.execute(ts.llm_run_tags.select().where(ts.llm_run_tags.c.llm_run_id == run_id))
+            .mappings()
+            .fetchall()
+        )
 
     by_validator = {r["validator"]: r for r in rows}
     assert "db_a_shape" in by_validator
@@ -51,27 +56,35 @@ def test_pipeline_re_call_replaces_prior_validation_rows(tracking_db):
 
     parse_and_validate(
         json.dumps({"headline": "hi", "score": 1}),
-        agent_type="db_b", run_id=run_id,
+        agent_type="db_b",
+        run_id=run_id,
     )
     with tracking_db.connect() as conn:
-        first = conn.execute(
-            ts.llm_run_validations.select().where(
-                ts.llm_run_validations.c.llm_run_id == run_id
+        first = (
+            conn.execute(
+                ts.llm_run_validations.select().where(ts.llm_run_validations.c.llm_run_id == run_id)
             )
-        ).mappings().fetchall()
+            .mappings()
+            .fetchall()
+        )
     assert all(r["passed"] for r in first)
 
     parse_and_validate(
         json.dumps({"headline": "hi"}),  # missing score
-        agent_type="db_b", run_id=run_id,
+        agent_type="db_b",
+        run_id=run_id,
     )
     with tracking_db.connect() as conn:
-        second = conn.execute(
-            ts.llm_run_validations.select().where(
-                (ts.llm_run_validations.c.llm_run_id == run_id)
-                & (ts.llm_run_validations.c.validator == "db_b_shape")
+        second = (
+            conn.execute(
+                ts.llm_run_validations.select().where(
+                    (ts.llm_run_validations.c.llm_run_id == run_id)
+                    & (ts.llm_run_validations.c.validator == "db_b_shape")
+                )
             )
-        ).mappings().fetchall()
+            .mappings()
+            .fetchall()
+        )
     assert len(second) == 1
     assert second[0]["passed"] is False
 
@@ -79,17 +92,21 @@ def test_pipeline_re_call_replaces_prior_validation_rows(tracking_db):
 def test_pipeline_no_pipeline_fallback_with_run_id_does_not_write(tracking_db):
     run_id = LlmRunRepo().record(agent_type="other", model="claude-opus-4-7")
     res = parse_and_validate(
-        "{}", agent_type="never_registered", run_id=run_id,
+        "{}",
+        agent_type="never_registered",
+        run_id=run_id,
         missing_pipeline="fallback",
     )
     assert res.ok is False
 
     with tracking_db.connect() as conn:
-        rows = conn.execute(
-            ts.llm_run_validations.select().where(
-                ts.llm_run_validations.c.llm_run_id == run_id
+        rows = (
+            conn.execute(
+                ts.llm_run_validations.select().where(ts.llm_run_validations.c.llm_run_id == run_id)
             )
-        ).mappings().fetchall()
+            .mappings()
+            .fetchall()
+        )
     assert rows == []
 
 
@@ -140,9 +157,11 @@ def test_tag_write_failure_does_not_lose_validation_rows(tracking_db, monkeypatc
     assert "validation_tag_write_failed" in _events(caplog)
 
     with tracking_db.connect() as conn:
-        rows = conn.execute(
-            ts.llm_run_validations.select().where(
-                ts.llm_run_validations.c.llm_run_id == run_id
+        rows = (
+            conn.execute(
+                ts.llm_run_validations.select().where(ts.llm_run_validations.c.llm_run_id == run_id)
             )
-        ).mappings().fetchall()
+            .mappings()
+            .fetchall()
+        )
     assert [r["validator"] for r in rows] == ["tagfail_shape"]

@@ -28,9 +28,7 @@ SUPPORTED_DIALECTS = ("mysql", "postgresql", "sqlite")
 
 def _check(dialect: str) -> str:
     if dialect not in SUPPORTED_DIALECTS:
-        raise ValueError(
-            f"unsupported dialect {dialect!r}; expected one of {SUPPORTED_DIALECTS}"
-        )
+        raise ValueError(f"unsupported dialect {dialect!r}; expected one of {SUPPORTED_DIALECTS}")
     return dialect
 
 

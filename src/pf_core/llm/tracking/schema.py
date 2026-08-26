@@ -99,9 +99,7 @@ class _server_now_minus_seconds(expression.FunctionElement):
     def __init__(self, seconds: int) -> None:
         super().__init__()
         if seconds < 0:
-            raise ValueError(
-                "_server_now_minus_seconds requires a non-negative int"
-            )
+            raise ValueError("_server_now_minus_seconds requires a non-negative int")
         self._seconds = int(seconds)
 
 
@@ -176,13 +174,9 @@ llm_prompts = Table(
     Column("content", _LARGE_TEXT, nullable=False),
     Column("effective_date", Date, nullable=False),
     Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
-    UniqueConstraint(
-        "agent_type_id", "part", "version", name="uq_llm_prompts_agent_part_version"
-    ),
+    UniqueConstraint("agent_type_id", "part", "version", name="uq_llm_prompts_agent_part_version"),
     Index("idx_llm_prompts_agent_part", "agent_type_id", "part"),
-    CheckConstraint(
-        "part IN ('system', 'user', 'full')", name="ck_llm_prompts_part"
-    ),
+    CheckConstraint("part IN ('system', 'user', 'full')", name="ck_llm_prompts_part"),
 )
 """Versioned prompt templates. ``part`` is one of system/user/full."""
 
@@ -201,9 +195,7 @@ llm_runs = Table(
         ForeignKey("llm_agent_types.id"),
         nullable=False,
     ),
-    Column(
-        "model_id", _FK_SMALL, ForeignKey("llm_models.id"), nullable=False
-    ),
+    Column("model_id", _FK_SMALL, ForeignKey("llm_models.id"), nullable=False),
     Column(
         "system_prompt_id",
         _FK_SMALL,
@@ -338,9 +330,7 @@ llm_run_outcomes = Table(
     Column("outcome_kind", String(64), nullable=False),
     Column("score", Float, nullable=True),
     Column("notes", Text, nullable=True),
-    Column(
-        "recorded_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()
-    ),
+    Column("recorded_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
     PrimaryKeyConstraint("llm_run_id", "outcome_kind", name="pk_llm_run_outcomes"),
     Index("idx_llm_run_outcomes_kind_recorded", "outcome_kind", "recorded_at"),
 )
@@ -364,9 +354,7 @@ llm_run_links = Table(
     ),
     Column("relation", String(32), nullable=False),
     Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
-    PrimaryKeyConstraint(
-        "parent_run_id", "child_run_id", "relation", name="pk_llm_run_links"
-    ),
+    PrimaryKeyConstraint("parent_run_id", "child_run_id", "relation", name="pk_llm_run_links"),
     Index("idx_llm_run_links_child_relation", "child_run_id", "relation"),
 )
 """Run-to-run relations: retry, critic, refine, fallback, subroutine, meta_analysis."""

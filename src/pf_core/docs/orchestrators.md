@@ -17,6 +17,7 @@ from pf_core.orchestrators import Orchestrator
 from myproject.services.entry import EntryService
 from myproject.services.tag import TagService
 
+
 class ExportOrchestrator(Orchestrator):
     def run(self, entry_ids: list[str]) -> ExportResult:
         entry_svc = self._service(EntryService)
@@ -74,14 +75,18 @@ from rich.progress import Progress
 
 with Progress() as bar:
     task = bar.add_task("Export", total=100)
+
     def on_progress(step, total, msg):
         bar.update(task, completed=step, description=msg)
+
     orch = ExportOrchestrator(config=cfg, progress=on_progress)
     orch.run(ids)
+
 
 # Web job — store progress for polling:
 def on_progress(step, total, msg):
     redis.set(f"job:{job_id}:progress", f"{step}/{total}: {msg}")
+
 
 orch = ExportOrchestrator(config=cfg, progress=on_progress)
 ```

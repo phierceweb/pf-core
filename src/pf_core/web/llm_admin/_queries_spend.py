@@ -27,16 +27,10 @@ def cost_by_model(*, since: dt.datetime, until: dt.datetime) -> list[dict]:
             func.count().label("runs"),
             func.coalesce(func.sum(llm_runs.c.cost_usd), 0).label("total_cost"),
             func.coalesce(func.avg(llm_runs.c.cost_usd), 0).label("avg_cost"),
-            func.coalesce(func.sum(llm_runs.c.prompt_tokens), 0).label(
-                "prompt_tokens"
-            ),
-            func.coalesce(func.sum(llm_runs.c.completion_tokens), 0).label(
-                "completion_tokens"
-            ),
+            func.coalesce(func.sum(llm_runs.c.prompt_tokens), 0).label("prompt_tokens"),
+            func.coalesce(func.sum(llm_runs.c.completion_tokens), 0).label("completion_tokens"),
         )
-        .select_from(
-            llm_runs.join(llm_models, llm_runs.c.model_id == llm_models.c.id)
-        )
+        .select_from(llm_runs.join(llm_models, llm_runs.c.model_id == llm_models.c.id))
         .where(and_(llm_runs.c.created_at >= since, llm_runs.c.created_at < until))
         .group_by(llm_models.c.name)
         .order_by(func.coalesce(func.sum(llm_runs.c.cost_usd), 0).desc())
@@ -54,9 +48,7 @@ def cost_by_agent(*, since: dt.datetime, until: dt.datetime) -> list[dict]:
             func.coalesce(func.avg(llm_runs.c.cost_usd), 0).label("avg_cost"),
         )
         .select_from(
-            llm_runs.join(
-                llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-            )
+            llm_runs.join(llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id)
         )
         .where(and_(llm_runs.c.created_at >= since, llm_runs.c.created_at < until))
         .group_by(llm_agent_types.c.slug)
@@ -66,9 +58,7 @@ def cost_by_agent(*, since: dt.datetime, until: dt.datetime) -> list[dict]:
         return _normalize_all(conn.execute(stmt).mappings().fetchall())
 
 
-def cache_hit_rate_by_agent(
-    *, since: dt.datetime, until: dt.datetime
-) -> list[dict]:
+def cache_hit_rate_by_agent(*, since: dt.datetime, until: dt.datetime) -> list[dict]:
     cache_case = case((llm_runs.c.status == "cache_hit", 1.0), else_=0.0)
     stmt = (
         select(
@@ -78,9 +68,7 @@ def cache_hit_rate_by_agent(
             func.coalesce(func.sum(llm_runs.c.cost_usd), 0).label("total_cost"),
         )
         .select_from(
-            llm_runs.join(
-                llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id
-            )
+            llm_runs.join(llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id)
         )
         .where(and_(llm_runs.c.created_at >= since, llm_runs.c.created_at < until))
         .group_by(llm_agent_types.c.slug)
@@ -120,21 +108,27 @@ def list_budgets_with_spend() -> list[dict]:
     month_start = today.replace(day=1)
 
     with transaction() as conn:
-        budgets = conn.execute(
-            select(llm_budgets).where(llm_budgets.c.enabled.is_(True))
-        ).mappings().fetchall()
+        budgets = (
+            conn.execute(select(llm_budgets).where(llm_budgets.c.enabled.is_(True)))
+            .mappings()
+            .fetchall()
+        )
 
         out = []
         for b in budgets:
             period_start = today if b["period"] == "daily" else month_start
-            snap = conn.execute(
-                select(llm_budget_snapshots).where(
-                    and_(
-                        llm_budget_snapshots.c.budget_id == b["id"],
-                        llm_budget_snapshots.c.period_start == period_start,
+            snap = (
+                conn.execute(
+                    select(llm_budget_snapshots).where(
+                        and_(
+                            llm_budget_snapshots.c.budget_id == b["id"],
+                            llm_budget_snapshots.c.period_start == period_start,
+                        )
                     )
                 )
-            ).mappings().fetchone()
+                .mappings()
+                .fetchone()
+            )
             spent = float(snap["spent_usd"]) if snap else 0.0
             run_count = int(snap["run_count"]) if snap else 0
             limit = float(b["limit_usd"])

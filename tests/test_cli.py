@@ -264,8 +264,7 @@ class TestRunCliErrorMessagesAreData:
         return capsys.readouterr().err
 
     def test_a_flow_exception_keeps_its_bracketed_example(self, capsys):
-        err = self._run(
-            InvalidInputError("give it two numbers [x, y] as fractions"), capsys)
+        err = self._run(InvalidInputError("give it two numbers [x, y] as fractions"), capsys)
         assert "[x, y]" in err
 
     def test_an_app_error_keeps_its_bracketed_example(self, capsys):

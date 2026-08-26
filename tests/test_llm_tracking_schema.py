@@ -283,12 +283,8 @@ def test_full_attachments_roundtrip(engine):
                 llm_run_id=run_id, outcome_kind="result_matches_reviewer", score=0.92
             )
         )
-        conn.execute(
-            llm_run_tags.insert().values(llm_run_id=run_id, tag="env:prod")
-        )
-        conn.execute(
-            llm_run_tags.insert().values(llm_run_id=run_id, tag="eval:golden_v2")
-        )
+        conn.execute(llm_run_tags.insert().values(llm_run_id=run_id, tag="env:prod"))
+        conn.execute(llm_run_tags.insert().values(llm_run_id=run_id, tag="eval:golden_v2"))
         conn.execute(
             llm_run_metrics.insert().values(
                 llm_run_id=run_id, metric_name="tier1_ratio", metric_value=0.85
@@ -296,20 +292,26 @@ def test_full_attachments_roundtrip(engine):
         )
 
     with engine.connect() as conn:
-        payload = conn.execute(
-            select(llm_run_payloads).where(llm_run_payloads.c.llm_run_id == run_id)
-        ).mappings().one()
+        payload = (
+            conn.execute(select(llm_run_payloads).where(llm_run_payloads.c.llm_run_id == run_id))
+            .mappings()
+            .one()
+        )
         assert payload["parsed_output"] == {"ok": True}
         assert payload["rendered_system"] == "rendered sys"
 
-        tags = conn.execute(
-            select(llm_run_tags.c.tag).where(llm_run_tags.c.llm_run_id == run_id)
-        ).scalars().all()
+        tags = (
+            conn.execute(select(llm_run_tags.c.tag).where(llm_run_tags.c.llm_run_id == run_id))
+            .scalars()
+            .all()
+        )
         assert set(tags) == {"env:prod", "eval:golden_v2"}
 
-        metric = conn.execute(
-            select(llm_run_metrics).where(llm_run_metrics.c.llm_run_id == run_id)
-        ).mappings().one()
+        metric = (
+            conn.execute(select(llm_run_metrics).where(llm_run_metrics.c.llm_run_id == run_id))
+            .mappings()
+            .one()
+        )
         assert metric["metric_value"] == pytest.approx(0.85)
 
 
@@ -324,9 +326,7 @@ def test_cascade_delete_removes_sidecar_rows(engine):
         run_id = conn.execute(
             llm_runs.insert().values(agent_type_id=agent_id, model_id=model_id)
         ).inserted_primary_key[0]
-        conn.execute(
-            llm_run_payloads.insert().values(llm_run_id=run_id, raw_response="r")
-        )
+        conn.execute(llm_run_payloads.insert().values(llm_run_id=run_id, raw_response="r"))
         conn.execute(llm_run_tags.insert().values(llm_run_id=run_id, tag="x"))
 
     with engine.begin() as conn:
@@ -340,9 +340,7 @@ def test_cascade_delete_removes_sidecar_rows(engine):
             is None
         )
         assert (
-            conn.execute(
-                select(llm_run_tags).where(llm_run_tags.c.llm_run_id == run_id)
-            ).first()
+            conn.execute(select(llm_run_tags).where(llm_run_tags.c.llm_run_id == run_id)).first()
             is None
         )
 
@@ -368,9 +366,11 @@ def test_run_links_self_reference(engine):
         )
 
     with engine.connect() as conn:
-        row = conn.execute(
-            select(llm_run_links).where(llm_run_links.c.parent_run_id == parent)
-        ).mappings().one()
+        row = (
+            conn.execute(select(llm_run_links).where(llm_run_links.c.parent_run_id == parent))
+            .mappings()
+            .one()
+        )
         assert row["child_run_id"] == child
         assert row["relation"] == "retry"
 

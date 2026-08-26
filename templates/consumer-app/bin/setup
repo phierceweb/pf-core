@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap __NAME__: venv (Python 3.11+), editable install, .env, rule symlinks.
+# Bootstrap __NAME__: venv (Python 3.12+), editable install, .env, rule symlinks.
 # Self-contained — works whether pf-core is pip-installed or a sibling checkout.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,14 +9,14 @@ info() { echo "  $*"; }
 
 pick_python() {
   local p
-  for p in python3.13 python3.12 python3.11 python3; do
+  for p in python3.13 python3.12 python3; do
     p="$(command -v "$p" 2>/dev/null || true)"
     [[ -n "$p" ]] || continue
-    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
       echo "$p"; return 0
     fi
   done
-  echo "No Python 3.11+ found. Install 3.11+ (e.g. brew install python@3.12)." >&2
+  echo "No Python 3.12+ found. Install 3.12+ (e.g. brew install python@3.12)." >&2
   exit 1
 }
 
@@ -26,6 +26,11 @@ if [[ ! -d .venv ]]; then
   "$PY" -m venv .venv
   ok ".venv created"
 else
+  if ! .venv/bin/python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
+    echo "__NAME__ requires Python 3.12+. Your .venv uses an older interpreter." >&2
+    echo "  rm -rf .venv && bin/setup" >&2
+    exit 1
+  fi
   ok ".venv exists ($(.venv/bin/python --version | tr -d '\r'))"
 fi
 

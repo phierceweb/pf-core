@@ -44,11 +44,11 @@ content, usage = client.chat(
         {"role": "user", "content": "Summarize this document."},
     ],
     model="anthropic/claude-sonnet-4.6",
-    temperature=0.2,       # default 0.2
-    max_tokens=4096,       # default 4096
-    top_p=1.0,             # default 1.0
+    temperature=0.2,  # default 0.2
+    max_tokens=4096,  # default 4096
+    top_p=1.0,  # default 1.0
     response_format=None,  # optional structured output format
-    timeout=None,          # override per-request timeout
+    timeout=None,  # override per-request timeout
 )
 ```
 
@@ -62,13 +62,13 @@ content, usage = client.chat(
 {
     "prompt_tokens": 1200,
     "completion_tokens": 450,
-    "cache_read_tokens": 0,       # from prompt_tokens_details.cached_tokens when present
+    "cache_read_tokens": 0,  # from prompt_tokens_details.cached_tokens when present
     "cache_write_tokens": 0,
-    "reasoning_tokens": 0,        # from completion_tokens_details.reasoning_tokens
-    "cost_usd": 0.0023,           # from OpenRouter's reported `cost` field
+    "reasoning_tokens": 0,  # from completion_tokens_details.reasoning_tokens
+    "cost_usd": 0.0023,  # from OpenRouter's reported `cost` field
     "duration_ms": 3400,
     "system_fingerprint": None,
-    "finish_reason": "stop",      # OpenRouter-only extra key
+    "finish_reason": "stop",  # OpenRouter-only extra key
 }
 ```
 
@@ -211,6 +211,7 @@ For unit tests that shouldn't hit OpenRouter at all, type-annotate against `pf_c
 ```python
 from pf_core.clients import ChatClient
 
+
 class SummaryService:
     def __init__(self, llm: ChatClient) -> None:
         self._llm = llm
@@ -237,9 +238,12 @@ In tests, pass a fake:
 class FakeChatClient:
     def chat(self, messages, model, **kwargs):
         return "fake summary", {
-            "prompt_tokens": 10, "completion_tokens": 5,
-            "cost_usd": 0.0, "duration_ms": 1,
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "cost_usd": 0.0,
+            "duration_ms": 1,
         }
+
 
 def test_summarize():
     service = SummaryService(llm=FakeChatClient())

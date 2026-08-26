@@ -21,10 +21,14 @@ class ItemRepo(Repository):
 
     def get_by_name(self, name: str) -> dict | None:
         with self._tx() as conn:
-            row = conn.execute(
-                text("SELECT id, name FROM items WHERE name = :name"),
-                {"name": name},
-            ).mappings().fetchone()
+            row = (
+                conn.execute(
+                    text("SELECT id, name FROM items WHERE name = :name"),
+                    {"name": name},
+                )
+                .mappings()
+                .fetchone()
+            )
             return dict(row) if row else None
 
 

@@ -34,9 +34,7 @@ except ModuleNotFoundError as e:  # pragma: no cover - exercised by the extra ma
     # ImportError is more precise, so it propagates untouched.
     from pf_core._extras import extra_import_error
 
-    raise extra_import_error(
-        "tracking", e.name or "sqlalchemy", feature="pf_core.llm.step"
-    ) from e
+    raise extra_import_error("tracking", e.name or "sqlalchemy", feature="pf_core.llm.step") from e
 
 __all__ = ["BudgetEstimate", "StepResult", "llm_step"]
 
@@ -114,15 +112,14 @@ def llm_step(
         A :class:`StepResult`. Persistence of ``value`` is the caller's job.
     """
     resolved_hash = input_hash
-    if cache and resolved_hash is None:
-        resolved_hash = compute_input_hash(
-            model=model, messages=messages, sampling=sampling, configs=configs
-        )
-
     if cache:
+        if resolved_hash is None:
+            resolved_hash = compute_input_hash(
+                model=model, messages=messages, sampling=sampling, configs=configs
+            )
         hit = cache_lookup(agent_type=agent_type, input_hash=resolved_hash)
         if hit is not None:
-            run_id = record_cache_hit(hit=hit)
+            run_id: int | None = record_cache_hit(hit=hit)
             raw = hit.raw_response or ""
             if validate is not None:
                 validation = parse_and_validate(
@@ -132,7 +129,7 @@ def llm_step(
                     validation_context=validation_context,
                     expect=validate,
                 )
-                value = validation.value if validation.ok else None
+                value: Any = validation.value if validation.ok else None
             else:
                 validation = None
                 value = hit.parsed_output if hit.parsed_output is not None else raw
@@ -159,9 +156,7 @@ def llm_step(
                 job_kind=budget.job_kind,
             )
         except CostBudgetExceeded as exc:
-            record_blocked_run(
-                agent_type=agent_type, model=model, exc=exc, job_id=budget.job_id
-            )
+            record_blocked_run(agent_type=agent_type, model=model, exc=exc, job_id=budget.job_id)
             raise
 
     content, _usage, run_id = tracked_messages_call(
@@ -200,12 +195,12 @@ def llm_step(
                 cache_hit=False,
                 validation=validation,
             )
-        value: Any = validation.value
+        value = validation.value
     else:
         validation = None
         value = content
 
-    if cache and run_id is not None:
+    if cache and resolved_hash is not None and run_id is not None:
         parsed_for_cache = value if isinstance(value, (dict, list)) else None
         cache_store(
             agent_type=agent_type,

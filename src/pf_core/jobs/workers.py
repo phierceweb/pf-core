@@ -229,9 +229,7 @@ def terminate_job(job_id: int, *, escalate_after: float = 5.0) -> bool:
     return True
 
 
-def tail_log(
-    path: Path, since_byte: int = 0, max_bytes: int = 256 * 1024
-) -> tuple[str, int]:
+def tail_log(path: Path, since_byte: int = 0, max_bytes: int = 256 * 1024) -> tuple[str, int]:
     """Read the log from ``since_byte``; return ``(text, next_since_byte)``.
 
     The offset advances by *bytes* read (decode is ``errors="replace"``),

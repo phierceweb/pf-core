@@ -132,10 +132,9 @@ def project_cost(
 
     rate = CostRateRepo().get_effective(model=model)
     if rate is not None:
-        return (
-            estimated_prompt_tokens / 1000.0 * float(rate["input_per_1k"])
-            + estimated_completion_tokens / 1000.0 * float(rate["output_per_1k"])
-        )
+        return estimated_prompt_tokens / 1000.0 * float(
+            rate["input_per_1k"]
+        ) + estimated_completion_tokens / 1000.0 * float(rate["output_per_1k"])
 
     from pf_core.pricing._resolver import price_call
 
@@ -404,9 +403,7 @@ def check_budget(
         agent_type=agent_type, job_kind=job_kind, job_id=job_id, tags=tags
     )
     if not budgets:
-        _log_no_scopes(
-            agent_type=agent_type, job_kind=job_kind, job_id=job_id, tags=tags
-        )
+        _log_no_scopes(agent_type=agent_type, job_kind=job_kind, job_id=job_id, tags=tags)
         return
 
     order = {"global": 0, "agent": 1, "job_kind": 2, "job_id": 3, "tag": 4}

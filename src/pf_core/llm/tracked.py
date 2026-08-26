@@ -59,9 +59,7 @@ class LlmJsonError(AppError):
         *,
         cause: BaseException | None = None,
     ) -> None:
-        super().__init__(
-            "LLM returned unparseable JSON after retry", context, cause=cause
-        )
+        super().__init__("LLM returned unparseable JSON after retry", context, cause=cause)
         self.raw = raw
 
 
@@ -73,9 +71,7 @@ class ChatClient(Protocol):
     ``(content, usage)``.
     """
 
-    def chat(
-        self, messages: list[dict], model: str = ..., **kwargs: Any
-    ) -> tuple[str, dict]: ...
+    def chat(self, messages: list[dict], model: str = ..., **kwargs: Any) -> tuple[str, dict]: ...
 
 
 def tracked_call(
@@ -152,9 +148,7 @@ def tracked_call(
             value.
     """
     if on_truncation not in ("warn", "raise"):
-        raise InvalidInputError(
-            f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}"
-        )
+        raise InvalidInputError(f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}")
     if on_record_error not in ("raise", "warn"):
         raise InvalidInputError(
             f"on_record_error must be 'raise' or 'warn', got {on_record_error!r}"
@@ -191,9 +185,7 @@ def tracked_call(
         return content, run_id
 
     try:
-        parsed = parse_llm_json(
-            content, recover=True, strict=True, on_truncation=on_truncation
-        )
+        parsed = parse_llm_json(content, recover=True, strict=True, on_truncation=on_truncation)
         return parsed, run_id
     except InvalidInputError:
         logger.warning(
@@ -408,9 +400,7 @@ def tracked_messages_call(
         except Exception:
             if on_record_error == "raise":
                 raise
-            logger.warning(
-                "llm_run_record_failed", agent_type=agent_type, model=model
-            )
+            logger.warning("llm_run_record_failed", agent_type=agent_type, model=model)
             return None
 
     logger.info("llm_call_start", agent_type=agent_type, model=model)

@@ -85,12 +85,8 @@ class SlugNormalizer:
         explicit_rejects: set[str] | None = None,
     ) -> None:
         self.canonical_slugs: set[str] = {s.lower() for s in canonical_slugs}
-        self.synonyms: dict[str, str] = {
-            _key(k): v for k, v in (synonyms or {}).items() if _key(k)
-        }
-        self.explicit_rejects: set[str] = {
-            _key(s) for s in (explicit_rejects or set()) if _key(s)
-        }
+        self.synonyms: dict[str, str] = {_key(k): v for k, v in (synonyms or {}).items() if _key(k)}
+        self.explicit_rejects: set[str] = {_key(s) for s in (explicit_rejects or set()) if _key(s)}
 
     def normalize(self, raw: str | None) -> str | None:
         """Map *raw* to a canonical slug, or ``None``.

@@ -130,8 +130,7 @@ def test_scaffolded_run_dispatches_venv_console_scripts(tmp_path, layout):
     proj = tmp_path / "dispatch-demo"
     _fake_console_script(proj, "pf-doctor", "RAN_PF_DOCTOR")
 
-    out = subprocess.run([str(proj / "bin" / "run"), "pf-doctor"],
-                         capture_output=True, text=True)
+    out = subprocess.run([str(proj / "bin" / "run"), "pf-doctor"], capture_output=True, text=True)
     assert "RAN_PF_DOCTOR" in out.stdout
 
 
@@ -142,8 +141,7 @@ def test_scaffolded_run_venv_dispatch_is_pf_prefixed_only(tmp_path):
     proj = tmp_path / "shadow-demo"
     _fake_console_script(proj, "hello", "VENV_HELLO_RAN")
 
-    out = subprocess.run([str(proj / "bin" / "run"), "hello"],
-                         capture_output=True, text=True)
+    out = subprocess.run([str(proj / "bin" / "run"), "hello"], capture_output=True, text=True)
     assert "VENV_HELLO_RAN" not in out.stdout
 
 

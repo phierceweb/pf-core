@@ -41,7 +41,7 @@ _JUDGE_SYSTEM = (
     "You are an expert evaluator. Your task is to compare two LLM outputs "
     "for the same task and score the candidate output relative to the reference.\n\n"
     "Return ONLY valid JSON in this exact format:\n"
-    "{\"score\": <float 0.0-1.0>, \"rationale\": \"<one sentence>\"}\n\n"
+    '{"score": <float 0.0-1.0>, "rationale": "<one sentence>"}\n\n'
     "Score 1.0 = candidate matches or exceeds reference quality. "
     "Score 0.0 = candidate is completely wrong or empty."
 )

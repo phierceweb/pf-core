@@ -102,7 +102,8 @@ def setup_rate_limit(
     )
 
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # starlette types handlers as (Request, Exception); dispatch guarantees RateLimitExceeded.
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
     app.add_middleware(SlowAPIMiddleware)
 
     logger.info(

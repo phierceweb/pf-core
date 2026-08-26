@@ -23,9 +23,7 @@ def agent_block_or_raise(slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
     doc = load()
     agents = doc["agents"]
     if slug not in agents:
-        raise ConfigurationError(
-            f"agent '{slug}' not defined in {config_path()}"
-        )
+        raise ConfigurationError(f"agent '{slug}' not defined in {config_path()}")
     return doc, agents[slug]
 
 
@@ -119,11 +117,7 @@ def get_agent_config(
                 f"agent '{slug}' does not declare backend '{active}' — "
                 f"declared: {', '.join(sorted(declared))}"
             )
-        cfg = {
-            k: v
-            for k, v in block.items()
-            if k not in STRUCTURAL_KEYS and k not in non_chat
-        }
+        cfg = {k: v for k, v in block.items() if k not in STRUCTURAL_KEYS and k not in non_chat}
         cfg.update(
             {
                 k: v
@@ -156,6 +150,4 @@ def assert_agents_registered(expected: list[str]) -> None:
     agents = load()["agents"]
     missing = [s for s in expected if s not in agents]
     if missing:
-        raise ConfigurationError(
-            f"agents missing from {config_path()}: {', '.join(missing)}"
-        )
+        raise ConfigurationError(f"agents missing from {config_path()}: {', '.join(missing)}")

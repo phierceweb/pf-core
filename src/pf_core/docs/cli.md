@@ -15,6 +15,7 @@ app = create_cli("myapp", help="My application CLI.")
 research.register(app)
 admin.register(app)
 
+
 def main():
     run_cli(app)
 ```
@@ -62,6 +63,7 @@ Group commands into modules with a `register(app)` function:
 from typing import Optional
 import typer
 from app.services import search_svc
+
 
 def register(app: typer.Typer) -> None:
     @app.command()

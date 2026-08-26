@@ -67,8 +67,7 @@ _ADMIN_PATH = re.compile(r"/admin/llm[A-Za-z0-9_./{}-]*")
 
 def _normalize_path(path: str) -> str:
     segments = [
-        "{}" if seg.startswith("{") or seg.isdigit() else seg
-        for seg in path.rstrip("/").split("/")
+        "{}" if seg.startswith("{") or seg.isdigit() else seg for seg in path.rstrip("/").split("/")
     ]
     return "/".join(segments)
 

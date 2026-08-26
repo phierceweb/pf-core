@@ -1,4 +1,5 @@
 """``python -m pf_core.guards`` -> run the structural gate."""
+
 from __future__ import annotations
 
 import sys

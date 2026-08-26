@@ -122,9 +122,7 @@ class TestRunCliConfig:
         assert "malformed" in capsys.readouterr().out
 
     def test_nonsense_limits_exit_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        (tmp_path / ".pf-guards.toml").write_text(
-            "[tool.pf_guards]\nhard = 0\n", encoding="utf-8"
-        )
+        (tmp_path / ".pf-guards.toml").write_text("[tool.pf_guards]\nhard = 0\n", encoding="utf-8")
         (tmp_path / "src").mkdir()
         monkeypatch.chdir(tmp_path)
         assert run_cli([]) == 2
@@ -176,8 +174,7 @@ class TestRunCliConfig:
         self, tmp_path: Path, monkeypatch, capsys
     ) -> None:
         (tmp_path / ".pf-guards.toml").write_text(
-            '[tool.pf_guards]\nroot = ["app", "tests"]\n'
-            "[tool.pf_guards.limits]\ntests = 600\n",
+            '[tool.pf_guards]\nroot = ["app", "tests"]\n[tool.pf_guards.limits]\ntests = 600\n',
             encoding="utf-8",
         )
         a = tmp_path / "app" / "cli" / "run.py"
@@ -218,9 +215,7 @@ class TestRunCliConfig:
         assert "FAIL" not in out
         assert "STALE" in out and "gone.py" in out
 
-    def test_string_baseline_in_config_exits_two(
-        self, tmp_path: Path, monkeypatch, capsys
-    ) -> None:
+    def test_string_baseline_in_config_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
         (tmp_path / ".pf-guards.toml").write_text(
             '[tool.pf_guards]\nbaseline = "x.json"\n', encoding="utf-8"
         )

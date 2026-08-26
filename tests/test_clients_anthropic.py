@@ -75,9 +75,7 @@ class TestAnthropicClientInit:
             assert client.api_key == "test-key"
             assert client.model == "claude-haiku-4-5"
             assert client.request_timeout == 60
-            mock_sdk.assert_called_once_with(
-                api_key="test-key", timeout=60, max_retries=0
-            )
+            mock_sdk.assert_called_once_with(api_key="test-key", timeout=60, max_retries=0)
 
     def test_missing_sdk_raises_import_error(self):
         """If anthropic isn't importable, constructor raises ImportError with a clear message."""
@@ -149,9 +147,7 @@ class TestAnthropicClientChat:
 
     def test_chat_translates_sdk_exception(self):
         with patch("anthropic.Anthropic") as mock_sdk:
-            mock_sdk.return_value.messages.create.side_effect = RuntimeError(
-                "boom"
-            )
+            mock_sdk.return_value.messages.create.side_effect = RuntimeError("boom")
             client = AnthropicClient(api_key="k", model="claude-haiku-4-5")
             with pytest.raises(AnthropicError, match="boom"):
                 client.chat(messages=[{"role": "user", "content": "Hi"}])
@@ -164,9 +160,7 @@ class TestAnthropicClientChat:
                 text="Hello", extra_blocks=[extra]
             )
             client = AnthropicClient(api_key="k", model="claude-haiku-4-5")
-            content, _ = client.chat(
-                messages=[{"role": "user", "content": "Hi"}]
-            )
+            content, _ = client.chat(messages=[{"role": "user", "content": "Hi"}])
             assert content == "Hello world"
 
     def test_chat_skips_non_text_blocks(self):
@@ -178,9 +172,7 @@ class TestAnthropicClientChat:
                 extra_blocks=[non_text],
             )
             client = AnthropicClient(api_key="k", model="claude-haiku-4-5")
-            content, _ = client.chat(
-                messages=[{"role": "user", "content": "Hi"}]
-            )
+            content, _ = client.chat(messages=[{"role": "user", "content": "Hi"}])
             assert content == "Hi there"
 
     def test_chat_usage_dict_has_full_key_set(self):
@@ -249,9 +241,10 @@ class TestAnthropicClientChat:
         from pf_core.pricing import _resolver
 
         _resolver._unknown_warned.discard("anthropic:totally-made-up-model")
-        with patch("anthropic.Anthropic") as mock_sdk, patch.object(
-            _resolver.logger, "warning"
-        ) as mock_warn:
+        with (
+            patch("anthropic.Anthropic") as mock_sdk,
+            patch.object(_resolver.logger, "warning") as mock_warn,
+        ):
             mock_sdk.return_value.messages.create.return_value = _mock_sdk_response(
                 input_tokens=100, output_tokens=50
             )
@@ -381,9 +374,7 @@ class TestPerCallTimeout:
             mock_sdk.return_value.with_options.return_value = derived
 
             client = AnthropicClient(api_key="k", model="m")
-            client.chat(
-                messages=[{"role": "user", "content": "x"}], timeout=10
-            )
+            client.chat(messages=[{"role": "user", "content": "x"}], timeout=10)
             mock_sdk.return_value.with_options.assert_called_once_with(timeout=10)
             derived.messages.create.assert_called_once()
 
@@ -439,9 +430,7 @@ class TestPreflight:
         """Actionable message points at the env var operators can fix."""
         with patch("anthropic.Anthropic") as mock_sdk:
             mock_sdk.return_value.with_options.return_value = mock_sdk.return_value
-            mock_sdk.return_value.models.list.side_effect = RuntimeError(
-                "401 Unauthorized"
-            )
+            mock_sdk.return_value.models.list.side_effect = RuntimeError("401 Unauthorized")
             client = AnthropicClient(api_key="bad")
             with pytest.raises(AnthropicError, match=r"ANTHROPIC_API_KEY"):
                 client.preflight()
@@ -463,9 +452,7 @@ class TestPreflight:
             derived.models.list.return_value = MagicMock()
             mock_sdk.return_value.with_options.return_value = derived
 
-            client = AnthropicClient(
-                api_key="k", request_timeout=600
-            )  # long instance default
+            client = AnthropicClient(api_key="k", request_timeout=600)  # long instance default
             client.preflight()
             # with_options called with a short timeout (< 60s)
             (call,) = mock_sdk.return_value.with_options.call_args_list

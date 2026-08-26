@@ -12,9 +12,11 @@ from pf_core.llm import get_agent_config
 from pf_core.llm.tracking import track_run
 from pf_core.clients.openrouter import get_client
 
+
 @track_run(agent_type="summarizer")
 def _tracked_chat(*, model, messages, **sampling):
     return get_client().chat(model=model, messages=messages, **sampling)
+
 
 def summarize_item(*, item_id: int, job_id: int | None = None) -> dict:
     cfg = get_agent_config("summarizer")
@@ -103,7 +105,7 @@ A budget guard that quietly disarms itself is worse than no guard, so the three 
 **`sync_budgets_from_yaml()` never raises on a bad config file** — database errors from the write still propagate. Consumers call it at boot, where raising on an unreadable config costs availability without buying safety: the previously synced rows keep enforcing either way. Call `load_yaml()` first if you want boot to fail fast on a bad config:
 
 ```python
-load_yaml()                 # raises ConfigurationError on a bad file
+load_yaml()  # raises ConfigurationError on a bad file
 sync_budgets_from_yaml()
 ```
 
@@ -155,7 +157,7 @@ Calendar-anchored, UTC:
 cost = project_cost(
     agent_type="summarizer",
     model="claude-opus-4-7",
-    provider="anthropic",      # optional — disambiguates the price list
+    provider="anthropic",  # optional — disambiguates the price list
     estimated_prompt_tokens=1500,
     estimated_completion_tokens=1000,
 )
@@ -210,7 +212,7 @@ When a call pushes spend across a soft-threshold fraction (e.g. `0.8` of limit),
 ```python
 from pf_core.budget import refresh_snapshots
 
-refresh_snapshots()              # all budgets
+refresh_snapshots()  # all budgets
 refresh_snapshots(period="daily")  # just daily
 ```
 
@@ -224,8 +226,8 @@ For long-running consumer processes (FastAPI app, worker daemon), call `start_bu
 from pf_core.budget import start_budget_refresh_loop
 
 # In FastAPI startup hook, worker entry point, etc.
-start_budget_refresh_loop()                       # 60s default
-start_budget_refresh_loop(interval_seconds=300)   # monthly-only consumer
+start_budget_refresh_loop()  # 60s default
+start_budget_refresh_loop(interval_seconds=300)  # monthly-only consumer
 ```
 
 Idempotent — only the first call wins. Refresh failures are logged at WARNING and swallowed; the loop continues so a transient DB hiccup does not freeze snapshots forever.

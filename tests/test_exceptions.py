@@ -19,23 +19,29 @@ from pf_core.exceptions import (
 class TestFlowExceptionHierarchy:
     """All FlowException subclasses are FlowExceptions but not AppErrors."""
 
-    @pytest.mark.parametrize("cls", [
-        InvalidInputError,
-        PreconditionError,
-        ActionNotAllowedError,
-        NotFoundError,
-        ConfigurationError,
-    ])
+    @pytest.mark.parametrize(
+        "cls",
+        [
+            InvalidInputError,
+            PreconditionError,
+            ActionNotAllowedError,
+            NotFoundError,
+            ConfigurationError,
+        ],
+    )
     def test_is_flow_exception(self, cls):
         assert issubclass(cls, FlowException)
 
-    @pytest.mark.parametrize("cls", [
-        InvalidInputError,
-        PreconditionError,
-        ActionNotAllowedError,
-        NotFoundError,
-        ConfigurationError,
-    ])
+    @pytest.mark.parametrize(
+        "cls",
+        [
+            InvalidInputError,
+            PreconditionError,
+            ActionNotAllowedError,
+            NotFoundError,
+            ConfigurationError,
+        ],
+    )
     def test_is_not_app_error(self, cls):
         assert not issubclass(cls, AppError)
 

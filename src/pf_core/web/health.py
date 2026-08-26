@@ -35,6 +35,7 @@ def _check_db() -> str:
     """Ping the database; return ``"ok"`` or an error message."""
     try:
         from pf_core.db import ping
+
         ping()
         return "ok"
     except Exception as e:

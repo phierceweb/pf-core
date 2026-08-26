@@ -88,8 +88,7 @@ class MarkdownExporter:
         root; ``content`` is the full file body.
         """
         raise NotImplementedError(
-            "Subclasses must implement iter_artifacts() -> "
-            "Iterator[tuple[str, str]]"
+            "Subclasses must implement iter_artifacts() -> Iterator[tuple[str, str]]"
         )
 
     def export(self, root: str | Path) -> ExportResult:
@@ -111,8 +110,7 @@ class MarkdownExporter:
                 via ``..``.
         """
         root = Path(root)
-        artifacts = [(self._safe_relpath(rel), content)
-                     for rel, content in self.iter_artifacts()]
+        artifacts = [(self._safe_relpath(rel), content) for rel, content in self.iter_artifacts()]
 
         written = unchanged = 0
         for rel, content in artifacts:
@@ -146,8 +144,7 @@ class MarkdownExporter:
         the freshness gate for committing generated trees.
         """
         root = Path(root)
-        artifacts = [(self._safe_relpath(rel), content)
-                     for rel, content in self.iter_artifacts()]
+        artifacts = [(self._safe_relpath(rel), content) for rel, content in self.iter_artifacts()]
 
         stale: set[str] = set()
         for rel, content in artifacts:

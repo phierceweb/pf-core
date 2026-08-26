@@ -1,4 +1,5 @@
 """Tests for pf_core.utils.periods — preset → Period resolver."""
+
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
@@ -47,6 +48,7 @@ class TestYesterday:
         # 2026-05-13 03:00 UTC-5 == 2026-05-13 08:00 UTC, so "yesterday"
         # in UTC is 2026-05-12.
         from datetime import timedelta
+
         now = datetime(2026, 5, 13, 3, 0, tzinfo=timezone(timedelta(hours=-5)))
         p = resolve("yesterday", now=now)
         assert p.label == "day:2026-05-12"
@@ -73,15 +75,19 @@ class TestRollingPresets:
         assert p.start == _utc(2026, 5, 12, 9, 30)
         assert p.label == "last_24h"
 
-    @pytest.mark.parametrize("preset,days", [
-        ("last_3d", 3),
-        ("last_7d", 7),
-        ("last_14d", 14),
-        ("last_30d", 30),
-        ("last_90d", 90),
-    ])
+    @pytest.mark.parametrize(
+        "preset,days",
+        [
+            ("last_3d", 3),
+            ("last_7d", 7),
+            ("last_14d", 14),
+            ("last_30d", 30),
+            ("last_90d", 90),
+        ],
+    )
     def test_rolling_n_days_window(self, preset, days):
         from datetime import timedelta
+
         now = _utc(2026, 5, 13)
         p = resolve(preset, now=now)
         assert p.end == now
@@ -96,8 +102,12 @@ class TestRollingPresets:
 class TestRollingPresetsRegistry:
     def test_registry_includes_all_six_rolling_presets(self):
         assert set(ROLLING_PRESETS) == {
-            "last_24h", "last_3d", "last_7d",
-            "last_14d", "last_30d", "last_90d",
+            "last_24h",
+            "last_3d",
+            "last_7d",
+            "last_14d",
+            "last_30d",
+            "last_90d",
         }
 
 
@@ -107,6 +117,7 @@ class TestAnchor:
         p = resolve("last_7d", anchor=anchor, now=_utc(2026, 5, 13))
         assert p.end == anchor
         from datetime import timedelta
+
         assert p.end - p.start == timedelta(days=7)
 
     def test_anchor_at_midnight_utc_becomes_date_label(self):
@@ -215,10 +226,13 @@ class TestDaysInPeriod:
 class TestPublicSurface:
     def test_all_names_exported(self):
         from pf_core.utils import periods as mod
+
         expected = {
-            "Period", "ROLLING_PRESETS",
+            "Period",
+            "ROLLING_PRESETS",
             "resolve",
-            "parse_period_arg", "parse_anchor_arg",
+            "parse_period_arg",
+            "parse_anchor_arg",
             "days_in_period",
         }
         assert expected.issubset(set(mod.__all__))
@@ -227,6 +241,13 @@ class TestPublicSurface:
 
     def test_private_helpers_not_in_all(self):
         from pf_core.utils import periods as mod
-        for private in ("_yesterday", "_day", "_anchor_label",
-                        "_DAY_PRESET_RE", "_DATE_ONLY_RE", "_ISO_FORMATS"):
+
+        for private in (
+            "_yesterday",
+            "_day",
+            "_anchor_label",
+            "_DAY_PRESET_RE",
+            "_DATE_ONLY_RE",
+            "_ISO_FORMATS",
+        ):
             assert private not in mod.__all__

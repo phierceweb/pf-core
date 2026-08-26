@@ -83,9 +83,7 @@ class BraveSearchClient:
         cost_per_call_usd: float = _DEFAULT_COST_PER_CALL_USD,
     ) -> None:
         if not api_key:
-            raise BraveSearchError(
-                "BRAVE_API_KEY not set. Pass api_key=... or set the env var."
-            )
+            raise BraveSearchError("BRAVE_API_KEY not set. Pass api_key=... or set the env var.")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.request_timeout = request_timeout
@@ -158,7 +156,9 @@ class BraveSearchClient:
         t0 = time.monotonic()
         try:
             resp = httpx.get(
-                url, headers=headers, params=params,
+                url,
+                headers=headers,
+                params=params,
                 timeout=self.request_timeout,
             )
         except httpx.TimeoutException as e:
@@ -218,13 +218,15 @@ class BraveSearchClient:
             u = r.get("url")
             if not isinstance(u, str) or not u:
                 continue
-            out.append({
-                "url": u,
-                "title": str(r.get("title") or ""),
-                "description": str(r.get("description") or ""),
-                "age": r.get("age"),
-                "page_age": r.get("page_age"),
-            })
+            out.append(
+                {
+                    "url": u,
+                    "title": str(r.get("title") or ""),
+                    "description": str(r.get("description") or ""),
+                    "age": r.get("age"),
+                    "page_age": r.get("page_age"),
+                }
+            )
 
         usage = {
             "prompt_tokens": 0,

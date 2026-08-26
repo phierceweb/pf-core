@@ -7,12 +7,14 @@ Decouples service-layer progress messages from output mechanism. Services accept
 ```python
 from pf_core.output import ConsoleReporter, NullReporter, Reporter
 
+
 def process_items(items: list, *, reporter: Reporter | None = None):
     reporter = reporter or NullReporter()
     reporter.info("Processing {n} items", n=len(items))
     for item in items:
         reporter.step("Item {id}", id=item["id"])
     reporter.done("Finished {n} items", n=len(items))
+
 
 # CLI entry point:
 process_items(items, reporter=ConsoleReporter())
@@ -46,11 +48,11 @@ Writes to stderr via Rich Console with color styling.
 from pf_core.output import ConsoleReporter
 
 reporter = ConsoleReporter()
-reporter.info("Starting batch")           # plain
-reporter.warning("Config outdated")       # [yellow]
-reporter.error("Failed: {e}", e=err)      # [red]
-reporter.step("Processed {n}/10", n=5)     #   [dim]
-reporter.done("All done")                 # [bold green]
+reporter.info("Starting batch")  # plain
+reporter.warning("Config outdated")  # [yellow]
+reporter.error("Failed: {e}", e=err)  # [red]
+reporter.step("Processed {n}/10", n=5)  #   [dim]
+reporter.done("All done")  # [bold green]
 ```
 
 Accepts an optional `console` parameter for testing:
@@ -58,6 +60,7 @@ Accepts an optional `console` parameter for testing:
 ```python
 from io import StringIO
 from rich.console import Console
+
 buf = StringIO()
 reporter = ConsoleReporter(console=Console(file=buf))
 ```
@@ -100,7 +103,7 @@ treated as data rather than rich markup:
 
 ```python
 reporter.info("give it two numbers [x, y]")  # prints the brackets, not a dropped tag
-reporter.error("use [/] to close a tag")     # prints — unescaped this raises MarkupError
+reporter.error("use [/] to close a tag")  # prints — unescaped this raises MarkupError
 ```
 
 ## Migration
@@ -120,6 +123,7 @@ With:
 
 ```python
 from pf_core.output import Reporter, NullReporter
+
 
 def process_items(items, *, reporter: Reporter | None = None):
     reporter = reporter or NullReporter()

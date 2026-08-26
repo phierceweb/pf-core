@@ -69,8 +69,7 @@ _RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504, 529})
 _RETRY_BACKOFF_BASE = 0.5
 
 _JSON_OBJECT_INSTRUCTION = (
-    "Respond with a single valid JSON object and nothing else — "
-    "no prose, no code fences."
+    "Respond with a single valid JSON object and nothing else — no prose, no code fences."
 )
 # One-shot warning guard, keyed by response_format type.
 _response_format_warned: set[str] = set()
@@ -118,7 +117,7 @@ def _split_system(messages: list[dict]) -> tuple[str | None, list[dict]]:
             break
     if not parts:
         return None, messages
-    return "\n\n".join(parts), messages[len(parts):]
+    return "\n\n".join(parts), messages[len(parts) :]
 
 
 def _apply_response_format(
@@ -150,9 +149,7 @@ def _apply_response_format(
                 "nesting {'type': 'json_schema', 'json_schema': "
                 "{'schema': {...}}}."
             )
-        call_kwargs["output_config"] = {
-            "format": {"type": "json_schema", "schema": schema}
-        }
+        call_kwargs["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
         return system
     if fmt_type == "json_object":
         if "json_object" not in _response_format_warned:
@@ -212,9 +209,7 @@ class AnthropicClient:
         self.retry = retry
         # max_retries=0: the SDK's own default (2) would multiply with the
         # retry loop in chat(), turning one logical request into up to six.
-        self._client = Anthropic(
-            api_key=api_key, timeout=request_timeout, max_retries=0
-        )
+        self._client = Anthropic(api_key=api_key, timeout=request_timeout, max_retries=0)
 
     def chat(
         self,
@@ -267,9 +262,7 @@ class AnthropicClient:
             )
 
         if cache_ttl not in _VALID_CACHE_TTLS:
-            raise AnthropicError(
-                f"cache_ttl must be one of {_VALID_CACHE_TTLS}, got {cache_ttl!r}"
-            )
+            raise AnthropicError(f"cache_ttl must be one of {_VALID_CACHE_TTLS}, got {cache_ttl!r}")
 
         # Per-call timeout via SDK's with_options derived-client pattern.
         sdk = self._client if timeout is None else self._client.with_options(timeout=timeout)
@@ -355,9 +348,7 @@ class AnthropicClient:
         # cost estimate doesn't add them.
         reasoning_tokens = int(getattr(usage_attr, "thinking_tokens", 0) or 0)
         cache_read_tokens = int(getattr(usage_attr, "cache_read_input_tokens", 0) or 0)
-        cache_write_tokens = int(
-            getattr(usage_attr, "cache_creation_input_tokens", 0) or 0
-        )
+        cache_write_tokens = int(getattr(usage_attr, "cache_creation_input_tokens", 0) or 0)
         usage = {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
@@ -461,8 +452,7 @@ def new_client(
     resolved_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
     if not resolved_key:
         raise AnthropicError(
-            "AnthropicClient requires ANTHROPIC_API_KEY env var or "
-            "explicit api_key= argument."
+            "AnthropicClient requires ANTHROPIC_API_KEY env var or explicit api_key= argument."
         )
     return AnthropicClient(
         api_key=resolved_key,

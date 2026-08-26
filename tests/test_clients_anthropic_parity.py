@@ -189,9 +189,7 @@ class TestResponseFormatJsonSchema:
                 response_format={"type": "json_schema", "schema": _SCHEMA},
             )
             kw = _chat_kwargs(mock_sdk)
-            assert kw["output_config"] == {
-                "format": {"type": "json_schema", "schema": _SCHEMA}
-            }
+            assert kw["output_config"] == {"format": {"type": "json_schema", "schema": _SCHEMA}}
             assert "response_format" not in kw
 
     def test_openai_nested_schema_maps_to_output_config(self):
@@ -206,9 +204,7 @@ class TestResponseFormatJsonSchema:
                 },
             )
             kw = _chat_kwargs(mock_sdk)
-            assert kw["output_config"] == {
-                "format": {"type": "json_schema", "schema": _SCHEMA}
-            }
+            assert kw["output_config"] == {"format": {"type": "json_schema", "schema": _SCHEMA}}
 
     def test_json_schema_without_schema_raises(self):
         with patch("anthropic.Anthropic") as mock_sdk:
@@ -257,9 +253,10 @@ class TestResponseFormatJsonObject:
     def test_json_object_warns_once_per_process(self):
         from pf_core.clients import anthropic as anthropic_mod
 
-        with patch("anthropic.Anthropic") as mock_sdk, patch.object(
-            anthropic_mod._log, "warning"
-        ) as mock_warn:
+        with (
+            patch("anthropic.Anthropic") as mock_sdk,
+            patch.object(anthropic_mod._log, "warning") as mock_warn,
+        ):
             mock_sdk.return_value.messages.create.return_value = _mock_sdk_response()
             client = AnthropicClient(api_key="k", model="m")
             for _ in range(2):
@@ -291,9 +288,10 @@ class TestResponseFormatUnknown:
     def test_unknown_type_ignored_with_one_shot_warning(self):
         from pf_core.clients import anthropic as anthropic_mod
 
-        with patch("anthropic.Anthropic") as mock_sdk, patch.object(
-            anthropic_mod._log, "warning"
-        ) as mock_warn:
+        with (
+            patch("anthropic.Anthropic") as mock_sdk,
+            patch.object(anthropic_mod._log, "warning") as mock_warn,
+        ):
             mock_sdk.return_value.messages.create.return_value = _mock_sdk_response()
             client = AnthropicClient(api_key="k", model="m")
             for _ in range(2):
@@ -312,9 +310,10 @@ class TestCacheAwareCost:
     def test_cache_tokens_passed_to_estimate_cost(self):
         from pf_core.clients import anthropic as anthropic_mod
 
-        with patch("anthropic.Anthropic") as mock_sdk, patch.object(
-            anthropic_mod, "estimate_cost", return_value=0.5
-        ) as mock_cost:
+        with (
+            patch("anthropic.Anthropic") as mock_sdk,
+            patch.object(anthropic_mod, "estimate_cost", return_value=0.5) as mock_cost,
+        ):
             mock_sdk.return_value.messages.create.return_value = _mock_sdk_response(
                 input_tokens=100,
                 output_tokens=50,
@@ -337,9 +336,10 @@ class TestCacheAwareCost:
     def test_cache_ttl_passed_to_estimate_cost(self):
         from pf_core.clients import anthropic as anthropic_mod
 
-        with patch("anthropic.Anthropic") as mock_sdk, patch.object(
-            anthropic_mod, "estimate_cost", return_value=0.5
-        ) as mock_cost:
+        with (
+            patch("anthropic.Anthropic") as mock_sdk,
+            patch.object(anthropic_mod, "estimate_cost", return_value=0.5) as mock_cost,
+        ):
             mock_sdk.return_value.messages.create.return_value = _mock_sdk_response()
             client = AnthropicClient(api_key="k", model="m")
             client.chat(messages=list(_SYS), cache_system=True, cache_ttl="1h")

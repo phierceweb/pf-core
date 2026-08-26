@@ -49,7 +49,7 @@ def _process_one(item: dict, *, cfg: dict, job, job_id: int) -> None:
         if result.validation and not result.validation.ok:
             step.error = "validation failed"
             return
-        _persist(item, result.value, run_id=result.run_id)   # persistence is yours
+        _persist(item, result.value, run_id=result.run_id)  # persistence is yours
         step.outputs = {"cache_hit": result.cache_hit}
 
 

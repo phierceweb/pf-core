@@ -240,9 +240,7 @@ def _entry_col(entry_id: int, column):
     from pf_core.llm.cache._schema import llm_cache_entries
 
     with transaction() as conn:
-        return conn.execute(
-            select(column).where(llm_cache_entries.c.id == entry_id)
-        ).scalar_one()
+        return conn.execute(select(column).where(llm_cache_entries.c.id == entry_id)).scalar_one()
 
 
 def test_exact_cache_bump_hit(cache_db):
@@ -318,11 +316,14 @@ def test_exact_cache_store_preserves_hit_counters_across_refresh(cache_db):
     assert _entry_col(entry_id, llm_cache_entries.c.hit_count) == 1
 
 
-@pytest.mark.parametrize("dialect_name, expected", [
-    ("postgresql", "ON CONFLICT (INPUT_HASH) DO UPDATE SET"),
-    ("sqlite", "ON CONFLICT (INPUT_HASH) DO UPDATE SET"),
-    ("mysql", "ON DUPLICATE KEY UPDATE"),
-])
+@pytest.mark.parametrize(
+    "dialect_name, expected",
+    [
+        ("postgresql", "ON CONFLICT (INPUT_HASH) DO UPDATE SET"),
+        ("sqlite", "ON CONFLICT (INPUT_HASH) DO UPDATE SET"),
+        ("mysql", "ON DUPLICATE KEY UPDATE"),
+    ],
+)
 def test_store_compiles_to_a_portable_upsert(dialect_name, expected):
     """The hand-rolled try-INSERT/except-SELECT this replaced could not work on
     PostgreSQL — a failed statement aborts the transaction, so the recovery

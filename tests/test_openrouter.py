@@ -132,6 +132,7 @@ class TestOpenRouterClientChat:
     @patch("pf_core.clients.openrouter.httpx.post")
     def test_timeout_raises(self, mock_post):
         import httpx
+
         mock_post.side_effect = httpx.TimeoutException("timed out")
         client = OpenRouterClient(api_key="k", request_timeout=5)
         with pytest.raises(OpenRouterError, match="timed out"):
@@ -226,13 +227,16 @@ class TestOpenRouterClientChatUsageExpansion:
         """Every response yields a usage dict with the full key set."""
         mock_post.return_value = self._mock(usage={"prompt_tokens": 10, "completion_tokens": 5})
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         for key in (
-            "prompt_tokens", "completion_tokens",
-            "cache_read_tokens", "cache_write_tokens", "reasoning_tokens",
-            "cost_usd", "duration_ms", "system_fingerprint",
+            "prompt_tokens",
+            "completion_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "reasoning_tokens",
+            "cost_usd",
+            "duration_ms",
+            "system_fingerprint",
         ):
             assert key in usage, f"missing {key}"
         assert usage["cache_read_tokens"] == 0
@@ -247,9 +251,7 @@ class TestOpenRouterClientChatUsageExpansion:
             system_fingerprint="fp_abc123",
         )
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["system_fingerprint"] == "fp_abc123"
 
     @patch("pf_core.clients.openrouter.httpx.post")
@@ -264,9 +266,7 @@ class TestOpenRouterClientChatUsageExpansion:
             },
         )
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["cache_read_tokens"] == 900
         assert usage["cache_write_tokens"] == 100
 
@@ -281,9 +281,7 @@ class TestOpenRouterClientChatUsageExpansion:
             },
         )
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["cache_read_tokens"] == 750
 
     @patch("pf_core.clients.openrouter.httpx.post")
@@ -297,9 +295,7 @@ class TestOpenRouterClientChatUsageExpansion:
             },
         )
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["cache_write_tokens"] == 240
 
     @patch("pf_core.clients.openrouter.httpx.post")
@@ -313,9 +309,7 @@ class TestOpenRouterClientChatUsageExpansion:
             },
         )
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["reasoning_tokens"] == 300
 
     @patch("pf_core.clients.openrouter.httpx.post")
@@ -329,9 +323,7 @@ class TestOpenRouterClientChatUsageExpansion:
             },
         )
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["reasoning_tokens"] == 250
 
     @patch("pf_core.clients.openrouter.httpx.post")
@@ -341,9 +333,7 @@ class TestOpenRouterClientChatUsageExpansion:
         resp.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
         mock_post.return_value = resp
         client = OpenRouterClient(api_key="k")
-        _, usage = client.chat(
-            messages=[{"role": "user", "content": "Hi"}], model="test/model"
-        )
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["prompt_tokens"] == 0
         assert usage["completion_tokens"] == 0
         assert usage["cache_read_tokens"] == 0
@@ -425,18 +415,14 @@ class TestRetry:
         mock_post.return_value = self._resp(status_code=503, body="upstream busy")
         client = OpenRouterClient(api_key="k")  # retry default 0
         with pytest.raises(OpenRouterError):
-            client.chat(
-                messages=[{"role": "user", "content": "x"}], model="m"
-            )
+            client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert mock_post.call_count == 1
 
     @patch("pf_core.clients.openrouter.httpx.post")
     def test_retry_on_5xx(self, mock_post, sleeps):
         mock_post.side_effect = [self._resp(status_code=502), self._resp()]
         client = OpenRouterClient(api_key="k", retry=1)
-        content, _ = client.chat(
-            messages=[{"role": "user", "content": "x"}], model="m"
-        )
+        content, _ = client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert content == "ok"
         assert mock_post.call_count == 2
 
@@ -447,9 +433,7 @@ class TestRetry:
             self._resp(),
         ]
         client = OpenRouterClient(api_key="k", retry=1)
-        content, _ = client.chat(
-            messages=[{"role": "user", "content": "x"}], model="m"
-        )
+        content, _ = client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert content == "ok"
         assert mock_post.call_count == 2
 
@@ -462,9 +446,7 @@ class TestRetry:
             self._resp(),
         ]
         client = OpenRouterClient(api_key="k", retry=1)
-        content, _ = client.chat(
-            messages=[{"role": "user", "content": "x"}], model="m"
-        )
+        content, _ = client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert content == "ok"
         assert mock_post.call_count == 2
 
@@ -475,9 +457,7 @@ class TestRetry:
         mock_post.return_value = self._resp(status_code=401, body="bad key")
         client = OpenRouterClient(api_key="k", retry=3)
         with pytest.raises(OpenRouterError):
-            client.chat(
-                messages=[{"role": "user", "content": "x"}], model="m"
-            )
+            client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert mock_post.call_count == 1  # not retried
 
     @patch("pf_core.clients.openrouter.httpx.post")
@@ -485,9 +465,7 @@ class TestRetry:
         mock_post.return_value = self._resp(status_code=503)
         client = OpenRouterClient(api_key="k", retry=2)
         with pytest.raises(OpenRouterError):
-            client.chat(
-                messages=[{"role": "user", "content": "x"}], model="m"
-            )
+            client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert mock_post.call_count == 3  # initial + 2 retries
 
     @patch("pf_core.clients.openrouter.httpx.post")
@@ -496,9 +474,7 @@ class TestRetry:
         OpenRouterError, not an assert (stripped under python -O)."""
         client = OpenRouterClient(api_key="k", retry=-1)
         with pytest.raises(OpenRouterError, match="retry"):
-            client.chat(
-                messages=[{"role": "user", "content": "x"}], model="m"
-            )
+            client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert mock_post.call_count == 0
 
     def test_retry_via_get_client(self, monkeypatch):
@@ -827,9 +803,7 @@ class TestChoicesAndFinishReason:
     def test_max_tokens_truncation_surfaced(self, mock_post):
         mock_post.return_value = self._resp(
             {
-                "choices": [
-                    {"message": {"content": "half an ans"}, "finish_reason": "length"}
-                ],
+                "choices": [{"message": {"content": "half an ans"}, "finish_reason": "length"}],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 4096},
             }
         )
@@ -847,8 +821,18 @@ class TestRetryAfterClamping:
 
     @pytest.mark.parametrize(
         "header",
-        ["5", "0", "-1", "-5", "nan", "inf", "-inf", "120", "garbage",
-         "Wed, 21 Oct 2015 07:28:00 GMT"],
+        [
+            "5",
+            "0",
+            "-1",
+            "-5",
+            "nan",
+            "inf",
+            "-inf",
+            "120",
+            "garbage",
+            "Wed, 21 Oct 2015 07:28:00 GMT",
+        ],
     )
     def test_delay_is_always_sleepable(self, header):
         delay = _retry_delay(0, header)

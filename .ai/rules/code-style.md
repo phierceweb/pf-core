@@ -2,7 +2,7 @@
 
 ## General
 
-- Python 3.11+ — use modern syntax (type unions with `|`, `match` where clearer).
+- Python 3.12+ — use modern syntax (type unions with `|`, `match` where clearer).
 - No star imports (`from x import *`).
 - Imports grouped: stdlib → third-party → pf_core → project. One blank line between groups.
 - Use `from __future__ import annotations` in files with forward references.

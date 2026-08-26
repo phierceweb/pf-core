@@ -101,9 +101,7 @@ class OpenRouterClient:
         retry: int = 0,
     ) -> None:
         if not api_key:
-            raise OpenRouterError(
-                "OPENROUTER_API_KEY not set. Add it to .env."
-            )
+            raise OpenRouterError("OPENROUTER_API_KEY not set. Add it to .env.")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.app_name = app_name
@@ -176,9 +174,7 @@ class OpenRouterClient:
         for attempt in range(self.retry + 1):
             t0 = time.monotonic()
             try:
-                resp = httpx.post(
-                    url, headers=headers, json=body, timeout=req_timeout
-                )
+                resp = httpx.post(url, headers=headers, json=body, timeout=req_timeout)
             except httpx.TimeoutException as e:
                 if attempt < self.retry:
                     delay = _retry_delay(attempt)
@@ -193,8 +189,7 @@ class OpenRouterClient:
                     time.sleep(delay)
                     continue
                 raise OpenRouterError(
-                    f"Request timed out after {req_timeout}s "
-                    f"(after {attempt + 1} attempt(s)): {e}",
+                    f"Request timed out after {req_timeout}s (after {attempt + 1} attempt(s)): {e}",
                     context={
                         "model": model,
                         "timeout": req_timeout,
@@ -205,9 +200,7 @@ class OpenRouterClient:
             if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < self.retry:
                 delay = _retry_delay(
                     attempt,
-                    resp.headers.get("Retry-After")
-                    if resp.status_code == 429
-                    else None,
+                    resp.headers.get("Retry-After") if resp.status_code == 429 else None,
                 )
                 _log.warning(
                     "openrouter_retry_status",
@@ -265,9 +258,7 @@ class OpenRouterClient:
             "prompt_tokens": usage_raw.get("prompt_tokens", 0),
             "completion_tokens": usage_raw.get("completion_tokens", 0),
             "cache_read_tokens": (
-                usage_raw.get("cache_read_tokens")
-                or prompt_details.get("cached_tokens")
-                or 0
+                usage_raw.get("cache_read_tokens") or prompt_details.get("cached_tokens") or 0
             ),
             "cache_write_tokens": (
                 usage_raw.get("cache_write_tokens")
@@ -275,9 +266,7 @@ class OpenRouterClient:
                 or 0
             ),
             "reasoning_tokens": (
-                usage_raw.get("reasoning_tokens")
-                or completion_details.get("reasoning_tokens")
-                or 0
+                usage_raw.get("reasoning_tokens") or completion_details.get("reasoning_tokens") or 0
             ),
             "cost_usd": (
                 server_cost
@@ -339,8 +328,7 @@ class OpenRouterClient:
             )
         except httpx.HTTPError as e:
             raise OpenRouterError(
-                f"OpenRouter preflight failed: {e}. "
-                f"Check network connectivity to {self.base_url}.",
+                f"OpenRouter preflight failed: {e}. Check network connectivity to {self.base_url}.",
                 context={"preflight": True},
                 cause=e,
             )
@@ -357,8 +345,7 @@ class OpenRouterClient:
             )
         if resp.status_code != 200:
             raise OpenRouterError(
-                f"OpenRouter preflight returned {resp.status_code}: "
-                f"{resp.text[:500]}",
+                f"OpenRouter preflight returned {resp.status_code}: {resp.text[:500]}",
                 context={
                     "preflight": True,
                     "status_code": resp.status_code,
@@ -430,19 +417,16 @@ def new_client(
 
     return OpenRouterClient(
         api_key=api_key or os.environ.get("OPENROUTER_API_KEY", ""),
-        base_url=base_url or os.environ.get(
-            "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
-        ),
+        base_url=base_url or os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
         app_name=app_name or os.environ.get("APP_NAME", ""),
         app_url=app_url or os.environ.get("APP_URL", ""),
-        provider_ignore=provider_ignore or [
+        provider_ignore=provider_ignore
+        or [
             s.strip()
             for s in os.environ.get("OPENROUTER_PROVIDER_IGNORE", "").split(",")
             if s.strip()
         ],
-        request_timeout=request_timeout or int(
-            os.environ.get("REQUEST_TIMEOUT", "120")
-        ),
+        request_timeout=request_timeout or int(os.environ.get("REQUEST_TIMEOUT", "120")),
         retry=retry,
     )
 

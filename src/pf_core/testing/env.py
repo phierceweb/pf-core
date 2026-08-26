@@ -75,9 +75,7 @@ def stub_model_router(
     """
     import yaml
 
-    target_dir = (
-        Path(dir) if dir is not None else Path(tempfile.mkdtemp(prefix="pf_router_"))
-    )
+    target_dir = Path(dir) if dir is not None else Path(tempfile.mkdtemp(prefix="pf_router_"))
     path = target_dir / "model_router_stub.yaml"
     doc = {"agents": {slug: {"model": model} for slug in agents}}
     path.write_text(yaml.safe_dump(doc, sort_keys=True), encoding="utf-8")

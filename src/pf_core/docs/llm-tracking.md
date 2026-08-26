@@ -80,40 +80,35 @@ from pf_core.llm.tracking import LlmRunRepo
 run_id = LlmRunRepo().record(
     agent_type="summarizer",
     model="claude-opus-4-7",
-    system_prompt_id=ps_id,             # FK into llm_prompts
+    system_prompt_id=ps_id,  # FK into llm_prompts
     user_prompt_id=pu_id,
-
     sampling={"temperature": 0.2, "top_p": 1.0, "max_tokens": 4096, "seed": 7},
     provider="openrouter",
     model_fingerprint=usage["system_fingerprint"],
-
     usage={
-        "prompt_tokens": 1200, "completion_tokens": 800,
-        "cache_read_tokens": 900, "cache_write_tokens": 0,
+        "prompt_tokens": 1200,
+        "completion_tokens": 800,
+        "cache_read_tokens": 900,
+        "cache_write_tokens": 0,
         "reasoning_tokens": 0,
         "cost_usd": 0.0052,
         "duration_ms": 3100,
     },
-
     items_out=7,
-    status="success",                   # 'success' | 'failed' | 'partial' | 'filtered' | …
-
+    status="success",  # 'success' | 'failed' | 'partial' | 'filtered' | …
     # Sidecars — all optional
     configs={"prompt_variant": bv_id, "task_config": ec_id},
     validations=[
-        ("url_hallucination", True,  "info",  None),
-        ("coverage_ratio",     True,  "info",  {"ratio": 0.85}),
-        ("json_schema",        False, "error", {"missing": ["fields"]}),
+        ("url_hallucination", True, "info", None),
+        ("coverage_ratio", True, "info", {"ratio": 0.85}),
+        ("json_schema", False, "error", {"missing": ["fields"]}),
     ],
     metrics={"coverage_ratio": 0.85, "n_items": 12},
     tags=["env:prod", "agent:summarizer"],
-
     rendered_prompts=(rendered_sys, rendered_user),
     raw_response=response_text,
-    parsed_output=parsed,                # any JSON-serializable value
-
+    parsed_output=parsed,  # any JSON-serializable value
     parent_run=(prior_run_id, "retry"),  # writes into llm_run_links
-
     extra_run_values={"thread_id": 12, "item_id": 87},  # project columns
 )
 ```
@@ -138,9 +133,11 @@ from pf_core.llm.tracking import track_run
 from pf_core.llm.router import get_agent_config
 from pf_core.clients.openrouter import get_client
 
+
 @track_run(agent_type="summarizer", provider="openrouter")
 def tracked_chat(*, model, messages, **sampling):
     return get_client().chat(model=model, messages=messages, **sampling)
+
 
 cfg = get_agent_config("summarizer")  # {"model": "...", "temperature": 0.2, ...}
 content, usage = tracked_chat(messages=msgs, **cfg)
@@ -181,16 +178,19 @@ Outcomes, validations, and links arrive after the original call (reviewer action
 
 ```python
 from pf_core.llm.tracking import (
-    LlmRunOutcomeRepo, LlmRunValidationRepo, LlmRunLinkRepo,
+    LlmRunOutcomeRepo,
+    LlmRunValidationRepo,
+    LlmRunLinkRepo,
 )
 
 LlmRunOutcomeRepo().record(run_id, outcome_kind="summary_accepted", score=1.0)
-LlmRunOutcomeRepo().record(run_id, outcome_kind="summary_edited",
-                           score=0.7, notes="trimmed 2 sentences")
+LlmRunOutcomeRepo().record(
+    run_id, outcome_kind="summary_edited", score=0.7, notes="trimmed 2 sentences"
+)
 
-LlmRunValidationRepo().record(run_id, validator="post_hoc_check",
-                              passed=False, severity="warn",
-                              details={"flagged_items": 2})
+LlmRunValidationRepo().record(
+    run_id, validator="post_hoc_check", passed=False, severity="warn", details={"flagged_items": 2}
+)
 
 LlmRunLinkRepo().link(parent_id=run_a, child_id=run_b, relation="critic")
 
@@ -211,14 +211,13 @@ LlmRunLinkRepo().parents(child_id=run_b)
 from pf_core.llm.tracking import LlmRunRepo, LlmRunStatsRepo
 
 repo = LlmRunRepo()
-repo.get(run_id)                  # flat dict from llm_runs
-repo.get_with_payload(run_id)     # joined with llm_run_payloads under "payload"
-repo.find_by_hash(input_hash)     # all runs sharing this input_hash, newest first
+repo.get(run_id)  # flat dict from llm_runs
+repo.get_with_payload(run_id)  # joined with llm_run_payloads under "payload"
+repo.find_by_hash(input_hash)  # all runs sharing this input_hash, newest first
 
 stats = LlmRunStatsRepo()
 stats.cost_by_model(since, until)
-stats.halluc_rate_by_prompt("summarizer", since, until,
-                            validator="url_hallucination")
+stats.halluc_rate_by_prompt("summarizer", since, until, validator="url_hallucination")
 stats.retry_success_rate(since, until)
 stats.runs_with_all_tags(["eval:golden_v2", "experiment:opus47-a"])
 ```
@@ -250,7 +249,7 @@ See `docs/recipes/`:
 ```python
 from pf_core.llm.tracking import purge_old_payloads
 
-purge_old_payloads(older_than_days=90)               # default: keep flagged runs
+purge_old_payloads(older_than_days=90)  # default: keep flagged runs
 purge_old_payloads(older_than_days=30, keep_flagged=False)
 ```
 
@@ -351,9 +350,10 @@ See [database.md](database.md) for the broader dialect/transaction conventions.
 Project-specific FKs (`task_id`, `item_id`, …) must NOT live in pf-core. ALTER `llm_runs` in a per-project migration after pf-core's tables are created:
 
 ```python
-op.add_column("llm_runs",
-    sa.Column("task_id", sa.Integer,
-              sa.ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True))
+op.add_column(
+    "llm_runs",
+    sa.Column("task_id", sa.Integer, sa.ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True),
+)
 op.create_index("idx_llm_runs_task", "llm_runs", ["task_id"])
 ```
 
@@ -369,7 +369,8 @@ if "task_id" not in s.llm_runs.c:
 
 # Per call — written inside the same INSERT as the rest of the run:
 LlmRunRepo().record(
-    agent_type="summarizer", model="...",
+    agent_type="summarizer",
+    model="...",
     extra_run_values={"task_id": task_id},
 )
 ```
@@ -383,9 +384,13 @@ This keeps the write atomic (no follow-up UPDATE). Without `extra_run_values`, t
 No schema change needed. Just record it.
 
 ```python
-LlmRunValidationRepo().record(run_id,
-    validator="schema_v3", passed=False, severity="warn",
-    details={"missing_fields": ["category"]})
+LlmRunValidationRepo().record(
+    run_id,
+    validator="schema_v3",
+    passed=False,
+    severity="warn",
+    details={"missing_fields": ["category"]},
+)
 
 LlmRunRepo().record(..., metrics={"toxicity": 0.02, "coverage_ratio": 0.83})
 ```

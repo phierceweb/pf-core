@@ -51,9 +51,7 @@ class TestRunMigrationsOnline:
     @patch("pf_core.alembic.get_engine")
     @patch("pf_core.alembic.db_url")
     @patch("pf_core.alembic.is_sqlite")
-    def test_mysql_mode_no_batch(
-        self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context
-    ):
+    def test_mysql_mode_no_batch(self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context):
         mock_context.is_offline_mode.return_value = False
         mock_db_url.return_value = "mysql://localhost/db"
         mock_is_sqlite.return_value = False
@@ -107,9 +105,7 @@ class TestRunMigrationsOnline:
     @patch("pf_core.alembic.get_engine")
     @patch("pf_core.alembic.db_url")
     @patch("pf_core.alembic.is_sqlite")
-    def test_fallback_sqlite(
-        self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context
-    ):
+    def test_fallback_sqlite(self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context):
         mock_context.is_offline_mode.return_value = False
         mock_db_url.return_value = "sqlite:///fallback.db"
         mock_is_sqlite.return_value = True

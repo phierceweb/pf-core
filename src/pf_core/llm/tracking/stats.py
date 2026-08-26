@@ -52,18 +52,10 @@ class LlmRunStatsRepo(Repository):
                 s.llm_models.c.name.label("model"),
                 func.count().label("runs"),
                 func.sum(billable).label("billable_input"),
-                func.sum(func.coalesce(s.llm_runs.c.cache_read_tokens, 0)).label(
-                    "cached_input"
-                ),
-                func.sum(func.coalesce(s.llm_runs.c.completion_tokens, 0)).label(
-                    "output"
-                ),
-                func.sum(func.coalesce(s.llm_runs.c.reasoning_tokens, 0)).label(
-                    "reasoning"
-                ),
-                func.sum(func.coalesce(s.llm_runs.c.cost_usd, 0)).label(
-                    "total_cost_usd"
-                ),
+                func.sum(func.coalesce(s.llm_runs.c.cache_read_tokens, 0)).label("cached_input"),
+                func.sum(func.coalesce(s.llm_runs.c.completion_tokens, 0)).label("output"),
+                func.sum(func.coalesce(s.llm_runs.c.reasoning_tokens, 0)).label("reasoning"),
+                func.sum(func.coalesce(s.llm_runs.c.cost_usd, 0)).label("total_cost_usd"),
             )
             .select_from(s.llm_runs.join(s.llm_models, s.llm_runs.c.model_id == s.llm_models.c.id))
             .where(s.llm_runs.c.created_at >= _to_dt(since))
@@ -103,14 +95,10 @@ class LlmRunStatsRepo(Repository):
                 s.llm_models.c.name.label("model"),
                 func.avg(failed).label("halluc_rate"),
                 func.count().label("runs"),
-                func.sum(func.coalesce(s.llm_runs.c.cost_usd, 0)).label(
-                    "cost_attributable"
-                ),
+                func.sum(func.coalesce(s.llm_runs.c.cost_usd, 0)).label("cost_attributable"),
             )
             .select_from(
-                s.llm_runs.join(
-                    s.llm_prompts, s.llm_prompts.c.id == s.llm_runs.c.system_prompt_id
-                )
+                s.llm_runs.join(s.llm_prompts, s.llm_prompts.c.id == s.llm_runs.c.system_prompt_id)
                 .join(s.llm_models, s.llm_models.c.id == s.llm_runs.c.model_id)
                 .join(
                     s.llm_agent_types,
@@ -150,9 +138,7 @@ class LlmRunStatsRepo(Repository):
         parent = s.llm_runs.alias("parent")
         child = s.llm_runs.alias("child")
         success = case((child.c.status == "success", 1.0), else_=0.0)
-        combined = func.coalesce(child.c.cost_usd, 0) + func.coalesce(
-            parent.c.cost_usd, 0
-        )
+        combined = func.coalesce(child.c.cost_usd, 0) + func.coalesce(parent.c.cost_usd, 0)
         stmt = (
             select(
                 s.llm_run_links.c.relation.label("relation"),
@@ -161,15 +147,11 @@ class LlmRunStatsRepo(Repository):
                 func.avg(combined).label("avg_combined_cost"),
             )
             .select_from(
-                s.llm_run_links.join(
-                    parent, parent.c.id == s.llm_run_links.c.parent_run_id
-                ).join(child, child.c.id == s.llm_run_links.c.child_run_id)
-            )
-            .where(
-                s.llm_run_links.c.relation.in_(
-                    ["retry", "critic", "refine", "fallback"]
+                s.llm_run_links.join(parent, parent.c.id == s.llm_run_links.c.parent_run_id).join(
+                    child, child.c.id == s.llm_run_links.c.child_run_id
                 )
             )
+            .where(s.llm_run_links.c.relation.in_(["retry", "critic", "refine", "fallback"]))
             .where(child.c.created_at >= _to_dt(since))
             .where(child.c.created_at < _to_dt(until))
             .group_by(s.llm_run_links.c.relation)

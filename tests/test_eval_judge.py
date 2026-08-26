@@ -79,9 +79,7 @@ def test_judge_yaml_sampling_wins_over_defaults(pf_engine, monkeypatch):
                 llm_agent_types.insert().values(slug="judge_parent_agent")
             ).inserted_primary_key[0]
             replay_id = conn.execute(
-                llm_runs.insert().values(
-                    agent_type_id=aid, model_id=mid, status="success"
-                )
+                llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
             ).inserted_primary_key[0]
 
         seen: dict = {}

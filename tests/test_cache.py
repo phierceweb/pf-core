@@ -27,12 +27,14 @@ class TestCreateRegion:
     def test_null_backend_when_no_url(self):
         region = create_region(url="")
         from dogpile.cache.backends.null import NullBackend
+
         assert isinstance(region.backend, NullBackend)
 
     def test_null_backend_when_no_env(self, monkeypatch):
         monkeypatch.delenv("REDIS_URL", raising=False)
         region = create_region()
         from dogpile.cache.backends.null import NullBackend
+
         assert isinstance(region.backend, NullBackend)
 
     def test_key_prefix_applied(self):
@@ -70,8 +72,7 @@ class TestUnreachableRedis:
 
     @pytest.fixture
     def region(self):
-        return create_region(url=f"redis://127.0.0.1:{_closed_port()}/0",
-                             key_prefix="down")
+        return create_region(url=f"redis://127.0.0.1:{_closed_port()}/0", key_prefix="down")
 
     def test_get_returns_no_value(self, region):
         from dogpile.cache.api import NO_VALUE
@@ -124,6 +125,7 @@ class TestResilientBackendPassthrough:
             def _record(*a):
                 self.calls.append((name, *a))
                 return f"{name}-result"
+
             return _record
 
     def _wrapped(self):
@@ -144,7 +146,9 @@ class TestResilientBackendPassthrough:
         backend.set_serialized("k", b"v")
         backend.delete("k")
         assert inner.calls == [
-            ("set", "k", "v"), ("set_serialized", "k", b"v"), ("delete", "k"),
+            ("set", "k", "v"),
+            ("set_serialized", "k", b"v"),
+            ("delete", "k"),
         ]
 
     def test_unknown_attributes_pass_through(self):
@@ -224,17 +228,13 @@ class TestRedisCacheNullBackend:
     def test_cached_json(self, monkeypatch):
         monkeypatch.delenv("REDIS_URL", raising=False)
         cache = RedisCache()
-        result = cache.cached_json(
-            ("section", "home"), None, lambda: {"data": "value"}
-        )
+        result = cache.cached_json(("section", "home"), None, lambda: {"data": "value"})
         assert result == {"data": "value"}
 
     def test_cached_json_with_variant(self, monkeypatch):
         monkeypatch.delenv("REDIS_URL", raising=False)
         cache = RedisCache()
-        result = cache.cached_json(
-            ("section", "home"), {"page": 1}, lambda: [1, 2, 3]
-        )
+        result = cache.cached_json(("section", "home"), {"page": 1}, lambda: [1, 2, 3])
         assert result == [1, 2, 3]
 
 

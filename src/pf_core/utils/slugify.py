@@ -18,7 +18,14 @@ __all__ = ["slugify"]
 # durable keys, so any change to this map (or the fold steps) changes
 # existing slugs — a behavior change, never a silent patch.
 _SPECIAL = {
-    "ø": "o", "å": "a", "æ": "ae", "œ": "oe", "ð": "d", "þ": "th", "ł": "l", "ß": "ss",
+    "ø": "o",
+    "å": "a",
+    "æ": "ae",
+    "œ": "oe",
+    "ð": "d",
+    "þ": "th",
+    "ł": "l",
+    "ß": "ss",
 }
 
 

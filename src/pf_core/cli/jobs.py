@@ -63,9 +63,7 @@ def parse_duration(value: str) -> timedelta:
     """Parse ``'90d'`` / ``'24h'`` / ``'30m'`` / ``'60s'`` / ``'2w'`` → timedelta."""
     m = _DURATION_RE.match(value)
     if not m:
-        raise typer.BadParameter(
-            f"invalid duration {value!r}; expected e.g. 90d, 24h, 30m"
-        )
+        raise typer.BadParameter(f"invalid duration {value!r}; expected e.g. 90d, 24h, 30m")
     n, unit = int(m.group(1)), m.group(2).lower()
     return timedelta(seconds=n * _DURATION_UNITS[unit])
 
@@ -94,15 +92,11 @@ def list_jobs(
     since: str | None = typer.Option(
         None, "--since", help="Only jobs created within this window, e.g. 24h."
     ),
-    created_by: str | None = typer.Option(
-        None, "--created-by", help="Filter by creator."
-    ),
+    created_by: str | None = typer.Option(None, "--created-by", help="Filter by creator."),
     limit: int = typer.Option(20, "--limit", help="Max rows."),
 ) -> None:
     """List jobs, newest-first."""
-    since_dt = (
-        datetime.now(timezone.utc) - parse_duration(since) if since else None
-    )
+    since_dt = datetime.now(timezone.utc) - parse_duration(since) if since else None
     rows = JobRepo().find(
         kind=kind,
         status=status,
@@ -150,12 +144,8 @@ def show_job(job_id: int = typer.Argument(..., help="Job id.")) -> None:
         raise typer.Exit(code=1)
 
     job = bundle
-    _stdout.print(
-        f"[bold]Job {job['id']}[/bold]  kind={job['kind']}  status={job['status']}"
-    )
-    _stdout.print(
-        f"  priority={job['priority']}  created_by={job.get('created_by') or '-'}"
-    )
+    _stdout.print(f"[bold]Job {job['id']}[/bold]  kind={job['kind']}  status={job['status']}")
+    _stdout.print(f"  priority={job['priority']}  created_by={job.get('created_by') or '-'}")
     _stdout.print(
         f"  created_at={_fmt_ts(job.get('created_at'))}  "
         f"started_at={_fmt_ts(job.get('started_at'))}  "
@@ -164,9 +154,7 @@ def show_job(job_id: int = typer.Argument(..., help="Job id.")) -> None:
     if job.get("current_step"):
         _stdout.print(f"  current_step={job['current_step']}")
     if job.get("error"):
-        _stdout.print(
-            f"  [red]error[/red]: {job['error']} ({job.get('error_class') or '-'})"
-        )
+        _stdout.print(f"  [red]error[/red]: {job['error']} ({job.get('error_class') or '-'})")
 
     _stdout.print("\n[bold]Inputs[/bold]")
     _stdout.print(_fmt_json(job.get("inputs")))
@@ -228,7 +216,8 @@ def cancel_job(
 @app.command("reclaim")
 def reclaim(
     lease_seconds: int | None = typer.Option(
-        None, "--lease-seconds",
+        None,
+        "--lease-seconds",
         help="Override JOB_LEASE_SECONDS (default 300).",
     ),
 ) -> None:
@@ -240,11 +229,13 @@ def reclaim(
 @app.command("purge")
 def purge(
     older_than: str = typer.Option(
-        ..., "--older-than",
+        ...,
+        "--older-than",
         help="Delete jobs finished more than this ago, e.g. 90d.",
     ),
     status: str | None = typer.Option(
-        "succeeded", "--status",
+        "succeeded",
+        "--status",
         help="Only purge this status; pass 'any' for all terminal statuses.",
     ),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation."),
@@ -258,9 +249,7 @@ def purge(
         status_arg = status
 
     if not yes:
-        confirm = typer.confirm(
-            f"Delete jobs with status={status_arg!r} older than {older_than}?"
-        )
+        confirm = typer.confirm(f"Delete jobs with status={status_arg!r} older than {older_than}?")
         if not confirm:
             _stdout.print("Aborted.")
             raise typer.Exit(code=1)

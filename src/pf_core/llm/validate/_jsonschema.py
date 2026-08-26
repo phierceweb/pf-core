@@ -35,14 +35,20 @@ class JsonSchemaValidator:
         self._validator = Draft202012Validator(schema)
 
     def validate_shape(
-        self, parsed: Any, *, agent_type: str,
+        self,
+        parsed: Any,
+        *,
+        agent_type: str,
     ) -> tuple[Any | None, ValidationSignal]:
         """Run the JSON-Schema validator, collecting every error path."""
         name = f"{agent_type}_shape"
         errors = sorted(self._validator.iter_errors(parsed), key=lambda e: e.path)
         if not errors:
             return parsed, ValidationSignal(
-                validator=name, severity="error", passed=True, details=None,
+                validator=name,
+                severity="error",
+                passed=True,
+                details=None,
             )
         return None, ValidationSignal(
             validator=name,

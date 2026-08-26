@@ -47,12 +47,15 @@ This doc is the implementation reference.
 from pf_core.jobs import JobRepo, Job, register_kind
 from pydantic import BaseModel
 
+
 class SummarizeInputs(BaseModel):
     item_ids: list[int]
     max_words: int
 
+
 class SummarizeOutputs(BaseModel):
     n_summarized: int
+
 
 register_kind(
     kind="summarize_pass",
@@ -96,11 +99,11 @@ register_kind(
     description="Summarize one item through a multi-stage pipeline",
     states=["pending", "fetching", "summarizing", "checking", "succeeded", "failed", "canceled"],
     transitions={
-        "pending":     ["fetching", "canceled"],
-        "fetching":    ["summarizing", "failed", "canceled"],
+        "pending": ["fetching", "canceled"],
+        "fetching": ["summarizing", "failed", "canceled"],
         "summarizing": ["checking", "failed", "canceled"],
-        "checking":    ["succeeded", "failed"],
-        "failed":      ["pending"],      # manual retry
+        "checking": ["succeeded", "failed"],
+        "failed": ["pending"],  # manual retry
     },
     inputs_schema=SummarizeInputs,
     outputs_schema=SummarizeOutputs,
@@ -279,7 +282,7 @@ Finds jobs still marked `running` whose `claimed_at` is older than the lease and
 ## Retry, cancel, purge
 
 ```python
-JobRepo().retry(job_id)       # failed/partial/canceled → pending; priority += 10 (capped at 100)
+JobRepo().retry(job_id)  # failed/partial/canceled → pending; priority += 10 (capped at 100)
 JobRepo().cancel(job_id, reason="user aborted")  # → canceled + writes event
 JobRepo().purge(older_than=timedelta(days=90), status="succeeded")
 ```
@@ -330,6 +333,7 @@ from pf_core.cli.jobs import app as jobs_app
 
 app = create_cli("myapp", help="My application CLI.")
 app.add_typer(jobs_app, name="jobs")
+
 
 def main() -> None:
     run_cli(app)

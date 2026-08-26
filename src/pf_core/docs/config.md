@@ -7,10 +7,12 @@
 ```python
 from pf_core.config import AppConfig
 
+
 class MyConfig(AppConfig):
     ENABLE_CACHE: bool = True
     MAX_WORKERS: int = 4
     CACHE_TTL_SECONDS: int = 300
+
 
 cfg = MyConfig(env_file=".env", yaml_file="project.yaml")
 ```
@@ -107,6 +109,7 @@ class MyAppConfig(AppConfig):
     TASK_CACHE_TTL_SECONDS: int = 86400
     RESULT_CACHE: bool = True
     RESULT_CACHE_TTL_SECONDS: int = 90 * 86400
+
 
 cfg = MyAppConfig(
     env_file=Path(__file__).parent.parent / ".env",

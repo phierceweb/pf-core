@@ -100,12 +100,12 @@ Every successful resolution satisfies `result <= pub_date`. An article cannot de
 The function never raises on malformed input. `None` is the universal "don't know" signal:
 
 ```python
-resolve_relative_date(pub, None)                        # None
-resolve_relative_date(pub, {})                          # None
-resolve_relative_date(pub, {"phrase": ""})              # None
-resolve_relative_date(pub, {"phrase": "the other day"}) # None
-resolve_relative_date(pub, {"phrase": "12"})            # None
-resolve_relative_date(pub, {"phrase": "february 30"})   # None  (invalid date)
+resolve_relative_date(pub, None)  # None
+resolve_relative_date(pub, {})  # None
+resolve_relative_date(pub, {"phrase": ""})  # None
+resolve_relative_date(pub, {"phrase": "the other day"})  # None
+resolve_relative_date(pub, {"phrase": "12"})  # None
+resolve_relative_date(pub, {"phrase": "february 30"})  # None  (invalid date)
 ```
 
 Callers should branch on `result is None` and either fall back to another date source (e.g. the article's own metadata) or flag the record for human review. Returning a guessed date when the phrase is genuinely ambiguous is worse than returning nothing.
@@ -114,8 +114,8 @@ Callers should branch on `result is None` and either fall back to another date s
 
 ```python
 class DateHint(TypedDict, total=False):
-    phrase: str               # required — verbatim from the article
-    qualifier: str | None     # optional — "last" / "this" / "earlier" / "next" / None
+    phrase: str  # required — verbatim from the article
+    qualifier: str | None  # optional — "last" / "this" / "earlier" / "next" / None
 ```
 
 Plain dicts work too — the function only reads `.get("phrase")` and `.get("qualifier")`.

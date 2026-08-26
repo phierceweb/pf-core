@@ -61,9 +61,7 @@ def get_comparator(name: str) -> Callable[..., float]:
     """
     key = name.removeprefix("custom:")
     if key not in _registry:
-        raise ConfigurationError(
-            f"Unknown comparator {name!r}. Registered: {sorted(_registry)}"
-        )
+        raise ConfigurationError(f"Unknown comparator {name!r}. Registered: {sorted(_registry)}")
     return _registry[key]
 
 
@@ -153,7 +151,6 @@ def structured_diff(golden: dict, replay: dict, *, context: dict) -> float:
         return 1.0
 
     scores = [
-        _field_score(golden.get(f), replay.get(f), tolerance=tolerances.get(f))
-        for f in diff_fields
+        _field_score(golden.get(f), replay.get(f), tolerance=tolerances.get(f)) for f in diff_fields
     ]
     return sum(scores) / len(scores)

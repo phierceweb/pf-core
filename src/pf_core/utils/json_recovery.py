@@ -150,9 +150,9 @@ def _rank(candidate: tuple[int, int, object]) -> tuple[bool, bool, int]:
     return (start == 0 and bool(value), _carries_object(value), -start)
 
 
-def _drop_nested(spans: list[tuple[int, int, object]]) -> list[tuple[int, int, object]]:
+def _drop_nested(spans: list[tuple[int, int, dict | list]]) -> list[tuple[int, int, dict | list]]:
     """Discard spans contained in another."""
-    outermost: list[tuple[int, int, object]] = []
+    outermost: list[tuple[int, int, dict | list]] = []
     covered = -1
     for span in sorted(spans, key=lambda s: (s[0], -s[1])):
         if span[1] > covered:
@@ -168,20 +168,18 @@ def _payload_cut(text: str) -> int:
     recovery and repair (``docs/json-recovery.md``).
     """
     cuts = [
-        p
-        for p in (_first_unclosed(text, "{", "}"), _first_unclosed(text, "[", "]"))
-        if p != -1
+        p for p in (_first_unclosed(text, "{", "}"), _first_unclosed(text, "[", "]")) if p != -1
     ]
     return min(cuts) if cuts else len(text)
 
 
-def _scan_candidates(text: str, opener: str, closer: str) -> list[tuple[int, int, object]]:
+def _scan_candidates(text: str, opener: str, closer: str) -> list[tuple[int, int, dict | list]]:
     """Left-to-right non-overlapping balanced spans that parse as JSON.
 
     Stops early once a span that cannot be outranked is found, and gives up
     after ``_MAX_SCAN_FAILURES`` dead ends.
     """
-    found: list[tuple[int, int, object]] = []
+    found: list[tuple[int, int, dict | list]] = []
     failures = 0
     cut = _payload_cut(text)
     i = text.find(opener)

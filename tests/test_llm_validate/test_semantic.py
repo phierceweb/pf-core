@@ -31,7 +31,8 @@ def _flag_fake_substring():
 def test_url_sanity_no_hook_returns_passing_info():
     register(agent_type="u", shape=Doc, semantic=["url_sanity"])
     res = parse_and_validate(
-        payload(sources=["https://anything.test/anything"]), agent_type="u",
+        payload(sources=["https://anything.test/anything"]),
+        agent_type="u",
     )
     sig = next(s for s in res.signals if s.validator == "url_sanity")
     assert sig.passed is True
@@ -43,7 +44,8 @@ def test_url_sanity_passes_when_no_urls_match_rules():
     register_url_hallucination_rules(lambda: [_flag_fake_substring()])
     register(agent_type="u", shape=Doc, semantic=["url_sanity"])
     res = parse_and_validate(
-        payload(sources=["https://example.com/real-story"]), agent_type="u",
+        payload(sources=["https://example.com/real-story"]),
+        agent_type="u",
     )
     sig = next(s for s in res.signals if s.validator == "url_sanity")
     assert sig.passed is True
@@ -54,7 +56,8 @@ def test_url_sanity_warns_on_flagged_url_default_severity():
     register_url_hallucination_rules(lambda: [_flag_fake_substring()])
     register(agent_type="u", shape=Doc, semantic=["url_sanity"])
     res = parse_and_validate(
-        payload(sources=["https://example.com/fake-story-2025"]), agent_type="u",
+        payload(sources=["https://example.com/fake-story-2025"]),
+        agent_type="u",
     )
     assert res.ok is True  # warn does not flip ok
     sig = next(s for s in res.signals if s.validator == "url_sanity")
@@ -68,7 +71,8 @@ def test_url_sanity_severity_override_to_error():
     register_url_hallucination_rules(lambda: [_flag_fake_substring()])
     register(agent_type="u", shape=Doc, semantic=["url_sanity:error"])
     res = parse_and_validate(
-        payload(sources=["https://example.com/fake-story-2025"]), agent_type="u",
+        payload(sources=["https://example.com/fake-story-2025"]),
+        agent_type="u",
     )
     assert res.ok is False
     sig = next(s for s in res.signals if s.validator == "url_sanity")
@@ -82,11 +86,13 @@ def test_url_sanity_severity_override_to_error():
 def test_tier1_ratio_meets_threshold():
     register_tier1_domains(lambda: {"trusted.example"})
     register(agent_type="t", shape=Doc, semantic=["tier1_ratio:0.6"])
-    raw = payload(sources=[
-        "https://trusted.example/article/abc",
-        "https://trusted.example/article/def",
-        "https://example.com/story",
-    ])
+    raw = payload(
+        sources=[
+            "https://trusted.example/article/abc",
+            "https://trusted.example/article/def",
+            "https://example.com/story",
+        ]
+    )
     res = parse_and_validate(raw, agent_type="t")
     sig = next(s for s in res.signals if s.validator == "tier1_ratio")
     assert sig.passed is True
@@ -96,11 +102,13 @@ def test_tier1_ratio_meets_threshold():
 def test_tier1_ratio_below_threshold_fails():
     register_tier1_domains(lambda: {"trusted.example"})
     register(agent_type="t", shape=Doc, semantic=["tier1_ratio:0.6"])
-    raw = payload(sources=[
-        "https://trusted.example/article/abc",
-        "https://example.com/a",
-        "https://example.com/b",
-    ])
+    raw = payload(
+        sources=[
+            "https://trusted.example/article/abc",
+            "https://example.com/a",
+            "https://example.com/b",
+        ]
+    )
     res = parse_and_validate(raw, agent_type="t")
     sig = next(s for s in res.signals if s.validator == "tier1_ratio")
     assert sig.passed is False
@@ -111,7 +119,8 @@ def test_tier1_ratio_below_threshold_fails():
 def test_tier1_ratio_no_hook_returns_passing_info():
     register(agent_type="t", shape=Doc, semantic=["tier1_ratio:0.6"])
     res = parse_and_validate(
-        payload(sources=["https://trusted.example/article/abc"]), agent_type="t",
+        payload(sources=["https://trusted.example/article/abc"]),
+        agent_type="t",
     )
     sig = next(s for s in res.signals if s.validator == "tier1_ratio")
     assert sig.passed is True
@@ -178,7 +187,8 @@ def test_min_items_not_a_list_fails():
 def test_no_duplicate_urls_pass():
     register(agent_type="n", shape=Doc, semantic=["no_duplicate_urls"])
     res = parse_and_validate(
-        payload(sources=["https://a.com/x", "https://b.com/y"]), agent_type="n",
+        payload(sources=["https://a.com/x", "https://b.com/y"]),
+        agent_type="n",
     )
     sig = next(s for s in res.signals if s.validator == "no_duplicate_urls")
     assert sig.passed is True

@@ -4,6 +4,7 @@ Tests that don't require the ``articles`` extra (trafilatura/htmldate)
 run unconditionally. Tests that exercise the live fetch + extract are
 gated on the deps being importable.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -25,6 +26,7 @@ from pf_core.utils.article_fetch import (
 try:
     import trafilatura  # noqa: F401
     import htmldate  # noqa: F401
+
     HAS_DEPS = True
 except ImportError:
     HAS_DEPS = False
@@ -69,18 +71,22 @@ class TestPaywallHeuristic:
 class TestParseIsoDate:
     def test_iso_date_string(self):
         from datetime import date
+
         assert _parse_iso_date("2026-04-15") == date(2026, 4, 15)
 
     def test_iso_datetime_string(self):
         from datetime import date
+
         assert _parse_iso_date("2026-04-15T12:00:00") == date(2026, 4, 15)
 
     def test_timezoned_iso(self):
         from datetime import date
+
         assert _parse_iso_date("2026-04-15T12:00:00+00:00") == date(2026, 4, 15)
 
     def test_date_object_passthrough(self):
         from datetime import date
+
         d = date(2026, 4, 15)
         assert _parse_iso_date(d) == d
 
@@ -130,11 +136,13 @@ class TestImportError:
     def test_module_imports_without_deps(self):
         # If we got here, the module imported. That's the test.
         from pf_core.utils import article_fetch
+
         assert article_fetch.fetch_article is not None
 
     def test_helpful_error_when_deps_missing(self, monkeypatch):
         # Force the dep gate off and check the error message.
         from pf_core.utils import article_fetch
+
         monkeypatch.setattr(article_fetch, "_HAS_DEPS", False)
         with pytest.raises(ImportError, match="articles"):
             article_fetch.fetch_article("https://example.com/x")
@@ -156,7 +164,9 @@ class TestLiveFetchWithRetry:
 
     def test_2xx_with_body_returns_ok(self, monkeypatch):
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (200, "ok", "<html>x</html>"),
+            af,
+            "fetch_url_content",
+            lambda url: (200, "ok", "<html>x</html>"),
         )
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert status == "ok"
@@ -164,9 +174,11 @@ class TestLiveFetchWithRetry:
 
     def test_404_returns_not_found_no_retry(self, monkeypatch):
         calls = []
+
         def fake(url):
             calls.append(url)
             return 404, "not_found", ""
+
         monkeypatch.setattr(af, "fetch_url_content", fake)
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert (status, body) == ("not_found", "")
@@ -174,28 +186,36 @@ class TestLiveFetchWithRetry:
 
     def test_410_returns_not_found(self, monkeypatch):
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (410, "gone", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (410, "gone", ""),
         )
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert status == "not_found"
 
     def test_401_returns_paywalled(self, monkeypatch):
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (401, "http_401", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (401, "http_401", ""),
         )
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert status == "paywalled"
 
     def test_403_forbidden_category_returns_paywalled(self, monkeypatch):
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (403, "forbidden", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (403, "forbidden", ""),
         )
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert status == "paywalled"
 
     def test_500_returns_blocked(self, monkeypatch):
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (500, "http_500", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (500, "http_500", ""),
         )
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert status == "blocked"
@@ -205,16 +225,20 @@ class TestLiveFetchWithRetry:
         # surfaces it as `http_429` (not `timeout`/`error`), so the
         # retry helper does not retry — it categorizes as blocked.
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (429, "http_429", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (429, "http_429", ""),
         )
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert status == "blocked"
 
     def test_timeout_exhausts_retries(self, monkeypatch, _fast_retry):
         calls = []
+
         def fake(url):
             calls.append(url)
             return 0, "timeout", ""
+
         monkeypatch.setattr(af, "fetch_url_content", fake)
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert (status, body) == ("timeout", "")
@@ -222,9 +246,11 @@ class TestLiveFetchWithRetry:
 
     def test_error_exhausts_retries(self, monkeypatch, _fast_retry):
         calls = []
+
         def fake(url):
             calls.append(url)
             return 0, "error", ""
+
         monkeypatch.setattr(af, "fetch_url_content", fake)
         status, body = _live_fetch_with_retry("https://example.com/x")
         assert (status, body) == ("error", "")
@@ -234,9 +260,11 @@ class TestLiveFetchWithRetry:
         # Empty body on a 2xx is suspicious — could be a soft block. The
         # retry helper raises a transient error so tenacity retries it.
         calls = []
+
         def fake(url):
             calls.append(url)
             return 200, "ok", ""
+
         monkeypatch.setattr(af, "fetch_url_content", fake)
         status, body = _live_fetch_with_retry("https://example.com/x")
         # All retries returned empty body → exhausts as 'error'
@@ -273,11 +301,15 @@ class TestFetchArticleWaybackFlag:
         # was consulted.
         monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
         wb_calls = []
+
         def fake_wb(url, *, at=None, **kw):
             wb_calls.append(url)
             return False, None
+
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (403, "forbidden", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (403, "forbidden", ""),
         )
         monkeypatch.setattr(af, "wayback_exists_at", fake_wb)
         result = af.fetch_article("https://example.com/x", wayback_fallback=True)
@@ -288,11 +320,14 @@ class TestFetchArticleWaybackFlag:
         monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
         wb_calls = []
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (403, "forbidden", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (403, "forbidden", ""),
         )
         monkeypatch.setattr(
-            af, "wayback_exists_at",
-            lambda url, **kw: (wb_calls.append(url) or (False, None)),
+            af,
+            "wayback_exists_at",
+            lambda url, **kw: wb_calls.append(url) or (False, None),
         )
         result = af.fetch_article("https://example.com/x")
         assert result.fetch_status == "paywalled"
@@ -301,11 +336,14 @@ class TestFetchArticleWaybackFlag:
     def test_not_found_skips_wayback(self, monkeypatch):
         wb_calls = []
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (404, "not_found", ""),
+            af,
+            "fetch_url_content",
+            lambda url: (404, "not_found", ""),
         )
         monkeypatch.setattr(
-            af, "wayback_exists_at",
-            lambda url, **kw: (wb_calls.append(url) or (False, None)),
+            af,
+            "wayback_exists_at",
+            lambda url, **kw: wb_calls.append(url) or (False, None),
         )
         result = af.fetch_article("https://example.com/x")
         assert result.fetch_status == "not_found"
@@ -343,34 +381,43 @@ def _as_transport_text(raw: bytes) -> str:
 class TestLooksBinary:
     """Magic-byte detection on the already-decoded response text."""
 
-    @pytest.mark.parametrize("raw,label", [
-        (b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj", "pdf"),
-        (b"PK\x03\x04\x14\x00\x06\x00", "zip/ooxml"),
-        (b"%!PS-Adobe-3.0", "postscript"),
-        (b"GIF89a\x01\x00", "gif"),
-        (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", "png"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,label",
+        [
+            (b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj", "pdf"),
+            (b"PK\x03\x04\x14\x00\x06\x00", "zip/ooxml"),
+            (b"%!PS-Adobe-3.0", "postscript"),
+            (b"GIF89a\x01\x00", "gif"),
+            (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", "png"),
+        ],
+    )
     def test_known_signatures_survive_transport_decode(self, raw, label):
         assert af.looks_binary(_as_transport_text(raw)) == label
 
-    @pytest.mark.parametrize("raw", [
-        b"\xff\xd8\xff\xe0\x00\x10JFIF",  # jpeg
-        b"\x1f\x8b\x08\x00",               # gzip
-    ])
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"\xff\xd8\xff\xe0\x00\x10JFIF",  # jpeg
+            b"\x1f\x8b\x08\x00",  # gzip
+        ],
+    )
     def test_replacement_char_only_signatures_are_not_claimed(self, raw):
         # These decode to bare U+FFFD runs, which are too weak to match on.
         # They must fall through to the extractor and land on `no_content`
         # rather than being falsely detected here.
         assert af.looks_binary(_as_transport_text(raw)) is None
 
-    @pytest.mark.parametrize("payload", [
-        "",
-        "<html><body>Real article</body></html>",
-        "﻿<!DOCTYPE html><html></html>",       # BOM-prefixed HTML
-        "\n\n  <html>indented</html>",              # leading whitespace
-        "Plain text with no markup at all.",
-        "The report (%PDF- format) was released.",  # signature not at offset 0
-    ])
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "",
+            "<html><body>Real article</body></html>",
+            "﻿<!DOCTYPE html><html></html>",  # BOM-prefixed HTML
+            "\n\n  <html>indented</html>",  # leading whitespace
+            "Plain text with no markup at all.",
+            "The report (%PDF- format) was released.",  # signature not at offset 0
+        ],
+    )
     def test_non_binary_not_detected(self, payload):
         assert af.looks_binary(payload) is None
 
@@ -388,12 +435,15 @@ class TestBinaryDetectionOverRealTransport:
     string, so only this one notices if the fetch path's decoding drifts.
     """
 
-    @pytest.mark.parametrize("raw,label", [
-        (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", "png"),
-        (b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj", "pdf"),
-        (b"GIF89a\x01\x00", "gif"),
-        (b"PK\x03\x04\x14\x00\x06\x00", "zip/ooxml"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,label",
+        [
+            (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", "png"),
+            (b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj", "pdf"),
+            (b"GIF89a\x01\x00", "gif"),
+            (b"PK\x03\x04\x14\x00\x06\x00", "zip/ooxml"),
+        ],
+    )
     def test_signature_survives_the_real_fetch_path(self, monkeypatch, raw, label):
         import httpx
 
@@ -417,10 +467,18 @@ class TestBinaryDetectionOverRealTransport:
 
 class TestFetchStatusVocabulary:
     def test_exported_set_is_complete(self):
-        assert af.FETCH_STATUSES == frozenset({
-            "ok", "paywalled", "not_found", "blocked", "timeout", "error",
-            "unsupported_content_type", "no_content",
-        })
+        assert af.FETCH_STATUSES == frozenset(
+            {
+                "ok",
+                "paywalled",
+                "not_found",
+                "blocked",
+                "timeout",
+                "error",
+                "unsupported_content_type",
+                "no_content",
+            }
+        )
 
     def test_fetcher_version_bumped_for_new_statuses(self):
         # The two new statuses reclassify previously-"ok" cache rows, so
@@ -434,7 +492,9 @@ class TestBinaryBodyRejection:
     def test_pdf_body_returns_unsupported_content_type(self, monkeypatch):
         pdf_text = _as_transport_text(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj")
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (200, "ok", pdf_text),
+            af,
+            "fetch_url_content",
+            lambda url: (200, "ok", pdf_text),
         )
         status, body = _live_fetch_with_retry("https://example.com/report.pdf")
         assert status == "unsupported_content_type"
@@ -442,7 +502,8 @@ class TestBinaryBodyRejection:
 
     def test_html_body_still_ok(self, monkeypatch):
         monkeypatch.setattr(
-            af, "fetch_url_content",
+            af,
+            "fetch_url_content",
             lambda url: (200, "ok", "<html><body>hi</body></html>"),
         )
         status, _ = _live_fetch_with_retry("https://example.com/x")
@@ -451,11 +512,14 @@ class TestBinaryBodyRejection:
     def test_unsupported_content_type_skips_wayback(self, monkeypatch):
         wb_calls = []
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (200, "ok", "%PDF-1.4 junk"),
+            af,
+            "fetch_url_content",
+            lambda url: (200, "ok", "%PDF-1.4 junk"),
         )
         monkeypatch.setattr(
-            af, "wayback_exists_at",
-            lambda url, **kw: (wb_calls.append(url) or (False, None)),
+            af,
+            "wayback_exists_at",
+            lambda url, **kw: wb_calls.append(url) or (False, None),
         )
         result = af.fetch_article("https://example.com/a.pdf")
         assert result.fetch_status == "unsupported_content_type"
@@ -500,12 +564,14 @@ class TestNoContent:
     def test_no_content_falls_through_to_wayback(self, monkeypatch):
         wb_calls = []
         monkeypatch.setattr(
-            af, "fetch_url_content",
+            af,
+            "fetch_url_content",
             lambda url: (200, "ok", "<html><body></body></html>"),
         )
         monkeypatch.setattr(
-            af, "wayback_exists_at",
-            lambda url, **kw: (wb_calls.append(url) or (False, None)),
+            af,
+            "wayback_exists_at",
+            lambda url, **kw: wb_calls.append(url) or (False, None),
         )
         result = af.fetch_article("https://example.com/js-only")
         assert result.fetch_status == "no_content"
@@ -515,15 +581,19 @@ class TestNoContent:
         # A JS-rendered shell still carries a publish date. Downgrading the
         # status must not also drop what extraction did find.
         html = (
-            '<html><head><title>Council approves budget</title>'
+            "<html><head><title>Council approves budget</title>"
             '<meta property="article:published_time" content="2026-03-04">'
             '</head><body><div id="root"></div></body></html>'
         )
         monkeypatch.setattr(
-            af, "fetch_url_content", lambda url: (200, "ok", html),
+            af,
+            "fetch_url_content",
+            lambda url: (200, "ok", html),
         )
         monkeypatch.setattr(
-            af, "wayback_exists_at", lambda url, **kw: (False, None),
+            af,
+            "wayback_exists_at",
+            lambda url, **kw: (False, None),
         )
         result = af.fetch_article("https://example.com/js-only")
         assert result.fetch_status == "no_content"
@@ -538,7 +608,8 @@ class TestNoContent:
 
         monkeypatch.setattr(af, "fetch_url_content", fake_fetch)
         monkeypatch.setattr(
-            af, "wayback_exists_at",
+            af,
+            "wayback_exists_at",
             lambda url, **kw: (True, "https://web.archive.org/web/1/" + url),
         )
         result = af.fetch_article("https://example.com/x")
@@ -572,7 +643,9 @@ class TestExtractorLoggersQuieted:
 
     @pytest.mark.parametrize("bogus", ["nonsense", "BASIC_FORMAT", ""])
     def test_malformed_level_falls_back_instead_of_raising(
-        self, monkeypatch, bogus,
+        self,
+        monkeypatch,
+        bogus,
     ):
         import logging
 

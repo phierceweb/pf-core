@@ -168,7 +168,5 @@ def atomic_write_json(
             so non-ASCII strings stay readable in the JSON file.
         mode: File permission bits. Defaults to ``0o644``.
     """
-    text = json.dumps(
-        obj, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii
-    )
+    text = json.dumps(obj, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii)
     atomic_write_text(path, text, mode=mode)

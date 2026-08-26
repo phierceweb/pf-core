@@ -48,7 +48,7 @@ class TestSafeMarkdown:
         result = safe_markdown("[click](javascript:alert(1))")
         assert "javascript:" not in result
         assert "<a " not in result  # link dropped
-        assert "click" in result    # label kept as inert text
+        assert "click" in result  # label kept as inert text
 
     def test_data_scheme_link_dropped(self):
         result = safe_markdown("[x](data:text/html,hi)")

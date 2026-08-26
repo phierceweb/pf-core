@@ -40,9 +40,9 @@ For code that needs to branch on the active dialect (Alembic env, raw-SQL helper
 ```python
 from pf_core.db import is_sqlite, is_postgres, dialect_of
 
-is_sqlite()      # True / False
-is_postgres()    # True / False
-dialect_of()     # "sqlite" | "mysql" | "postgresql"
+is_sqlite()  # True / False
+is_postgres()  # True / False
+dialect_of()  # "sqlite" | "mysql" | "postgresql"
 ```
 
 `dialect_of()` returns the same string the [`json_compat`](../db/json_compat.py) helpers expect, so the two compose:
@@ -81,10 +81,14 @@ from pf_core.db import transaction
 
 # Read
 with transaction() as conn:
-    rows = conn.execute(
-        text("SELECT * FROM entries WHERE section_id = :sid"),
-        {"sid": 3},
-    ).mappings().fetchall()
+    rows = (
+        conn.execute(
+            text("SELECT * FROM entries WHERE section_id = :sid"),
+            {"sid": 3},
+        )
+        .mappings()
+        .fetchall()
+    )
     entries = [dict(r) for r in rows]
 
 # Write (auto-commits on exit)
@@ -124,10 +128,14 @@ if row:
 ```python
 params = {f"id_{i}": v for i, v in enumerate(ids)}
 placeholders = ", ".join(f":id_{i}" for i in range(len(ids)))
-rows = conn.execute(
-    text(f"SELECT * FROM entries WHERE id IN ({placeholders})"),
-    params,
-).mappings().fetchall()
+rows = (
+    conn.execute(
+        text(f"SELECT * FROM entries WHERE id IN ({placeholders})"),
+        params,
+    )
+    .mappings()
+    .fetchall()
+)
 ```
 
 **Dynamic SET clauses** (for partial updates):
@@ -172,10 +180,10 @@ from pf_core.db import coerce_json_col, dumps_json, now_iso, row_to_dict
 Safely coerce a database column value to a Python list. Handles `None`, JSON strings, lists, and other iterables. Never raises.
 
 ```python
-coerce_json_col(None)              # []
-coerce_json_col('["a", "b"]')     # ["a", "b"]
-coerce_json_col([1, 2, 3])        # [1, 2, 3]
-coerce_json_col("")               # []
+coerce_json_col(None)  # []
+coerce_json_col('["a", "b"]')  # ["a", "b"]
+coerce_json_col([1, 2, 3])  # [1, 2, 3]
+coerce_json_col("")  # []
 ```
 
 ### dumps_json
@@ -191,7 +199,7 @@ dumps_json({"name": "Café Müller"})  # '{"name": "Café Müller"}'
 Current UTC time as ISO 8601 string. Canonical home is `pf_core.utils.dates`; re-exported here for backward compatibility.
 
 ```python
-from pf_core.db import now_iso           # works (backward compat)
+from pf_core.db import now_iso  # works (backward compat)
 from pf_core.utils.dates import now_iso  # preferred
 
 now_iso()  # "2026-04-14T14:30:00Z"
@@ -216,7 +224,8 @@ Cross-dialect column types the framework's own tables are built from. Use them w
 from pf_core.db.types import FK_INT, PK_INT, TIMESTAMP_US, server_now
 
 my_refs = Table(
-    "my_refs", metadata,
+    "my_refs",
+    metadata,
     Column("id", PK_INT, primary_key=True, autoincrement=True),
     Column("job_id", FK_INT, ForeignKey("jobs.id", ondelete="CASCADE")),
     Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
@@ -248,21 +257,30 @@ For organizing query functions into classes with shared transaction management:
 from pf_core.db.repository import Repository
 from sqlalchemy import text
 
+
 class EntryRepo(Repository):
     def get_by_id(self, entry_id: str) -> dict | None:
         with self._tx() as conn:
-            row = conn.execute(
-                text("SELECT * FROM entries WHERE id = :id"),
-                {"id": entry_id},
-            ).mappings().fetchone()
+            row = (
+                conn.execute(
+                    text("SELECT * FROM entries WHERE id = :id"),
+                    {"id": entry_id},
+                )
+                .mappings()
+                .fetchone()
+            )
             return dict(row) if row else None
 
     def list_by_section(self, section_id: int) -> list[dict]:
         with self._tx() as conn:
-            rows = conn.execute(
-                text("SELECT * FROM entries WHERE section_id = :sid ORDER BY created_at"),
-                {"sid": section_id},
-            ).mappings().fetchall()
+            rows = (
+                conn.execute(
+                    text("SELECT * FROM entries WHERE section_id = :sid ORDER BY created_at"),
+                    {"sid": section_id},
+                )
+                .mappings()
+                .fetchall()
+            )
             return [dict(r) for r in rows]
 ```
 

@@ -22,7 +22,7 @@ class TestStripMarkdownFences:
         assert strip_markdown_fences('```\n{"a": 1}\n```') == '{"a": 1}'
 
     def test_preserves_inner_content(self):
-        result = strip_markdown_fences('```json\nline1\nline2\n```')
+        result = strip_markdown_fences("```json\nline1\nline2\n```")
         assert "line1" in result
         assert "line2" in result
 
@@ -36,7 +36,7 @@ class TestExtractJson:
         assert extract_json('{"key": "value"}') == {"key": "value"}
 
     def test_plain_array(self):
-        assert extract_json('[1, 2, 3]') == [1, 2, 3]
+        assert extract_json("[1, 2, 3]") == [1, 2, 3]
 
     def test_with_fences(self):
         assert extract_json('```json\n{"a": 1}\n```') == {"a": 1}
@@ -69,7 +69,7 @@ class TestExtractJsonArray:
         assert extract_json_array('```json\n[{"a": 1}]\n```') == [{"a": 1}]
 
     def test_array_with_trailing_text(self):
-        result = extract_json_array('[1, 2] and more text')
+        result = extract_json_array("[1, 2] and more text")
         assert result == [1, 2]
 
     def test_no_array_returns_none(self):
@@ -280,7 +280,7 @@ class TestUnclosedSpanIsNotEntered:
         assert extract_json_object('{"a": 1, "b": {"c": 2}, "d": [1,2]') is None
 
     def test_truncated_matrix_declines(self):
-        assert extract_json('Rows:\n[' + "[1,2,3]," * 20) is None
+        assert extract_json("Rows:\n[" + "[1,2,3]," * 20) is None
 
     def test_unclosed_outer_with_well_formed_inner_declines(self):
         """The closed twin of this input is repaired; the unclosed one must

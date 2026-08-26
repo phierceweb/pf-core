@@ -33,11 +33,27 @@ from pf_core.parsers.types import PostLink
 # Block-level tags whose open/close should emit a paragraph break in the
 # plain-text buffer. Not exhaustive — good enough for article prose,
 # which is mostly <p>, <li>, and blockquotes.
-BLOCK_TAGS: frozenset[str] = frozenset({
-    "p", "div", "br", "li", "ul", "ol",
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "blockquote", "pre", "hr", "section", "article",
-})
+BLOCK_TAGS: frozenset[str] = frozenset(
+    {
+        "p",
+        "div",
+        "br",
+        "li",
+        "ul",
+        "ol",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "blockquote",
+        "pre",
+        "hr",
+        "section",
+        "article",
+    }
+)
 
 # Tags whose inner text we drop entirely (scripts, styles).
 SKIP_TAGS: frozenset[str] = frozenset({"script", "style"})
@@ -93,11 +109,13 @@ class BodyExtractor(HTMLParser):
                 if k == "href":
                     href = v or ""
                     break
-            self._link_stack.append({
-                "offset": self._buffer_offset,
-                "url": href,
-                "anchor_parts": [],
-            })
+            self._link_stack.append(
+                {
+                    "offset": self._buffer_offset,
+                    "url": href,
+                    "anchor_parts": [],
+                }
+            )
 
     def handle_endtag(self, tag: str) -> None:
         if tag in SKIP_TAGS and self._skip_depth > 0:
@@ -175,16 +193,18 @@ def parse_body_html(
 
     text = "".join(extractor.text_parts)
     links: list[PostLink] = []
-    for (start_offset, url, anchor_text) in extractor.link_records:
+    for start_offset, url, anchor_text in extractor.link_records:
         before_start = max(0, start_offset - context_window_chars)
         after_end = min(len(text), start_offset + context_window_chars)
         context = text[before_start:after_end].strip()
         # Collapse runs of whitespace/newlines so the LLM sees clean prose.
         context = " ".join(context.split())
-        links.append(PostLink(
-            url=url.strip(),
-            anchor_text=anchor_text.strip(),
-            surrounding_text=context,
-        ))
+        links.append(
+            PostLink(
+                url=url.strip(),
+                anchor_text=anchor_text.strip(),
+                surrounding_text=context,
+            )
+        )
     out_text = normalize_plain_text(text)
     return out_text, links

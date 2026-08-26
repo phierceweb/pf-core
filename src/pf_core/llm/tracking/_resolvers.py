@@ -142,9 +142,7 @@ def resolve_prompt_id(
     if not content or version is None:
         return None
     if on_change not in ("keep_first", "update_unused", "error"):
-        raise ValueError(
-            f"on_change must be keep_first|update_unused|error; got {on_change!r}"
-        )
+        raise ValueError(f"on_change must be keep_first|update_unused|error; got {on_change!r}")
 
     import datetime as _dt
 
@@ -221,10 +219,7 @@ def resolve_prompt_id(
         if used_row is None:
             # Safe to mutate in place — nothing references this row.
             conn.execute(
-                text(
-                    "UPDATE llm_prompts SET content = :content "
-                    "WHERE id = :pid"
-                ),
+                text("UPDATE llm_prompts SET content = :content WHERE id = :pid"),
                 {"content": content, "pid": existing_id},
             )
             return existing_id

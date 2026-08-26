@@ -68,15 +68,17 @@ def test_record_minimum_viable_persists_status_default(tracking_db):
 def test_record_resolves_agent_and_model_ids(tracking_db):
     run_id = LlmRunRepo().record(agent_type="reviewer", model="openai/gpt-4o")
     with tracking_db.connect() as conn:
-        agent = conn.execute(
-            s.llm_agent_types.select().where(s.llm_agent_types.c.slug == "reviewer")
-        ).mappings().one()
-        model = conn.execute(
-            s.llm_models.select().where(s.llm_models.c.name == "openai/gpt-4o")
-        ).mappings().one()
-        run = conn.execute(
-            s.llm_runs.select().where(s.llm_runs.c.id == run_id)
-        ).mappings().one()
+        agent = (
+            conn.execute(s.llm_agent_types.select().where(s.llm_agent_types.c.slug == "reviewer"))
+            .mappings()
+            .one()
+        )
+        model = (
+            conn.execute(s.llm_models.select().where(s.llm_models.c.name == "openai/gpt-4o"))
+            .mappings()
+            .one()
+        )
+        run = conn.execute(s.llm_runs.select().where(s.llm_runs.c.id == run_id)).mappings().one()
     assert run["agent_type_id"] == agent["id"]
     assert run["model_id"] == model["id"]
 
@@ -171,9 +173,9 @@ def test_record_extra_run_values_writes_project_column(pf_engine):
             extra_run_values={"project_widget_id": 4242},
         )
         with pf_engine.connect() as conn:
-            row = conn.execute(
-                s.llm_runs.select().where(s.llm_runs.c.id == run_id)
-            ).mappings().one()
+            row = (
+                conn.execute(s.llm_runs.select().where(s.llm_runs.c.id == run_id)).mappings().one()
+            )
         assert row["project_widget_id"] == 4242
     finally:
         metadata.drop_all(pf_engine)
@@ -366,9 +368,11 @@ def test_record_writes_configs(tracking_db):
         configs={"report_config": 42, "config_version": 7},
     )
     with tracking_db.connect() as conn:
-        rows = conn.execute(
-            s.llm_run_configs.select().where(s.llm_run_configs.c.llm_run_id == run_id)
-        ).mappings().fetchall()
+        rows = (
+            conn.execute(s.llm_run_configs.select().where(s.llm_run_configs.c.llm_run_id == run_id))
+            .mappings()
+            .fetchall()
+        )
     by_kind = {r["config_kind"]: r["config_id"] for r in rows}
     assert by_kind == {"report_config": 42, "config_version": 7}
 
@@ -383,11 +387,13 @@ def test_record_writes_validations(tracking_db):
         ],
     )
     with tracking_db.connect() as conn:
-        rows = conn.execute(
-            s.llm_run_validations.select().where(
-                s.llm_run_validations.c.llm_run_id == run_id
+        rows = (
+            conn.execute(
+                s.llm_run_validations.select().where(s.llm_run_validations.c.llm_run_id == run_id)
             )
-        ).mappings().fetchall()
+            .mappings()
+            .fetchall()
+        )
     by_validator = {r["validator"]: r for r in rows}
     assert by_validator["url_hallucination"]["passed"] is True
     assert by_validator["json_schema"]["passed"] is False
@@ -401,11 +407,11 @@ def test_record_writes_metrics(tracking_db):
         metrics={"tier1_ratio": 0.85, "n_sources": 12.0},
     )
     with tracking_db.connect() as conn:
-        rows = conn.execute(
-            s.llm_run_metrics.select().where(
-                s.llm_run_metrics.c.llm_run_id == run_id
-            )
-        ).mappings().fetchall()
+        rows = (
+            conn.execute(s.llm_run_metrics.select().where(s.llm_run_metrics.c.llm_run_id == run_id))
+            .mappings()
+            .fetchall()
+        )
     by_name = {r["metric_name"]: r["metric_value"] for r in rows}
     assert by_name["tier1_ratio"] == pytest.approx(0.85)
     assert by_name["n_sources"] == pytest.approx(12.0)
@@ -419,9 +425,12 @@ def test_record_writes_tags(tracking_db):
     )
     with tracking_db.connect() as conn:
         from sqlalchemy import select as _select
-        rows = conn.execute(
-            _select(s.llm_run_tags.c.tag).where(s.llm_run_tags.c.llm_run_id == run_id)
-        ).scalars().all()
+
+        rows = (
+            conn.execute(_select(s.llm_run_tags.c.tag).where(s.llm_run_tags.c.llm_run_id == run_id))
+            .scalars()
+            .all()
+        )
     assert set(rows) == {"env:prod", "experiment:opus47-a"}
 
 
@@ -433,9 +442,11 @@ def test_record_writes_parent_run_link(tracking_db):
         parent_run=(parent, "retry"),
     )
     with tracking_db.connect() as conn:
-        link = conn.execute(
-            s.llm_run_links.select().where(s.llm_run_links.c.child_run_id == child)
-        ).mappings().one()
+        link = (
+            conn.execute(s.llm_run_links.select().where(s.llm_run_links.c.child_run_id == child))
+            .mappings()
+            .one()
+        )
     assert link["parent_run_id"] == parent
     assert link["relation"] == "retry"
 
@@ -488,15 +499,9 @@ def test_get_with_payload_returns_none_for_missing_id(tracking_db):
 
 def test_find_by_hash_returns_all_matching(tracking_db):
     h = "f" * 64
-    a = LlmRunRepo().record(
-        agent_type="drafter", model="claude-opus-4-7", input_hash=h
-    )
-    b = LlmRunRepo().record(
-        agent_type="drafter", model="claude-opus-4-7", input_hash=h
-    )
-    c = LlmRunRepo().record(
-        agent_type="drafter", model="claude-opus-4-7", input_hash="0" * 64
-    )
+    a = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7", input_hash=h)
+    b = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7", input_hash=h)
+    c = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7", input_hash="0" * 64)
     matched_ids = {r["id"] for r in LlmRunRepo().find_by_hash(h)}
     assert matched_ids == {a, b}
     assert c not in matched_ids
@@ -513,9 +518,7 @@ def test_find_by_hash_empty_when_no_matches(tracking_db):
 
 def test_outcome_record_roundtrip(tracking_db):
     run_id = LlmRunRepo().record(agent_type="reviewer", model="claude-opus-4-7")
-    LlmRunOutcomeRepo().record(
-        run_id, outcome_kind="result_matches_reviewer", score=0.92
-    )
+    LlmRunOutcomeRepo().record(run_id, outcome_kind="result_matches_reviewer", score=0.92)
     outcomes = LlmRunOutcomeRepo().list_for_run(run_id)
     assert len(outcomes) == 1
     assert outcomes[0]["outcome_kind"] == "result_matches_reviewer"
@@ -525,9 +528,7 @@ def test_outcome_record_roundtrip(tracking_db):
 def test_outcome_record_replaces_same_kind(tracking_db):
     run_id = LlmRunRepo().record(agent_type="reviewer", model="claude-opus-4-7")
     LlmRunOutcomeRepo().record(run_id, outcome_kind="draft_accepted", score=0.5)
-    LlmRunOutcomeRepo().record(
-        run_id, outcome_kind="draft_accepted", score=1.0, notes="reviewed"
-    )
+    LlmRunOutcomeRepo().record(run_id, outcome_kind="draft_accepted", score=1.0, notes="reviewed")
     outcomes = LlmRunOutcomeRepo().list_for_run(run_id)
     assert len(outcomes) == 1
     assert outcomes[0]["score"] == pytest.approx(1.0)
@@ -580,6 +581,7 @@ def test_validation_record_retries_on_mysql_deadlock(tracking_db, monkeypatch):
 
     # Speed up the exponential-jitter backoff in the test.
     import time as _time
+
     monkeypatch.setattr(_time, "sleep", lambda *_a, **_k: None)
 
     run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
@@ -594,8 +596,7 @@ def test_validation_record_retries_on_mysql_deadlock(tracking_db, monkeypatch):
                 "INSERT INTO llm_run_validations ...",
                 {},
                 Exception(
-                    "(1213, 'Deadlock found when trying to get lock; "
-                    "try restarting transaction')"
+                    "(1213, 'Deadlock found when trying to get lock; try restarting transaction')"
                 ),
             )
         return orig(self, *args, **kwargs)
@@ -604,7 +605,10 @@ def test_validation_record_retries_on_mysql_deadlock(tracking_db, monkeypatch):
 
     # The caller MUST NOT see the exception.
     LlmRunValidationRepo().record(
-        run_id, validator="deadlock_retry", passed=True, severity="info",
+        run_id,
+        validator="deadlock_retry",
+        passed=True,
+        severity="info",
     )
 
     assert calls["n"] == 2  # first call deadlocked, retry succeeded
@@ -619,6 +623,7 @@ def test_validation_record_gives_up_after_three_deadlocks(tracking_db, monkeypat
     from sqlalchemy.exc import OperationalError
 
     import time as _time
+
     monkeypatch.setattr(_time, "sleep", lambda *_a, **_k: None)
 
     run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
@@ -630,8 +635,7 @@ def test_validation_record_gives_up_after_three_deadlocks(tracking_db, monkeypat
             "INSERT INTO llm_run_validations ...",
             {},
             Exception(
-                "(1213, 'Deadlock found when trying to get lock; "
-                "try restarting transaction')"
+                "(1213, 'Deadlock found when trying to get lock; try restarting transaction')"
             ),
         )
 
@@ -639,14 +643,17 @@ def test_validation_record_gives_up_after_three_deadlocks(tracking_db, monkeypat
 
     with pytest.raises(OperationalError):
         LlmRunValidationRepo().record(
-            run_id, validator="always_deadlock", passed=True,
+            run_id,
+            validator="always_deadlock",
+            passed=True,
         )
 
     assert calls["n"] == 3
 
 
 def test_validation_record_does_not_retry_non_deadlock_errors(
-    tracking_db, monkeypatch,
+    tracking_db,
+    monkeypatch,
 ):
     """Unrelated OperationalErrors must not trigger a retry loop."""
     from sqlalchemy.exc import OperationalError
@@ -666,7 +673,9 @@ def test_validation_record_does_not_retry_non_deadlock_errors(
 
     with pytest.raises(OperationalError):
         LlmRunValidationRepo().record(
-            run_id, validator="syntax_err", passed=True,
+            run_id,
+            validator="syntax_err",
+            passed=True,
         )
 
     assert calls["n"] == 1  # no retry attempted
@@ -798,9 +807,7 @@ def test_halluc_rate_by_prompt(tracking_db):
         agent_id = conn.execute(
             s.llm_agent_types.insert().values(slug="searcher")
         ).inserted_primary_key[0]
-        conn.execute(
-            s.llm_models.insert().values(name="perplexity/sonar-pro")
-        )
+        conn.execute(s.llm_models.insert().values(name="perplexity/sonar-pro"))
         prompt_id = conn.execute(
             s.llm_prompts.insert().values(
                 agent_type_id=agent_id,
@@ -819,9 +826,7 @@ def test_halluc_rate_by_prompt(tracking_db):
             system_prompt_id=prompt_id,
             usage={"cost_usd": 0.001},
         )
-        LlmRunValidationRepo().record(
-            run_id, validator="url_hallucination", passed=passed
-        )
+        LlmRunValidationRepo().record(run_id, validator="url_hallucination", passed=passed)
 
     since = dt.datetime(2020, 1, 1)
     until = dt.datetime(2099, 1, 1)
@@ -904,11 +909,7 @@ def test_runs_with_all_tags_empty_input_returns_empty(tracking_db):
 def _backdate_run(engine, run_id: int, when: dt.datetime) -> None:
     """Force a run's created_at into the past so the purge cutoff can see it."""
     with engine.begin() as conn:
-        conn.execute(
-            s.llm_runs.update()
-            .where(s.llm_runs.c.id == run_id)
-            .values(created_at=when)
-        )
+        conn.execute(s.llm_runs.update().where(s.llm_runs.c.id == run_id).values(created_at=when))
 
 
 def test_purge_deletes_old_payload(tracking_db):
@@ -918,7 +919,11 @@ def test_purge_deletes_old_payload(tracking_db):
         rendered_prompts=("sys", "usr"),
         raw_response="response",
     )
-    _backdate_run(tracking_db, run_id, dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120))
+    _backdate_run(
+        tracking_db,
+        run_id,
+        dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120),
+    )
 
     deleted = purge_old_payloads(older_than_days=90)
     assert deleted == 1
@@ -933,7 +938,11 @@ def test_purge_keeps_recent_payload(tracking_db):
         model="claude-opus-4-7",
         rendered_prompts=("sys", "usr"),
     )
-    _backdate_run(tracking_db, run_id, dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=10))
+    _backdate_run(
+        tracking_db,
+        run_id,
+        dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=10),
+    )
     deleted = purge_old_payloads(older_than_days=90)
     assert deleted == 0
     assert LlmRunRepo().get_with_payload(run_id)["payload"] is not None
@@ -947,7 +956,11 @@ def test_purge_keeps_flagged_runs_by_default(tracking_db):
         rendered_prompts=("sys", "usr"),
         status="failed",
     )
-    _backdate_run(tracking_db, run_id, dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120))
+    _backdate_run(
+        tracking_db,
+        run_id,
+        dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120),
+    )
     deleted = purge_old_payloads(older_than_days=90)
     assert deleted == 0
     assert LlmRunRepo().get_with_payload(run_id)["payload"] is not None
@@ -960,7 +973,11 @@ def test_purge_keeps_payload_with_failed_validation(tracking_db):
         rendered_prompts=("sys", "usr"),
         validations=[("url_hallucination", False, "warn", None)],
     )
-    _backdate_run(tracking_db, run_id, dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120))
+    _backdate_run(
+        tracking_db,
+        run_id,
+        dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120),
+    )
     deleted = purge_old_payloads(older_than_days=90)
     assert deleted == 0
 
@@ -972,7 +989,11 @@ def test_purge_keep_flagged_false_drops_everything(tracking_db):
         rendered_prompts=("sys", "usr"),
         status="failed",
     )
-    _backdate_run(tracking_db, run_id, dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120))
+    _backdate_run(
+        tracking_db,
+        run_id,
+        dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(days=120),
+    )
     deleted = purge_old_payloads(older_than_days=90, keep_flagged=False)
     assert deleted == 1
 

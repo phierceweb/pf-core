@@ -61,7 +61,9 @@ def test_resolve_llm_model_id_inserts_and_caches(tracking_db):
 def test_first_call_inserts_and_returns_id(tracking_db):
     aid = resolve_agent_type_id("drafter")
     pid = resolve_prompt_id(
-        agent_type_id=aid, part="system", version=1,
+        agent_type_id=aid,
+        part="system",
+        version=1,
         content="drafter system prompt v1",
     )
     assert isinstance(pid, int) and pid > 0
@@ -75,19 +77,13 @@ def test_first_call_inserts_and_returns_id(tracking_db):
 
 def test_empty_content_returns_none(tracking_db):
     aid = resolve_agent_type_id("drafter")
-    assert resolve_prompt_id(
-        agent_type_id=aid, part="system", version=1, content=""
-    ) is None
+    assert resolve_prompt_id(agent_type_id=aid, part="system", version=1, content="") is None
 
 
 def test_repeat_call_with_same_content_reuses_id(tracking_db):
     aid = resolve_agent_type_id("drafter")
-    first = resolve_prompt_id(
-        agent_type_id=aid, part="system", version=1, content="same text"
-    )
-    second = resolve_prompt_id(
-        agent_type_id=aid, part="system", version=1, content="same text"
-    )
+    first = resolve_prompt_id(agent_type_id=aid, part="system", version=1, content="same text")
+    second = resolve_prompt_id(agent_type_id=aid, part="system", version=1, content="same text")
     assert first == second
 
 
@@ -109,7 +105,10 @@ def test_part_distinguishes_rows(tracking_db):
 def test_invalid_on_change_raises():
     with pytest.raises(ValueError, match="on_change must be"):
         resolve_prompt_id(
-            agent_type_id=1, part="system", version=1, content="x",
+            agent_type_id=1,
+            part="system",
+            version=1,
+            content="x",
             on_change="invalid_policy",
         )
 
@@ -123,10 +122,16 @@ class TestOnChangeKeepFirst:
     def test_differing_content_reuses_existing_row(self, tracking_db):
         aid = resolve_agent_type_id("drafter")
         first = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="original",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="original",
         )
         second = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="DIFFERENT",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="DIFFERENT",
             on_change="keep_first",
         )
         assert first == second
@@ -148,11 +153,17 @@ class TestOnChangeError:
     def test_matching_content_no_raise(self, tracking_db):
         aid = resolve_agent_type_id("drafter")
         first = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="x",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="x",
         )
         # Same text — fine, no raise.
         second = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="x",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="x",
             on_change="error",
         )
         assert first == second
@@ -160,11 +171,17 @@ class TestOnChangeError:
     def test_differing_content_raises(self, tracking_db):
         aid = resolve_agent_type_id("drafter")
         resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="original",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="original",
         )
         with pytest.raises(ValueError, match="bump the version"):
             resolve_prompt_id(
-                agent_type_id=aid, part="system", version=1, content="DIFFERENT",
+                agent_type_id=aid,
+                part="system",
+                version=1,
+                content="DIFFERENT",
                 on_change="error",
             )
 
@@ -179,10 +196,16 @@ class TestOnChangeUpdateUnused:
         """No llm_runs row points at the prompt yet — text is safe to mutate."""
         aid = resolve_agent_type_id("drafter")
         first = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="original",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="original",
         )
         second = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="UPDATED",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="UPDATED",
             on_change="update_unused",
         )
         # Same row id, new content.
@@ -200,9 +223,13 @@ class TestOnChangeUpdateUnused:
         insert a new row at the next version."""
         aid = resolve_agent_type_id("drafter")
         from pf_core.llm.tracking import resolve_llm_model_id
+
         mid = resolve_llm_model_id("test-model")
         first = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="original",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="original",
         )
         # Create an llm_runs row that references the prompt.
         with transaction() as conn:
@@ -216,7 +243,10 @@ class TestOnChangeUpdateUnused:
             )
         # Now change the content — must bump, not mutate.
         second = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="REVISED",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="REVISED",
             on_change="update_unused",
         )
         assert second != first
@@ -237,11 +267,17 @@ class TestOnChangeUpdateUnused:
     def test_matching_content_still_reuses(self, tracking_db):
         aid = resolve_agent_type_id("drafter")
         first = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="same",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="same",
             on_change="update_unused",
         )
         second = resolve_prompt_id(
-            agent_type_id=aid, part="system", version=1, content="same",
+            agent_type_id=aid,
+            part="system",
+            version=1,
+            content="same",
             on_change="update_unused",
         )
         assert first == second

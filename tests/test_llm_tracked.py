@@ -80,11 +80,13 @@ class _ExplodingRepo:
 
 def _links(engine, child_run_id: int) -> list[dict]:
     with engine.connect() as conn:
-        rows = conn.execute(
-            select(s.llm_run_links).where(
-                s.llm_run_links.c.child_run_id == child_run_id
+        rows = (
+            conn.execute(
+                select(s.llm_run_links).where(s.llm_run_links.c.child_run_id == child_run_id)
             )
-        ).mappings().fetchall()
+            .mappings()
+            .fetchall()
+        )
     return [dict(r) for r in rows]
 
 
@@ -94,9 +96,7 @@ def _links(engine, child_run_id: int) -> list[dict]:
 
 
 def test_success_returns_raw_and_records_one_row(tracking_db):
-    client = _FakeClient(
-        ("hello world", {"duration_ms": 1234, "system_fingerprint": "fp_z"})
-    )
+    client = _FakeClient(("hello world", {"duration_ms": 1234, "system_fingerprint": "fp_z"}))
 
     content, run_id = tracked_call(
         client=client,

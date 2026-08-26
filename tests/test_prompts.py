@@ -61,6 +61,7 @@ class TestLoadPrompts:
 
 # ---- Brace style (default) ----
 
+
 class TestRenderBrace:
     def test_simple_substitution(self):
         assert render("Hello {name}", name="world") == "Hello world"
@@ -72,7 +73,7 @@ class TestRenderBrace:
         assert render("{x} then {x}", x="same") == "same then same"
 
     def test_escaped_braces_preserved(self):
-        result = render("JSON: {{\"key\": \"{val}\"}}", val="hello")
+        result = render('JSON: {{"key": "{val}"}}', val="hello")
         assert result == 'JSON: {"key": "hello"}'
 
     def test_missing_variable_raises(self):
@@ -101,6 +102,7 @@ class TestRenderBrace:
 
 # ---- Token style (@@VARIABLE@@) ----
 
+
 class TestRenderToken:
     def test_simple_substitution(self):
         assert render("Hello @@NAME@@", style="@@", NAME="world") == "Hello world"
@@ -118,9 +120,7 @@ class TestRenderToken:
         assert result == '{"role": "summarizer"}'
 
     def test_json_heavy_template(self):
-        template = (
-            'Output JSON: {"score": @@SCORE@@, "items": [{"name": "@@NAME@@"}]}'
-        )
+        template = 'Output JSON: {"score": @@SCORE@@, "items": [{"name": "@@NAME@@"}]}'
         result = render(template, style="@@", SCORE="95", NAME="test")
         assert result == 'Output JSON: {"score": 95, "items": [{"name": "test"}]}'
 
@@ -153,6 +153,7 @@ class TestRenderToken:
 
 # ---- Invalid style ----
 
+
 class TestRenderInvalidStyle:
     def test_unknown_style_raises(self):
         with pytest.raises(InvalidInputError, match="Unknown render style"):
@@ -167,6 +168,7 @@ class TestRenderInvalidStyle:
 def _write_spec(tmp_path, filename="searcher.yaml", **fields):
     """Helper: write a minimal spec file and return its path."""
     import yaml as _yaml
+
     full = {"agent": "searcher", "version": 1, "system": "You are a searcher."}
     full.update(fields)
     p = tmp_path / filename
@@ -237,7 +239,8 @@ class TestLoadPromptSpec:
 class TestRenderSpec:
     def test_renders_system_part_with_variables(self):
         spec = {
-            "agent": "x", "version": 3,
+            "agent": "x",
+            "version": 3,
             "system": "Hello {name}. Today is {today}.",
         }
         text, version = render_spec(spec, name="world", today="2026-04-21")
@@ -254,7 +257,8 @@ class TestRenderSpec:
 
     def test_selects_user_part(self):
         spec = {
-            "agent": "x", "version": 5,
+            "agent": "x",
+            "version": 5,
             "system": "sys text",
             "user": "User: {q}",
         }
@@ -269,7 +273,8 @@ class TestRenderSpec:
 
     def test_token_style_for_json_heavy(self):
         spec = {
-            "agent": "x", "version": 1,
+            "agent": "x",
+            "version": 1,
             "system": 'Reply: {"key": "@@VAL@@"}',
         }
         text, _ = render_spec(spec, style="@@", VAL="hello")

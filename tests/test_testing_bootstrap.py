@@ -124,20 +124,11 @@ class TestPfSchemaSplice:
             """
         ]
 
-    def test_project_table_can_reference_framework_table(
-        self, pf_tables, pf_connection
-    ):
+    def test_project_table_can_reference_framework_table(self, pf_tables, pf_connection):
         pf_connection.execute(text("INSERT INTO jobs (kind) VALUES ('probe')"))
-        job_id = pf_connection.execute(
-            text("SELECT id FROM jobs WHERE kind = 'probe'")
-        ).scalar()
-        pf_connection.execute(
-            text("INSERT INTO proj_refs (job_id) VALUES (:j)"), {"j": job_id}
-        )
-        assert (
-            pf_connection.execute(text("SELECT COUNT(*) FROM proj_refs")).scalar()
-            == 1
-        )
+        job_id = pf_connection.execute(text("SELECT id FROM jobs WHERE kind = 'probe'")).scalar()
+        pf_connection.execute(text("INSERT INTO proj_refs (job_id) VALUES (:j)"), {"j": job_id})
+        assert pf_connection.execute(text("SELECT COUNT(*) FROM proj_refs")).scalar() == 1
 
 
 class TestEngineUrlOverride:
@@ -170,9 +161,7 @@ class TestEngineTeardownHook:
             # transaction() must still route to the (not yet disposed,
             # not yet unpatched) test engine when the hook fires.
             with transaction() as conn:
-                _TEARDOWN_CALLS.append(
-                    f"alive={conn.execute(text('SELECT 1')).scalar()}"
-                )
+                _TEARDOWN_CALLS.append(f"alive={conn.execute(text('SELECT 1')).scalar()}")
 
         return _hook
 
@@ -210,10 +199,7 @@ class TestResolverCacheCleared:
         resolve_agent_type_id("bootstrap_probe")
         with transaction() as conn:
             n = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM llm_agent_types "
-                    "WHERE slug = 'bootstrap_probe'"
-                )
+                text("SELECT COUNT(*) FROM llm_agent_types WHERE slug = 'bootstrap_probe'")
             ).scalar()
         assert n == 1
 

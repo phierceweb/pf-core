@@ -11,12 +11,15 @@ previous entry.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from pf_core.log import get_logger
 
 from pf_core.llm.validate._cross_field import get_cross_field_validator
 from pf_core.llm.validate._semantic import build_semantic_validator
+
+if TYPE_CHECKING:
+    from pf_core.llm.validate._pipeline import ValidationSignal
 
 logger = get_logger(__name__)
 
@@ -29,9 +32,11 @@ class Validator(Protocol):
     """
 
     def validate_shape(
-        self, parsed: Any, *, agent_type: str,
-    ) -> tuple[Any, "ValidationSignal"]:  # noqa: F821 — forward string
-        ...
+        self,
+        parsed: Any,
+        *,
+        agent_type: str,
+    ) -> tuple[Any, ValidationSignal]: ...
 
 
 @dataclass
@@ -102,10 +107,11 @@ def _resolve_shape(shape: Any) -> Any:
     try:
         from pydantic import BaseModel
     except ImportError:  # pragma: no cover — pydantic is a hard dep
-        BaseModel = None  # type: ignore[assignment]
+        BaseModel = None  # type: ignore[assignment, misc]
 
     if BaseModel is not None and isinstance(shape, type) and issubclass(shape, BaseModel):
         from pf_core.llm.validate._pydantic import PydanticValidator
+
         return PydanticValidator(shape)
     return shape
 

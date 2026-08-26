@@ -1,7 +1,6 @@
 """Tests for pf_core.llm.router — nested per-backend agent blocks.
 
-The nested schema (absorbed from the consumer projects that built it
-independently) lets one agent declare a model per backend::
+The nested schema lets one agent declare a model per backend::
 
     agents:
       drafter:

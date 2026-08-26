@@ -25,6 +25,7 @@ from pf_core.llm.validate._pipeline import ValidationSignal
 
 _VALID_SEVERITIES = frozenset({"info", "warn", "error"})
 
+
 # Hook: project supplies the tier-1 domain list. Empty default → tier1_ratio
 # passes trivially when no domains are configured.
 def _tier1_hook_default() -> set[str]:
@@ -73,6 +74,7 @@ def register_url_hallucination_rules(
 # Spec parsing
 # ---------------------------------------------------------------------------
 
+
 def _split_spec(spec: str) -> tuple[str, list[str], str]:
     """Split a semantic-validator spec into ``(name, args, severity)``.
 
@@ -93,9 +95,7 @@ def build_semantic_validator(spec: str) -> Callable:
     name, args, severity = _split_spec(spec)
     builder = _BUILDERS.get(name)
     if builder is None:
-        raise ConfigurationError(
-            f"unknown semantic validator '{name}'. Known: {sorted(_BUILDERS)}"
-        )
+        raise ConfigurationError(f"unknown semantic validator '{name}'. Known: {sorted(_BUILDERS)}")
     fn = builder(args, severity)
     fn.name = name  # type: ignore[attr-defined]
     return fn
@@ -105,6 +105,7 @@ def build_semantic_validator(spec: str) -> Callable:
 # Value walking helpers
 # ---------------------------------------------------------------------------
 
+
 def _iter_values(value: Any):
     """Yield every leaf value inside *value*, depth-first.
 
@@ -113,7 +114,7 @@ def _iter_values(value: Any):
     try:
         from pydantic import BaseModel
     except ImportError:  # pragma: no cover
-        BaseModel = None  # type: ignore[assignment]
+        BaseModel = None  # type: ignore[assignment, misc]
 
     if BaseModel is not None and isinstance(value, BaseModel):
         value = value.model_dump(mode="python")
@@ -150,13 +151,16 @@ def _get_field(value: Any, name: str) -> Any:
 # Individual validators
 # ---------------------------------------------------------------------------
 
+
 def _build_url_sanity(args: list[str], severity: str) -> Callable:
     def _check(parsed: Any, *, context: dict) -> ValidationSignal:
         rules = _URL_RULES_HOOK()
         urls = _collect_urls(parsed)
         if not rules:
             return ValidationSignal(
-                "url_sanity", "info", passed=True,
+                "url_sanity",
+                "info",
+                passed=True,
                 details={"reason": "no url hallucination rules registered"},
             )
         bad = []
@@ -171,14 +175,13 @@ def _build_url_sanity(args: list[str], severity: str) -> Callable:
             passed=passed,
             details={"checked": len(urls), "flagged": bad} if bad else None,
         )
+
     return _check
 
 
 def _build_tier1_ratio(args: list[str], severity: str) -> Callable:
     if len(args) != 1:
-        raise ConfigurationError(
-            f"tier1_ratio expects one arg (threshold), got: {args}"
-        )
+        raise ConfigurationError(f"tier1_ratio expects one arg (threshold), got: {args}")
     try:
         threshold = float(args[0])
     except ValueError as e:
@@ -189,14 +192,19 @@ def _build_tier1_ratio(args: list[str], severity: str) -> Callable:
         urls = _collect_urls(parsed)
         if not urls:
             return ValidationSignal(
-                "tier1_ratio", "info", passed=True,
+                "tier1_ratio",
+                "info",
+                passed=True,
                 details={"reason": "no urls to evaluate"},
             )
         if not tier1:
             return ValidationSignal(
-                "tier1_ratio", "info", passed=True,
+                "tier1_ratio",
+                "info",
+                passed=True,
                 details={"reason": "no tier1 domain hook registered"},
             )
+
         def _is_tier1(u: str) -> bool:
             try:
                 host = u.split("://", 1)[1].split("/", 1)[0].lower()
@@ -211,16 +219,20 @@ def _build_tier1_ratio(args: list[str], severity: str) -> Callable:
             validator="tier1_ratio",
             severity=severity if not passed else "info",
             passed=passed,
-            details={"ratio": round(ratio, 3), "threshold": threshold, "hits": hits, "total": len(urls)},
+            details={
+                "ratio": round(ratio, 3),
+                "threshold": threshold,
+                "hits": hits,
+                "total": len(urls),
+            },
         )
+
     return _check
 
 
 def _build_field_non_empty(args: list[str], severity: str) -> Callable:
     if len(args) != 1:
-        raise ConfigurationError(
-            f"field_non_empty expects one comma-separated arg, got: {args}"
-        )
+        raise ConfigurationError(f"field_non_empty expects one comma-separated arg, got: {args}")
     fields = [f.strip() for f in args[0].split(",") if f.strip()]
     if not fields:
         raise ConfigurationError("field_non_empty requires at least one field name")
@@ -238,14 +250,13 @@ def _build_field_non_empty(args: list[str], severity: str) -> Callable:
             passed=passed,
             details={"empty_fields": missing, "checked": fields} if missing else None,
         )
+
     return _check
 
 
 def _build_min_items(args: list[str], severity: str) -> Callable:
     if len(args) != 2:
-        raise ConfigurationError(
-            f"min_items expects two args (field:n), got: {args}"
-        )
+        raise ConfigurationError(f"min_items expects two args (field:n), got: {args}")
     field_name = args[0]
     try:
         n = int(args[1])
@@ -256,8 +267,14 @@ def _build_min_items(args: list[str], severity: str) -> Callable:
         v = _get_field(parsed, field_name)
         if not isinstance(v, (list, tuple)):
             return ValidationSignal(
-                "min_items", severity, passed=False,
-                details={"field": field_name, "reason": "not a list", "value_type": type(v).__name__},
+                "min_items",
+                severity,
+                passed=False,
+                details={
+                    "field": field_name,
+                    "reason": "not a list",
+                    "value_type": type(v).__name__,
+                },
             )
         actual = len(v)
         passed = actual >= n
@@ -267,6 +284,7 @@ def _build_min_items(args: list[str], severity: str) -> Callable:
             passed=passed,
             details={"field": field_name, "actual": actual, "minimum": n},
         )
+
     return _check
 
 
@@ -284,6 +302,7 @@ def _build_no_duplicate_urls(args: list[str], severity: str) -> Callable:
             passed=passed,
             details={"duplicates": dupes} if dupes else None,
         )
+
     return _check
 
 
@@ -295,9 +314,7 @@ def _parse_date_token(token: str) -> _dt.date:
 
 def _build_date_range(args: list[str], severity: str) -> Callable:
     if len(args) != 3:
-        raise ConfigurationError(
-            f"date_range expects three args (field:start:end), got: {args}"
-        )
+        raise ConfigurationError(f"date_range expects three args (field:start:end), got: {args}")
     field_name, start_tok, end_tok = args
     try:
         start = _parse_date_token(start_tok)
@@ -312,7 +329,9 @@ def _build_date_range(args: list[str], severity: str) -> Callable:
         raw = _get_field(parsed, field_name)
         if raw is None:
             return ValidationSignal(
-                "date_range", severity, passed=False,
+                "date_range",
+                severity,
+                passed=False,
                 details={"field": field_name, "reason": "missing"},
             )
         if isinstance(raw, _dt.date) and not isinstance(raw, _dt.datetime):
@@ -324,7 +343,9 @@ def _build_date_range(args: list[str], severity: str) -> Callable:
                 d = _dt.date.fromisoformat(str(raw)[:10])
             except ValueError:
                 return ValidationSignal(
-                    "date_range", severity, passed=False,
+                    "date_range",
+                    severity,
+                    passed=False,
                     details={"field": field_name, "reason": "not an ISO date", "value": str(raw)},
                 )
         end = _resolve_end()
@@ -340,6 +361,7 @@ def _build_date_range(args: list[str], severity: str) -> Callable:
                 "end": end.isoformat(),
             },
         )
+
     return _check
 
 

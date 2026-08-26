@@ -40,6 +40,7 @@ class TestRunParallel:
             raise ValueError("boom")
 
         import pytest
+
         with pytest.raises(ValueError, match="boom"):
             run_parallel([1], fail)
 
@@ -48,6 +49,7 @@ class TestRunParallel:
             raise ValueError("boom")
 
         import pytest
+
         with pytest.raises(ValueError, match="boom"):
             run_parallel([1], fail, workers=2)
 
@@ -285,12 +287,13 @@ class TestBatchSummary:
 
         with caplog.at_level(logging.INFO, logger="pf_core.parallel"):
             run_parallel(
-                [1, 2, 3], lambda x: None, workers=1,
-                label="Graded", failures=failures,
+                [1, 2, 3],
+                lambda x: None,
+                workers=1,
+                label="Processed",
+                failures=failures,
             )
-        summary_records = [
-            r for r in caplog.records if "batch_complete" in r.getMessage()
-        ]
+        summary_records = [r for r in caplog.records if "batch_complete" in r.getMessage()]
         assert len(summary_records) == 1
         msg = summary_records[0].getMessage()
         assert "succeeded" in msg or "all_succeeded" in msg
@@ -308,11 +311,13 @@ class TestBatchSummary:
 
         with caplog.at_level(logging.INFO, logger="pf_core.parallel"):
             run_parallel(
-                [1, 2, 3], fn, workers=1, label="Graded", failures=failures,
+                [1, 2, 3],
+                fn,
+                workers=1,
+                label="Processed",
+                failures=failures,
             )
-        summary_records = [
-            r for r in caplog.records if "batch_complete" in r.getMessage()
-        ]
+        summary_records = [r for r in caplog.records if "batch_complete" in r.getMessage()]
         assert len(summary_records) == 1
         # When failures are present, summary is at WARNING level
         assert summary_records[0].levelname == "WARNING"
@@ -324,12 +329,13 @@ class TestBatchSummary:
 
         with caplog.at_level(logging.INFO, logger="pf_core.parallel"):
             run_parallel(
-                [1, 2], lambda x: None, workers=1,
-                label="MyCustomLabel", failures=failures,
+                [1, 2],
+                lambda x: None,
+                workers=1,
+                label="MyCustomLabel",
+                failures=failures,
             )
-        summary_records = [
-            r for r in caplog.records if "batch_complete" in r.getMessage()
-        ]
+        summary_records = [r for r in caplog.records if "batch_complete" in r.getMessage()]
         assert len(summary_records) == 1
         # The label flows through as a structured field; rendered message
         # contains it one way or another (key=value or formatted)
@@ -348,12 +354,13 @@ class TestBatchSummary:
 
         with caplog.at_level(logging.INFO, logger="pf_core.parallel"):
             run_parallel(
-                [1, 2, 3, 4, 5], fn, workers=1,
-                label="Graded", failures=failures,
+                [1, 2, 3, 4, 5],
+                fn,
+                workers=1,
+                label="Processed",
+                failures=failures,
             )
-        summary_records = [
-            r for r in caplog.records if "batch_complete" in r.getMessage()
-        ]
+        summary_records = [r for r in caplog.records if "batch_complete" in r.getMessage()]
         assert len(summary_records) == 1
         msg = summary_records[0].getMessage()
         # 3 succeeded, 2 failed (40% failure rate)
@@ -375,12 +382,13 @@ class TestBatchSummary:
 
         with caplog.at_level(logging.INFO, logger="pf_core.parallel"):
             run_parallel(
-                list(range(1, 13)), fn, workers=4,
-                label="Done", failures=failures,
+                list(range(1, 13)),
+                fn,
+                workers=4,
+                label="Done",
+                failures=failures,
             )
-        summary_records = [
-            r for r in caplog.records if "batch_complete" in r.getMessage()
-        ]
+        summary_records = [r for r in caplog.records if "batch_complete" in r.getMessage()]
         assert len(summary_records) == 1
         # 4 of 12 fail (multiples of 3: 3, 6, 9, 12)
         assert len(failures) == 4
@@ -394,12 +402,13 @@ class TestBatchSummary:
 
         with caplog.at_level(logging.INFO, logger="pf_core.parallel"):
             run_parallel(
-                [], lambda x: None, workers=1,
-                label="Done", failures=failures,
+                [],
+                lambda x: None,
+                workers=1,
+                label="Done",
+                failures=failures,
             )
-        summary_records = [
-            r for r in caplog.records if "batch_complete" in r.getMessage()
-        ]
+        summary_records = [r for r in caplog.records if "batch_complete" in r.getMessage()]
         assert summary_records == []
 
 

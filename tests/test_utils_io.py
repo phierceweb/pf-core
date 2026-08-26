@@ -73,9 +73,7 @@ class TestAtomicWriteText:
         atomic_write_text(target, "hi")
         assert sorted(p.name for p in tmp_path.iterdir()) == ["out.txt"]
 
-    def test_existing_file_unchanged_when_write_fails(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_existing_file_unchanged_when_write_fails(self, tmp_path: Path, monkeypatch) -> None:
         """If the write step blows up after the existing file is on disk,
         the original is untouched — no torn write, no partial update.
         Simulate the failure by monkeypatching os.replace to raise."""
@@ -90,9 +88,7 @@ class TestAtomicWriteText:
             atomic_write_text(target, "new content")
         assert target.read_text() == "original"
 
-    def test_temp_file_cleaned_up_when_write_fails(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_temp_file_cleaned_up_when_write_fails(self, tmp_path: Path, monkeypatch) -> None:
         """A failing write must not leave the dot-tempfile behind cluttering
         the directory."""
         target = tmp_path / "out.txt"
@@ -160,9 +156,7 @@ class TestAtomicWriteBytes:
         atomic_write_bytes(target, b"data")
         assert sorted(p.name for p in tmp_path.iterdir()) == ["out.bin"]
 
-    def test_existing_file_unchanged_when_write_fails(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_existing_file_unchanged_when_write_fails(self, tmp_path: Path, monkeypatch) -> None:
         target = tmp_path / "out.bin"
         target.write_bytes(b"original")
 
@@ -174,9 +168,7 @@ class TestAtomicWriteBytes:
             atomic_write_bytes(target, b"new content")
         assert target.read_bytes() == b"original"
 
-    def test_temp_file_cleaned_up_when_write_fails(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_temp_file_cleaned_up_when_write_fails(self, tmp_path: Path, monkeypatch) -> None:
         target = tmp_path / "out.bin"
 
         def boom(*args, **kwargs):
@@ -214,32 +206,24 @@ class TestParentDirectoryFsync:
     created by ``os.replace`` needs its own fsync or power loss can lose the
     rename and leave the target at its old content."""
 
-    def test_text_write_fsyncs_parent_dir_after_replace(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_text_write_fsyncs_parent_dir_after_replace(self, tmp_path: Path, monkeypatch) -> None:
         events = _record_durability_calls(monkeypatch)
         atomic_write_text(tmp_path / "out.txt", "hi")
         assert "fsync:dir" in events
         assert events.index("replace") < events.index("fsync:dir")
 
-    def test_bytes_write_fsyncs_parent_dir_after_replace(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_bytes_write_fsyncs_parent_dir_after_replace(self, tmp_path: Path, monkeypatch) -> None:
         events = _record_durability_calls(monkeypatch)
         atomic_write_bytes(tmp_path / "out.bin", b"hi")
         assert "fsync:dir" in events
         assert events.index("replace") < events.index("fsync:dir")
 
-    def test_json_write_fsyncs_parent_dir(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_json_write_fsyncs_parent_dir(self, tmp_path: Path, monkeypatch) -> None:
         events = _record_durability_calls(monkeypatch)
         atomic_write_json(tmp_path / "out.json", {"a": 1})
         assert "fsync:dir" in events
 
-    def test_write_succeeds_when_dir_fsync_unsupported(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_write_succeeds_when_dir_fsync_unsupported(self, tmp_path: Path, monkeypatch) -> None:
         """The replace already landed, so a filesystem that rejects directory
         fsync must cost durability only — not turn a good write into an error."""
         real_open = os.open
@@ -323,9 +307,7 @@ class TestAtomicWriteJson:
         atomic_write_json(target, {"new": True})
         assert json.loads(target.read_text()) == {"new": True}
 
-    def test_non_serializable_raises_target_unchanged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_non_serializable_raises_target_unchanged(self, tmp_path: Path) -> None:
         """A TypeError from json.dumps must not corrupt an existing file."""
         target = tmp_path / "out.json"
         target.write_text('{"original": true}')

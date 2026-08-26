@@ -12,11 +12,11 @@ Reach for it whenever you call a rate-limited service yourself: many open-data /
 ```python
 from pf_core.utils.throttle import Throttle
 
-throttle = Throttle.per_second(1)        # ≤ 1 request/second
+throttle = Throttle.per_second(1)  # ≤ 1 request/second
 # or: Throttle(min_interval_s=1.0)
 
 for name in names:
-    throttle.acquire()                   # blocks until this caller's slot is due
+    throttle.acquire()  # blocks until this caller's slot is due
     resp = httpx.get(url, params={"q": name})
 ```
 

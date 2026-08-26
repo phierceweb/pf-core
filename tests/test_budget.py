@@ -204,7 +204,9 @@ def test_list_for_scopes_includes_global(budget_db):
 
 
 def test_list_for_scopes_filters_by_tag(budget_db):
-    _insert_budget(scope_kind="tag", scope_value="experiment:opus47", period="monthly", limit_usd=100.0)
+    _insert_budget(
+        scope_kind="tag", scope_value="experiment:opus47", period="monthly", limit_usd=100.0
+    )
     rows = BudgetRepo().list_for_scopes(tags=["experiment:opus47"])
     assert len(rows) == 1
     assert rows[0]["scope_value"] == "experiment:opus47"
@@ -400,8 +402,7 @@ def test_check_budget_blocks_over_limit(budget_db):
 
 def test_check_budget_warn_action_does_not_raise(budget_db):
     _insert_budget(
-        scope_kind="agent", scope_value="drafter", period="daily",
-        limit_usd=10.0, action="warn"
+        scope_kind="agent", scope_value="drafter", period="daily", limit_usd=10.0, action="warn"
     )
     _spend("drafter", "claude-opus-4-7", 12.0)
     # warn: log only, no raise
@@ -445,12 +446,10 @@ def test_check_budget_kill_switch(budget_db, monkeypatch):
 def test_check_budget_block_beats_warn(budget_db):
     # Global (warn) + agent (block) both over; agent block raises first
     _insert_budget(
-        scope_kind="global", scope_value=None, period="daily",
-        limit_usd=5.0, action="warn"
+        scope_kind="global", scope_value=None, period="daily", limit_usd=5.0, action="warn"
     )
     _insert_budget(
-        scope_kind="agent", scope_value="drafter", period="daily",
-        limit_usd=10.0, action="block"
+        scope_kind="agent", scope_value="drafter", period="daily", limit_usd=10.0, action="block"
     )
     _spend("drafter", "claude-opus-4-7", 9.0)
     with pytest.raises(CostBudgetExceeded) as excinfo:
@@ -465,9 +464,7 @@ def test_check_budget_block_beats_warn(budget_db):
 
 
 def test_aggregate_spent_sums_matching_runs(budget_db):
-    _insert_budget(
-        scope_kind="agent", scope_value="drafter", period="daily", limit_usd=100.0
-    )
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=100.0)
     _spend("drafter", "claude-opus-4-7", 2.5)
     _spend("drafter", "claude-opus-4-7", 3.5)
     _spend("critic", "claude-opus-4-7", 5.0)  # different agent — excluded
@@ -711,9 +708,7 @@ def test_mistyped_section_name_does_not_disable_existing_budgets(
 
 def test_removing_one_scope_still_disables_it(budget_db, tmp_path, monkeypatch):
     cfg = tmp_path / "budgets.yaml"
-    cfg.write_text(
-        "agents:\n  drafter:\n    daily: 10.0\n  critic:\n    daily: 5.0\n"
-    )
+    cfg.write_text("agents:\n  drafter:\n    daily: 10.0\n  critic:\n    daily: 5.0\n")
     monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
     assert sync_budgets_from_yaml()["inserted"] == 2
 
@@ -726,9 +721,7 @@ def test_removing_one_scope_still_disables_it(budget_db, tmp_path, monkeypatch):
     assert not repo.find(scope_kind="agent", scope_value="critic", period="daily")["enabled"]
 
 
-def test_in_place_edit_to_malformed_serves_last_good_config(
-    budget_db, tmp_path, monkeypatch
-):
+def test_in_place_edit_to_malformed_serves_last_good_config(budget_db, tmp_path, monkeypatch):
     """The realistic shape: an operator breaks budgets.yaml under a live process."""
     cfg = _seed_drafter_cap(tmp_path, monkeypatch, name="budgets.yaml")
     monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "0")  # reload every call

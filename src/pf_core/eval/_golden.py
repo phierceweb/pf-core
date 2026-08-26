@@ -22,6 +22,8 @@ Example::
 
 from __future__ import annotations
 
+import builtins
+
 from sqlalchemy import select
 
 from pf_core.db.repository import Repository
@@ -71,9 +73,7 @@ class GoldenSetRepo(Repository):
         if payload is None:
             logger.warning("golden_missing_payload", run_id=run_id, version=version)
         elif not payload.get("parsed_output"):
-            logger.warning(
-                "golden_missing_parsed_output", run_id=run_id, version=version
-            )
+            logger.warning("golden_missing_parsed_output", run_id=run_id, version=version)
         elif not isinstance(payload.get("parsed_output"), dict):
             logger.warning(
                 "golden_non_dict_parsed_output",
@@ -86,15 +86,12 @@ class GoldenSetRepo(Repository):
         with self._tx() as conn:
             conn.execute(
                 s.llm_run_tags.delete().where(
-                    (s.llm_run_tags.c.llm_run_id == run_id)
-                    & (s.llm_run_tags.c.tag == tag)
+                    (s.llm_run_tags.c.llm_run_id == run_id) & (s.llm_run_tags.c.tag == tag)
                 )
             )
             conn.execute(s.llm_run_tags.insert().values(llm_run_id=run_id, tag=tag))
 
-        LlmRunOutcomeRepo().record(
-            run_id, outcome_kind="golden_approved", score=1.0, notes=notes
-        )
+        LlmRunOutcomeRepo().record(run_id, outcome_kind="golden_approved", score=1.0, notes=notes)
 
         if ground_truth:
             with self._tx() as conn:
@@ -123,8 +120,7 @@ class GoldenSetRepo(Repository):
         with self._tx() as conn:
             conn.execute(
                 s.llm_run_tags.delete().where(
-                    (s.llm_run_tags.c.llm_run_id == run_id)
-                    & (s.llm_run_tags.c.tag == tag)
+                    (s.llm_run_tags.c.llm_run_id == run_id) & (s.llm_run_tags.c.tag == tag)
                 )
             )
 
@@ -171,7 +167,7 @@ class GoldenSetRepo(Repository):
         agent_type: str | None = None,
         limit: int = 200,
         dry_run: bool = False,
-    ) -> list[int]:
+    ) -> builtins.list[int]:  # builtins: the `list` method shadows the builtin here
         """Bulk-seed the golden set from runs that have a given outcome_kind.
 
         Queries ``llm_run_outcomes`` for matching rows, orders by most recent,
@@ -212,19 +208,23 @@ class GoldenSetRepo(Repository):
     def get_payload(self, run_id: int) -> dict | None:
         """Return the ``llm_run_payloads`` sidecar for a run, or ``None``."""
         with self._tx() as conn:
-            row = conn.execute(
-                select(s.llm_run_payloads).where(
-                    s.llm_run_payloads.c.llm_run_id == run_id
+            row = (
+                conn.execute(
+                    select(s.llm_run_payloads).where(s.llm_run_payloads.c.llm_run_id == run_id)
                 )
-            ).mappings().fetchone()
+                .mappings()
+                .fetchone()
+            )
         return dict(row) if row else None
 
     def get_ground_truth(self, run_id: int) -> dict[str, float]:
         """Return ``metric_name → metric_value`` for a run's ground-truth annotations."""
         with self._tx() as conn:
-            rows = conn.execute(
-                select(s.llm_run_metrics).where(
-                    s.llm_run_metrics.c.llm_run_id == run_id
+            rows = (
+                conn.execute(
+                    select(s.llm_run_metrics).where(s.llm_run_metrics.c.llm_run_id == run_id)
                 )
-            ).mappings().fetchall()
+                .mappings()
+                .fetchall()
+            )
         return {r["metric_name"]: float(r["metric_value"]) for r in rows}

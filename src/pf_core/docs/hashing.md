@@ -9,9 +9,9 @@ Not a security primitive: the digest is plain and unsalted. Use it to answer "di
 ```python
 from pf_core.utils.hashing import content_hash
 
-content_hash("some text")          # sha256 hex of the UTF-8 bytes
-content_hash({"a": 2, "b": 1})     # sha256 of canonical_json(obj) — order-independent
-content_hash(corpus, algo="md5")   # any hashlib algorithm
+content_hash("some text")  # sha256 hex of the UTF-8 bytes
+content_hash({"a": 2, "b": 1})  # sha256 of canonical_json(obj) — order-independent
+content_hash(corpus, algo="md5")  # any hashlib algorithm
 ```
 
 ## Functions
@@ -21,10 +21,10 @@ content_hash(corpus, algo="md5")   # any hashlib algorithm
 Return a stable hex digest of `content`.
 
 ```python
-content_hash("hello")                       # 2cf24dba...938b9824 (sha256)
-content_hash(b"hello") == content_hash("hello")                   # True (str encodes UTF-8)
+content_hash("hello")  # 2cf24dba...938b9824 (sha256)
+content_hash(b"hello") == content_hash("hello")  # True (str encodes UTF-8)
 content_hash({"a": 1, "b": 2}) == content_hash({"b": 2, "a": 1})  # True (canonical form)
-content_hash("hello", algo="md5")           # 5d41402abc4b2a76b9719d911017c592
+content_hash("hello", algo="md5")  # 5d41402abc4b2a76b9719d911017c592
 ```
 
 | Parameter | Type | Default | Description |

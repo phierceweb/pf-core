@@ -26,7 +26,7 @@ html = safe_markdown("**bold** and *italic*")
 # Markup("<p><strong>bold</strong> and <em>italic</em></p>")
 
 html = safe_markdown(None)  # Markup("")
-html = safe_markdown("")    # Markup("")
+html = safe_markdown("")  # Markup("")
 ```
 
 ## Jinja2 filter
@@ -71,8 +71,10 @@ import re
 
 _ENTRY_ID = re.compile(r"\b([A-Za-z0-9_-]{8,14})\b")
 
+
 def linkify_entry_ids(text: str) -> str:
     return _ENTRY_ID.sub(r'<a href="/event/\1">\1</a>', text)
+
 
 setup_markdown_filter(templates, extra_transforms=[linkify_entry_ids])
 ```

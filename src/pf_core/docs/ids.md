@@ -7,9 +7,9 @@ URL-safe nanoid generation with optional collision checking against a database t
 ```python
 from pf_core.utils.ids import generate_id
 
-generate_id()            # "V1StGXR8_Z5j" (12 chars default)
-generate_id(size=8)      # "k3J9xQ2m"
-generate_id(size=20)     # "aB3kL9xQ2mR7nP4wT6yJ"
+generate_id()  # "V1StGXR8_Z5j" (12 chars default)
+generate_id(size=8)  # "k3J9xQ2m"
+generate_id(size=20)  # "aB3kL9xQ2mR7nP4wT6yJ"
 ```
 
 Characters are drawn from `0-9A-Za-z_-` (64-char URL-safe alphabet).
@@ -75,10 +75,12 @@ If the preferred ID is already in the table, a new nanoid is generated instead.
 ```python
 # Before
 from app.utils.ids import allocate_entry_id
+
 entry_id = allocate_entry_id(conn, preferred=source_id)
 
 # After
 from pf_core.utils.ids import allocate_id
+
 entry_id = allocate_id(conn, table="entries", preferred=source_id)
 ```
 
@@ -87,9 +89,11 @@ entry_id = allocate_id(conn, table="entries", preferred=source_id)
 ```python
 # Before
 import uuid
+
 job_id = uuid.uuid4().hex[:12]
 
 # After
 from pf_core.utils.ids import generate_id
+
 job_id = generate_id()
 ```

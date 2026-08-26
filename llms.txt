@@ -2,7 +2,7 @@
 
 > A Python foundation for building LLM applications whose prompts and spend you can actually see: every prompt lives in versioned configuration, and every call is recorded — prompt version, model, provider, response, tokens, cost — and replayable, in SQLite, MySQL, or Postgres. Each piece exists elsewhere as a separate product; pf-core integrates them, one schema underneath. The dependency-light base install carries logging, exceptions, config, and a service/repo architecture; opt-in extras add the LLM clients (OpenRouter / Anthropic SDK / Claude Code), output validation and JSON recovery, cost budgets, an eval harness, and a FastAPI + SQLAlchemy app framework. Built to be worked on by AI coding agents: file-size and import-layering conventions are CI-enforced, and every module has a one-file reference doc.
 
-Published to PyPI as `pf-core` (Python 3.11+); pin a compatible release (`pf-core[llm]~=<current minor>`). Docs ship inside the package under `pf_core/docs/`, so an installed copy always matches its version — in a consumer repo, `pf-setup` links them at `docs/pf-core/`. The URLs below render `main`, the development line. Current release and history: see the changelog.
+Published to PyPI as `pf-core` (Python 3.12+); pin a compatible release (`pf-core[llm]~=<current minor>`). Docs ship inside the package under `pf_core/docs/`, so an installed copy always matches its version — in a consumer repo, `pf-setup` links them at `docs/pf-core/`. The URLs below render `main`, the development line. Current release and history: see the changelog.
 
 ## Start here
 

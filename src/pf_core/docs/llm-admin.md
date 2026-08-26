@@ -9,10 +9,12 @@
 from fastapi import FastAPI, Depends, HTTPException
 from pf_core.web.llm_admin import make_admin_router
 
+
 def require_admin(user=Depends(current_user)):
     if not user or not user.is_admin:
         raise HTTPException(403)
     return user
+
 
 app = FastAPI()
 app.include_router(
@@ -84,8 +86,8 @@ JSON variants accept the same params.
 make_admin_router(
     auth_dep=require_admin,
     config_resolvers={
-        "task_config":     lambda cid: task_repo.label(cid),   # "Task #42 · batch-7"
-        "prompt_variant":  lambda cid: f"v{cid}",
+        "task_config": lambda cid: task_repo.label(cid),  # "Task #42 · batch-7"
+        "prompt_variant": lambda cid: f"v{cid}",
     },
 )
 ```

@@ -109,11 +109,11 @@ def test_remove_preserves_outcomes(tracking_db, seed_run):
     repo.remove(seed_run, version="golden_v1")
 
     with tracking_db.connect() as conn:
-        row = conn.execute(
-            select(llm_run_outcomes).where(
-                llm_run_outcomes.c.llm_run_id == seed_run
-            )
-        ).mappings().fetchone()
+        row = (
+            conn.execute(select(llm_run_outcomes).where(llm_run_outcomes.c.llm_run_id == seed_run))
+            .mappings()
+            .fetchone()
+        )
     assert row is not None
     assert row["outcome_kind"] == "golden_approved"
 
@@ -154,9 +154,7 @@ def test_get_payload_none(tracking_db):
             llm_agent_types.insert().values(slug="no_payload_agent2")
         ).inserted_primary_key[0]
         run_id = conn.execute(
-            llm_runs.insert().values(
-                agent_type_id=agent_id, model_id=model_id, status="success"
-            )
+            llm_runs.insert().values(agent_type_id=agent_id, model_id=model_id, status="success")
         ).inserted_primary_key[0]
 
     repo = GoldenSetRepo()
@@ -173,10 +171,10 @@ def test_ground_truth_roundtrip(tracking_db, seed_run):
     repo.add(
         seed_run,
         version="golden_v1",
-        ground_truth={"expected_grade": 85.0, "tier1_ratio": 0.9},
+        ground_truth={"expected_score": 85.0, "tier1_ratio": 0.9},
     )
     gt = repo.get_ground_truth(seed_run)
-    assert gt == {"expected_grade": 85.0, "tier1_ratio": 0.9}
+    assert gt == {"expected_score": 85.0, "tier1_ratio": 0.9}
 
 
 def test_ground_truth_idempotent(tracking_db, seed_run):
@@ -238,9 +236,7 @@ def test_seed_from_outcomes_dry_run(tracking_db, seed_run):
     """dry_run=True returns candidates without modifying the golden set."""
     with tracking_db.begin() as conn:
         conn.execute(
-            llm_run_outcomes.insert().values(
-                llm_run_id=seed_run, outcome_kind="draft_accepted"
-            )
+            llm_run_outcomes.insert().values(llm_run_id=seed_run, outcome_kind="draft_accepted")
         )
 
     repo = GoldenSetRepo()
@@ -255,9 +251,7 @@ def test_seed_from_outcomes_dry_run(tracking_db, seed_run):
 def test_seed_from_outcomes_agent_type_filter(tracking_db):
     """agent_type filter restricts seeding to the matching agent."""
     with tracking_db.begin() as conn:
-        mid = conn.execute(
-            llm_models.insert().values(name="m-seed-filter")
-        ).inserted_primary_key[0]
+        mid = conn.execute(llm_models.insert().values(name="m-seed-filter")).inserted_primary_key[0]
         aid1 = conn.execute(
             llm_agent_types.insert().values(slug="seed_drafter")
         ).inserted_primary_key[0]
@@ -292,9 +286,7 @@ def test_seed_from_outcomes_agent_type_filter(tracking_db):
 def test_seed_from_outcomes_limit(tracking_db):
     """limit parameter caps the number of promoted runs."""
     with tracking_db.begin() as conn:
-        mid = conn.execute(
-            llm_models.insert().values(name="m-seed-limit")
-        ).inserted_primary_key[0]
+        mid = conn.execute(llm_models.insert().values(name="m-seed-limit")).inserted_primary_key[0]
         aid = conn.execute(
             llm_agent_types.insert().values(slug="seed_limit_agent")
         ).inserted_primary_key[0]
@@ -302,9 +294,7 @@ def test_seed_from_outcomes_limit(tracking_db):
         run_ids = []
         for _ in range(5):
             rid = conn.execute(
-                llm_runs.insert().values(
-                    agent_type_id=aid, model_id=mid, status="success"
-                )
+                llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
             ).inserted_primary_key[0]
             run_ids.append(rid)
 
@@ -314,9 +304,7 @@ def test_seed_from_outcomes_limit(tracking_db):
         )
 
     repo = GoldenSetRepo()
-    seeded = repo.seed_from_outcomes(
-        version="golden_v1", outcome_kind="completed", limit=3
-    )
+    seeded = repo.seed_from_outcomes(version="golden_v1", outcome_kind="completed", limit=3)
     assert len(seeded) == 3
 
 
@@ -338,16 +326,12 @@ def _seed_bare_run(tracking_db, *, slug: str, payload_values: dict | None) -> in
         mid = conn.execute(
             llm_models.insert().values(name=f"warn-model-{slug}")
         ).inserted_primary_key[0]
-        aid = conn.execute(
-            llm_agent_types.insert().values(slug=slug)
-        ).inserted_primary_key[0]
+        aid = conn.execute(llm_agent_types.insert().values(slug=slug)).inserted_primary_key[0]
         run_id = conn.execute(
             llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
         ).inserted_primary_key[0]
         if payload_values is not None:
-            conn.execute(
-                llm_run_payloads.insert().values(llm_run_id=run_id, **payload_values)
-            )
+            conn.execute(llm_run_payloads.insert().values(llm_run_id=run_id, **payload_values))
     return run_id
 
 
@@ -384,9 +368,7 @@ def test_add_warns_when_parsed_output_not_a_dict(tracking_db, caplog):
     )
     with caplog.at_level(logging.WARNING, logger="pf_core.eval._golden"):
         GoldenSetRepo().add(run_id, version="warn_v1")
-    assert any(
-        "golden_non_dict_parsed_output" in r.getMessage() for r in caplog.records
-    )
+    assert any("golden_non_dict_parsed_output" in r.getMessage() for r in caplog.records)
 
 
 def test_add_does_not_warn_on_complete_payload(tracking_db, seed_run, caplog):

@@ -64,6 +64,7 @@ def test_prompt_mentions_acme():
 ```python
 def test_prompt_renders_subject_from_config():
     from myapp.config import MY_PROJECT
+
     # Whatever the config says the subject is, it should appear.
     assert MY_PROJECT.subject in SUMMARIZER_SYSTEM
     # And the placeholder must have been substituted.

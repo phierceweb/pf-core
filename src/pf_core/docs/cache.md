@@ -17,8 +17,8 @@ from pf_core.cache.redis import create_region
 
 cache = create_region(
     url="redis://localhost:6379",
-    expiration_time=300,       # TTL in seconds
-    key_prefix="myapp",        # namespace isolation
+    expiration_time=300,  # TTL in seconds
+    key_prefix="myapp",  # namespace isolation
 )
 
 # Cache a function result
@@ -26,7 +26,7 @@ result = cache.get_or_create("expensive_query", lambda: db.run_query())
 
 # Manual get/set/delete
 cache.set("mykey", {"data": [1, 2, 3]})
-val = cache.get("mykey")       # returns the dict, or dogpile NO_VALUE
+val = cache.get("mykey")  # returns the dict, or dogpile NO_VALUE
 cache.delete("mykey")
 
 # Invalidate all cached values in the region
@@ -40,8 +40,8 @@ Factory function that returns a configured `dogpile.cache.CacheRegion`.
 ```python
 create_region(
     url="redis://localhost:6379",  # Redis URL (or REDIS_URL env var)
-    expiration_time=300,            # default TTL in seconds
-    key_prefix="myapp",            # prepended to all keys
+    expiration_time=300,  # default TTL in seconds
+    key_prefix="myapp",  # prepended to all keys
 )
 ```
 
@@ -68,6 +68,7 @@ result = region.get_or_create("sections_list", lambda: db.list_sections())
 @region.cache_on_arguments()
 def get_sections():
     return db.list_sections()
+
 
 sections = get_sections()  # cached after first call
 ```
@@ -109,7 +110,9 @@ api_cache = create_region(url=cfg.REDIS_URL, expiration_time=300, key_prefix="my
 blob_cache = create_region(url=cfg.REDIS_URL, expiration_time=86400, key_prefix="myapp:blob")
 
 # Very long-lived LLM result cache
-result_cache = create_region(url=cfg.REDIS_URL, expiration_time=90*86400, key_prefix="myapp:result")
+result_cache = create_region(
+    url=cfg.REDIS_URL, expiration_time=90 * 86400, key_prefix="myapp:result"
+)
 ```
 
 Invalidating one region doesn't affect the others:
@@ -130,6 +133,7 @@ from app.config import cfg
 
 _api_region = None
 
+
 def _get_api_region():
     global _api_region
     if _api_region is None:
@@ -140,10 +144,12 @@ def _get_api_region():
         )
     return _api_region
 
+
 def cached_json(key_parts, query, loader):
     """Cache an API response."""
     key = ":".join(str(p) for p in key_parts)
     return _get_api_region().get_or_create(key, loader)
+
 
 def bump_cache_generation():
     """Invalidate all API caches (called after data writes)."""

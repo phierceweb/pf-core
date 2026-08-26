@@ -146,8 +146,7 @@ def run_pipeline(
     end = stop_i if stop_i is not None else len(phases) - 1
     if end < begin:
         raise ValueError(
-            f"stop_after={stop_after!r} resolves before start "
-            f"{names[begin]!r} — empty run"
+            f"stop_after={stop_after!r} resolves before start {names[begin]!r} — empty run"
         )
 
     ran: list[str] = []

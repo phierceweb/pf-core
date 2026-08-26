@@ -26,16 +26,16 @@ from pf_core.jobs.workers import SubprocessJobSpec, run_subprocess_job, start_wo
 
 spec = SubprocessJobSpec(
     name="convert",
-    argv=lambda job: build_command(job["inputs"]),          # domain: inputs → CLI
+    argv=lambda job: build_command(job["inputs"]),  # domain: inputs → CLI
     log_path=lambda job: out_dir(job) / f"job-{job['id']}.log",
     outputs=lambda job, rc: {"returncode": rc},
-    job_id_env="MYAPP_JOB_ID",                               # default: PF_JOB_ID
+    job_id_env="MYAPP_JOB_ID",  # default: PF_JOB_ID
 )
-handle = start_workers(kinds=["myapp_convert"],
-                       run=partial(run_subprocess_job, spec=spec),
-                       concurrency=cfg.concurrency)
+handle = start_workers(
+    kinds=["myapp_convert"], run=partial(run_subprocess_job, spec=spec), concurrency=cfg.concurrency
+)
 ...
-stop_workers(handle)     # stops claiming; live subprocesses keep running
+stop_workers(handle)  # stops claiming; live subprocesses keep running
 ```
 
 - `start_workers` sweeps `reclaim_stale()` first (disable with `reclaim_on_start=False`) so jobs stranded `running` by a killed worker re-enter the queue. Poll cadence: `poll_seconds=` or the `JOB_POLL_SECONDS` env var (default 1).
@@ -52,8 +52,10 @@ Cancel is two-part, in either order: transition the row (`repo.cancel` or the da
 from pf_core.jobs.submit import JobAlreadyRunning, submit_detached, submit_tracked
 
 job_id = submit_tracked(
-    kind="grading_pass", inputs={"section_folder": str(folder)},
-    created_by="web", run=lambda progress: service.run(folder, progress),
+    kind="report_pass",
+    inputs={"section_folder": str(folder)},
+    created_by="web",
+    run=lambda progress: service.run(folder, progress),
     dedup_key=lambda inputs: inputs.get("section_folder", "").endswith(suffix),
 )
 ```
@@ -70,5 +72,6 @@ Threads from the submitter outlive requests; drain them before the test database
 @pytest.fixture
 def pf_engine_teardown():
     from pf_core.jobs.submit import wait_all
+
     return lambda: wait_all(timeout=10.0)
 ```

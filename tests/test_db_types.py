@@ -39,14 +39,8 @@ class TestTypeVariants:
     def test_server_now_compiles_per_dialect(self):
         from pf_core.db.types import server_now
 
-        assert (
-            str(server_now().compile(dialect=mysql.dialect()))
-            == "CURRENT_TIMESTAMP(6)"
-        )
-        assert (
-            str(server_now().compile(dialect=sqlite.dialect()))
-            == "CURRENT_TIMESTAMP"
-        )
+        assert str(server_now().compile(dialect=mysql.dialect())) == "CURRENT_TIMESTAMP(6)"
+        assert str(server_now().compile(dialect=sqlite.dialect())) == "CURRENT_TIMESTAMP"
 
 
 class TestJsonNoneAsNull:
@@ -72,9 +66,7 @@ class TestJsonNoneAsNull:
                 n_null = conn.execute(
                     text("SELECT COUNT(*) FROM t_json_null_probe WHERE payload IS NULL")
                 ).scalar()
-                stored = conn.execute(
-                    t.select().where(t.c.id == 2)
-                ).mappings().fetchone()
+                stored = conn.execute(t.select().where(t.c.id == 2)).mappings().fetchone()
             assert n_null == 1
             assert stored["payload"] == {"k": 1}
         finally:

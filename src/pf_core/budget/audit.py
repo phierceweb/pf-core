@@ -63,9 +63,7 @@ def record_override(
     from pf_core.db.connection import transaction
 
     with transaction() as conn:
-        conn.execute(
-            llm_run_tags.insert().values(llm_run_id=run_id, tag="budget:override")
-        )
+        conn.execute(llm_run_tags.insert().values(llm_run_id=run_id, tag="budget:override"))
     LlmRunOutcomeRepo().record(
         run_id,
         outcome_kind="budget_override",

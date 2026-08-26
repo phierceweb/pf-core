@@ -60,14 +60,20 @@ class DateHint(TypedDict, total=False):
                     of ``"last"``, ``"this"``, ``"next"``, ``"earlier"``,
                     or ``None``. Optional.
     """
+
     phrase: str
     qualifier: str | None
 
 
 # Weekday names → Python weekday() integer (Mon=0).
 _WEEKDAYS: dict[str, int] = {
-    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-    "friday": 4, "saturday": 5, "sunday": 6,
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
 }
 
 # Matches "march 12", "march 12, 2025", "march 12 2025" (lowercase input).
@@ -78,9 +84,18 @@ _MONTH_DAY_RE = re.compile(
 )
 
 _MONTHS: dict[str, int] = {
-    "january": 1, "february": 2, "march": 3, "april": 4,
-    "may": 5, "june": 6, "july": 7, "august": 8,
-    "september": 9, "october": 10, "november": 11, "december": 12,
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
 }
 
 # Phrases that map directly to a single-day offset from pub_date.
@@ -99,21 +114,23 @@ _ABSOLUTE_OFFSETS: dict[str, int] = {
 # Phrases we deliberately refuse to resolve — callers get ``None`` and
 # must either recover the date elsewhere or flag the input. Better to
 # miss than to guess.
-_UNRESOLVABLE_PHRASES: frozenset[str] = frozenset({
-    "this week",
-    "last week",
-    "next week",
-    "earlier this week",
-    "later this week",
-    "this month",
-    "last month",
-    "next month",
-    "this year",
-    "last year",
-    "recently",
-    "in recent days",
-    "in recent weeks",
-})
+_UNRESOLVABLE_PHRASES: frozenset[str] = frozenset(
+    {
+        "this week",
+        "last week",
+        "next week",
+        "earlier this week",
+        "later this week",
+        "this month",
+        "last month",
+        "next month",
+        "this year",
+        "last year",
+        "recently",
+        "in recent days",
+        "in recent weeks",
+    }
+)
 
 
 def _normalize(text: str) -> str:
@@ -134,9 +151,7 @@ def _most_recent_weekday(pub_date: date, target_weekday: int) -> date:
     return pub_date - timedelta(days=diff)
 
 
-def _resolve_month_day(
-    month: int, day: int, year: int | None, pub_date: date
-) -> date | None:
+def _resolve_month_day(month: int, day: int, year: int | None, pub_date: date) -> date | None:
     """Build a date from explicit month + day, inferring year from ``pub_date``.
 
     When the year is given, honor it. When not, prefer the same year as
@@ -144,6 +159,7 @@ def _resolve_month_day(
     back to the prior year. Rejects dates strictly after ``pub_date`` in
     the same year (an article can't describe the future).
     """
+    d: date | None
     if year is not None:
         try:
             d = date(year, month, day)

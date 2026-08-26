@@ -48,7 +48,7 @@ for r in results:
 ```python
 results, _ = client.search(
     "new graphics card launch",
-    freshness="pw",     # past week
+    freshness="pw",  # past week
     count=10,
 )
 
@@ -67,11 +67,13 @@ The `usage` dict carries `cost_usd`, `duration_ms`, `prompt_tokens`, and `comple
 results, usage = client.search(query)
 
 db.log_agent_run(
-    job_id, "brave_searcher", "brave-web-search-v1",
+    job_id,
+    "brave_searcher",
+    "brave-web-search-v1",
     cost_usd=usage["cost_usd"],
     duration_ms=usage["duration_ms"],
-    prompt_tokens=usage["prompt_tokens"],       # always 0
-    completion_tokens=usage["completion_tokens"], # always 0
+    prompt_tokens=usage["prompt_tokens"],  # always 0
+    completion_tokens=usage["completion_tokens"],  # always 0
     status="success",
 )
 ```
@@ -121,6 +123,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 from pf_core.clients.brave import get_client, BraveSearchError
+
 
 @retry(
     stop=stop_after_attempt(3),

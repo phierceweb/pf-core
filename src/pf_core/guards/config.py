@@ -3,6 +3,7 @@
 Stdlib-only. The gate's machine-read surface is a repo-root .pf-guards.toml —
 not pyproject.toml, not files under .ai/.
 """
+
 from __future__ import annotations
 
 import tomllib
@@ -11,22 +12,22 @@ from pathlib import Path
 
 # Default limit values — every one of these is overridable via [tool.pf_guards].
 LAYER_DEFAULTS = {"cli": 100, "api": 300, "services": 300, "repo": 300, "orchestrators": 400}
-UTIL_LIMIT = 150       # _util*.py anywhere under an app tree ([tool.pf_guards] util)
-SOFT_FRACTION = 0.8    # layer soft warn = fraction of hard ([tool.pf_guards] soft_fraction)
-HARD_DEFAULT = 500     # flat hard limit ([tool.pf_guards] hard)
-SOFT_DEFAULT = 300     # flat soft target ([tool.pf_guards] soft)
+UTIL_LIMIT = 150  # _util*.py anywhere under an app tree ([tool.pf_guards] util)
+SOFT_FRACTION = 0.8  # layer soft warn = fraction of hard ([tool.pf_guards] soft_fraction)
+HARD_DEFAULT = 500  # flat hard limit ([tool.pf_guards] hard)
+SOFT_DEFAULT = 300  # flat soft target ([tool.pf_guards] soft)
 
 
 @dataclass(frozen=True)
 class GuardsConfig:
-    root: str | list[str] = "src"   # one scan root, or several (paths then get root-prefixed)
-    baseline: dict[str, int] = field(default_factory=dict)   # path -> grandfathered line count
+    root: str | list[str] = "src"  # one scan root, or several (paths then get root-prefixed)
+    baseline: dict[str, int] = field(default_factory=dict)  # path -> grandfathered line count
     hard: int = HARD_DEFAULT
     soft: int = SOFT_DEFAULT
     util: int = UTIL_LIMIT
     soft_fraction: float = SOFT_FRACTION
-    layers: dict[str, int] = field(default_factory=dict)   # overrides LAYER_DEFAULTS
-    limits: dict[str, int] = field(default_factory=dict)   # path-prefix overrides, longest wins
+    layers: dict[str, int] = field(default_factory=dict)  # overrides LAYER_DEFAULTS
+    limits: dict[str, int] = field(default_factory=dict)  # path-prefix overrides, longest wins
     # Layering-rule overrides: per-layer allow-sets (per-key replace over the built-in
     # ALLOWED_IMPORTS; new keys declare new checked layers)…
     allowed_imports: dict[str, list[str]] = field(default_factory=dict)
@@ -78,7 +79,7 @@ def app_rel(root: Path, rel: str) -> str | None:
     """
     parts = rel.split("/")
     if "app" in parts:
-        return "/".join(parts[parts.index("app"):])
+        return "/".join(parts[parts.index("app") :])
     if Path(root).name == "app":
         return f"app/{rel}"
     return None

@@ -45,8 +45,7 @@ _REQUIRED_IN_BASE = {"python-dotenv", "pyyaml", "structlog", "nanoid", "rich"}
 def test_base_dependencies_are_foundation_only() -> None:
     base = {_dist_name(d) for d in _meta()["project"]["dependencies"]}
     assert _BANNED_FROM_BASE.isdisjoint(base), (
-        f"LLM/HTTP/CLI deps leaked into base dependencies: "
-        f"{sorted(_BANNED_FROM_BASE & base)}"
+        f"LLM/HTTP/CLI deps leaked into base dependencies: {sorted(_BANNED_FROM_BASE & base)}"
     )
     assert _REQUIRED_IN_BASE <= base, (
         f"foundation deps missing from base: {sorted(_REQUIRED_IN_BASE - base)}"

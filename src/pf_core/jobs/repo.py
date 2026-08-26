@@ -14,7 +14,7 @@ See ``docs/jobs.md`` for the implementation reference.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import and_, func, select
 
@@ -56,9 +56,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         """
         descriptor = get_kind(kind)
         validated = descriptor.validate_inputs(inputs) if inputs is not None else None
-        resolved_priority = (
-            priority if priority is not None else descriptor.default_priority
-        )
+        resolved_priority = priority if priority is not None else descriptor.default_priority
         if not (0 <= resolved_priority <= 100):
             raise InvalidInputError(
                 f"priority must be 0-100, got {resolved_priority}",
@@ -77,7 +75,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
                     progress_current=0,
                 )
             )
-            return int(result.inserted_primary_key[0])
+            return int(result.inserted_primary_key[0])  # type: ignore[index]  # set after insert
 
     # ------------------------------------------------------------------
     # Read
@@ -92,11 +90,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         wrapping.
         """
         with self._tx() as conn:
-            row = (
-                conn.execute(select(s.jobs).where(s.jobs.c.id == job_id))
-                .mappings()
-                .fetchone()
-            )
+            row = conn.execute(select(s.jobs).where(s.jobs.c.id == job_id)).mappings().fetchone()
         return _coerce_row_utc(dict(row)) if row else None
 
     def get_with_steps(self, job_id: int) -> dict | None:
@@ -106,11 +100,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         are returned as aware UTC.
         """
         with self._tx() as conn:
-            row = (
-                conn.execute(select(s.jobs).where(s.jobs.c.id == job_id))
-                .mappings()
-                .fetchone()
-            )
+            row = conn.execute(select(s.jobs).where(s.jobs.c.id == job_id)).mappings().fetchone()
             if row is None:
                 return None
             steps = (
@@ -131,9 +121,9 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
                 .mappings()
                 .fetchall()
             )
-        out = _coerce_row_utc(dict(row))
-        out["steps"] = [_coerce_row_utc(dict(r)) for r in steps]
-        out["events"] = [_coerce_row_utc(dict(r)) for r in events]
+        out = cast(dict, _coerce_row_utc(dict(row)))
+        out["steps"] = [cast(dict, _coerce_row_utc(dict(r))) for r in steps]
+        out["events"] = [cast(dict, _coerce_row_utc(dict(r))) for r in events]
         return out
 
     def find(
@@ -169,7 +159,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         stmt = stmt.order_by(s.jobs.c.created_at.desc()).limit(limit)
         with self._tx() as conn:
             rows = conn.execute(stmt).mappings().fetchall()
-        return [_coerce_row_utc(dict(r)) for r in rows]
+        return [cast(dict, _coerce_row_utc(dict(r))) for r in rows]
 
     #: Sort keys `find_page` accepts — a closed allowlist because the sort
     #: name typically arrives from a URL query parameter.
@@ -190,25 +180,16 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         ``"asc"`` or ``"desc"``. Ties break on ``id`` descending.
         """
         if sort not in self._PAGE_SORTS:
-            raise InvalidInputError(
-                f"sort must be one of {self._PAGE_SORTS}, got {sort!r}"
-            )
+            raise InvalidInputError(f"sort must be one of {self._PAGE_SORTS}, got {sort!r}")
         if direction not in ("asc", "desc"):
             raise InvalidInputError(f"direction must be asc|desc, got {direction!r}")
         col = s.jobs.c[sort]
         order = col.asc() if direction == "asc" else col.desc()
-        stmt = (
-            select(s.jobs)
-            .order_by(order, s.jobs.c.id.desc())
-            .limit(limit)
-            .offset(offset)
-        )
+        stmt = select(s.jobs).order_by(order, s.jobs.c.id.desc()).limit(limit).offset(offset)
         with self._tx() as conn:
             rows = conn.execute(stmt).mappings().fetchall()
-            total = conn.execute(
-                select(func.count()).select_from(s.jobs)
-            ).scalar_one()
-        return [_coerce_row_utc(dict(r)) for r in rows], int(total)
+            total = conn.execute(select(func.count()).select_from(s.jobs)).scalar_one()
+        return [cast(dict, _coerce_row_utc(dict(r))) for r in rows], int(total)
 
     def descendants(self, parent_job_id: int) -> list[dict]:
         """Return all child jobs of ``parent_job_id`` (one level deep).
@@ -225,7 +206,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
                 .mappings()
                 .fetchall()
             )
-        return [_coerce_row_utc(dict(r)) for r in rows]
+        return [cast(dict, _coerce_row_utc(dict(r))) for r in rows]
 
     # ------------------------------------------------------------------
     # Transitions
@@ -254,8 +235,9 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         with self._tx() as conn:
             row = (
                 conn.execute(
-                    select(s.jobs.c.id, s.jobs.c.kind, s.jobs.c.status, s.jobs.c.started_at)
-                    .where(s.jobs.c.id == job_id)
+                    select(s.jobs.c.id, s.jobs.c.kind, s.jobs.c.status, s.jobs.c.started_at).where(
+                        s.jobs.c.id == job_id
+                    )
                 )
                 .mappings()
                 .fetchone()
@@ -295,9 +277,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
                 else:
                     values["outputs"] = _dump_model(outputs)
 
-            conn.execute(
-                s.jobs.update().where(s.jobs.c.id == job_id).values(**values)
-            )
+            conn.execute(s.jobs.update().where(s.jobs.c.id == job_id).values(**values))
 
     def set_progress(
         self,
@@ -322,9 +302,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         if len(values) == 1:  # only updated_at
             return
         with self._tx() as conn:
-            conn.execute(
-                s.jobs.update().where(s.jobs.c.id == job_id).values(**values)
-            )
+            conn.execute(s.jobs.update().where(s.jobs.c.id == job_id).values(**values))
 
     # ------------------------------------------------------------------
     # Cancel / retry

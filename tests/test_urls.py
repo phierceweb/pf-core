@@ -28,14 +28,13 @@ def _bypass_ssrf_guard(monkeypatch):
     The guard itself is covered in test_url_safety.py; wiring is covered by the
     explicit ``*_blocks_ssrf`` tests below, which re-patch it to raise.
     """
-    monkeypatch.setattr(
-        "pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None)
 
 
 # ---------------------------------------------------------------------------
 # Helpers for mocking httpx.Client
 # ---------------------------------------------------------------------------
+
 
 class MockResponse:
     def __init__(self, status_code: int):
@@ -102,6 +101,10 @@ class TestDomainOf:
     def test_with_path_and_query(self):
         assert domain_of("https://example.com/path?q=1&r=2") == "example.com"
 
+    def test_malformed_netloc_returns_empty(self):
+        # .hostname raises for an unclosed IPv6 bracket; the docstring promises "".
+        assert domain_of("https://[::1x/") == ""
+
 
 class TestCanonicalUrl:
     # -- input edge cases -------------------------------------------------
@@ -114,7 +117,7 @@ class TestCanonicalUrl:
 
     def test_non_string_returns_empty(self):
         assert canonical_url(None) == ""  # type: ignore[arg-type]
-        assert canonical_url(123) == ""   # type: ignore[arg-type]
+        assert canonical_url(123) == ""  # type: ignore[arg-type]
 
     def test_no_scheme_returns_empty(self):
         # Without scheme, urlparse puts everything in path — no canonical form.
@@ -125,6 +128,15 @@ class TestCanonicalUrl:
 
     def test_file_returns_empty(self):
         assert canonical_url("file:///tmp/x") == ""
+
+    def test_invalid_port_returns_empty(self):
+        # urlparse defers netloc validation to the .port/.hostname properties,
+        # so these raise OUTSIDE the parse guard unless the guard covers them.
+        assert canonical_url("https://example.com:99999/x") == ""
+        assert canonical_url("https://example.com:abc/x") == ""
+
+    def test_malformed_ipv6_returns_empty(self):
+        assert canonical_url("https://[::1x/") == ""
 
     def test_strips_surrounding_whitespace(self):
         assert canonical_url("  https://example.com/  ") == "https://example.com/"
@@ -199,9 +211,12 @@ class TestCanonicalUrl:
     # -- tracking-param stripping ----------------------------------------
 
     def test_utm_params_stripped(self):
-        assert canonical_url(
-            "https://example.com/x?utm_source=newsletter&utm_medium=email&utm_campaign=newsletter"
-        ) == "https://example.com/x"
+        assert (
+            canonical_url(
+                "https://example.com/x?utm_source=newsletter&utm_medium=email&utm_campaign=newsletter"
+            )
+            == "https://example.com/x"
+        )
 
     def test_fbclid_stripped(self):
         assert canonical_url("https://example.com/x?fbclid=abc123") == "https://example.com/x"
@@ -210,43 +225,51 @@ class TestCanonicalUrl:
         assert canonical_url("https://example.com/x?gclid=xyz") == "https://example.com/x"
 
     def test_mailchimp_params_stripped(self):
-        assert canonical_url(
-            "https://example.com/x?mc_cid=aaa&mc_eid=bbb"
-        ) == "https://example.com/x"
+        assert (
+            canonical_url("https://example.com/x?mc_cid=aaa&mc_eid=bbb") == "https://example.com/x"
+        )
 
     def test_hubspot_prefixed_params_stripped(self):
-        assert canonical_url(
-            "https://example.com/x?__hsfp=1&__hssc=2&__hstc=3"
-        ) == "https://example.com/x"
+        assert (
+            canonical_url("https://example.com/x?__hsfp=1&__hssc=2&__hstc=3")
+            == "https://example.com/x"
+        )
 
     def test_twitter_impression_stripped(self):
-        assert canonical_url(
-            "https://example.com/x?__twitter_impression=true"
-        ) == "https://example.com/x"
+        assert (
+            canonical_url("https://example.com/x?__twitter_impression=true")
+            == "https://example.com/x"
+        )
 
     def test_real_params_preserved(self):
         # id / p / page / query are genuine routing params on many CMSes.
         # Don't strip them.
-        assert canonical_url(
-            "https://example.com/article?id=12345&page=2"
-        ) == "https://example.com/article?id=12345&page=2"
+        assert (
+            canonical_url("https://example.com/article?id=12345&page=2")
+            == "https://example.com/article?id=12345&page=2"
+        )
 
     def test_mixed_tracking_and_real_params(self):
-        assert canonical_url(
-            "https://example.com/article?id=12345&utm_source=twitter&page=2&fbclid=abc"
-        ) == "https://example.com/article?id=12345&page=2"
+        assert (
+            canonical_url(
+                "https://example.com/article?id=12345&utm_source=twitter&page=2&fbclid=abc"
+            )
+            == "https://example.com/article?id=12345&page=2"
+        )
 
     # -- query param ordering --------------------------------------------
 
     def test_query_params_sorted(self):
-        assert canonical_url("https://example.com/x?b=2&a=1") == \
-               canonical_url("https://example.com/x?a=1&b=2")
+        assert canonical_url("https://example.com/x?b=2&a=1") == canonical_url(
+            "https://example.com/x?a=1&b=2"
+        )
 
     def test_query_params_sorted_canonical_form(self):
         # Canonical form has params sorted alphabetically by key.
-        assert canonical_url(
-            "https://example.com/x?z=3&a=1&m=2"
-        ) == "https://example.com/x?a=1&m=2&z=3"
+        assert (
+            canonical_url("https://example.com/x?z=3&a=1&m=2")
+            == "https://example.com/x?a=1&m=2&z=3"
+        )
 
     def test_empty_query_value_preserved(self):
         assert canonical_url("https://example.com/x?flag=") == "https://example.com/x?flag="
@@ -275,8 +298,7 @@ class TestCanonicalUrl:
             "&utm_campaign=newsletter#read-more"
         )
         assert canonical_url(raw) == (
-            "https://example.com/article/"
-            "quarterly-report-published-a1b2c3d4"
+            "https://example.com/article/quarterly-report-published-a1b2c3d4"
         )
 
     def test_cross_tracking_variants_match(self):
@@ -448,6 +470,7 @@ class TestCheckUrl:
 
 # -- helper clients that always raise ------------------------------------
 
+
 class _TimeoutClient:
     """Client whose HEAD and GET both raise ``TimeoutException``."""
 
@@ -484,6 +507,7 @@ class _ErrorClient:
 # extract_path_date
 # ---------------------------------------------------------------------------
 
+
 class TestExtractPathDate:
     def test_dated_path_with_trailing_segments(self):
         assert extract_path_date(
@@ -496,9 +520,7 @@ class TestExtractPathDate:
         ) == datetime.date(2024, 12, 1)
 
     def test_single_digit_month_and_day(self):
-        assert extract_path_date(
-            "https://example.com/2025/3/5/story"
-        ) == datetime.date(2025, 3, 5)
+        assert extract_path_date("https://example.com/2025/3/5/story") == datetime.date(2025, 3, 5)
 
     def test_no_date_in_path(self):
         assert extract_path_date("https://example.com/article/abc") is None
@@ -515,9 +537,7 @@ class TestExtractPathDate:
         assert extract_path_date("https://example.com/2025-03-15/story") is None
 
     def test_date_in_query_string_ignored(self):
-        assert extract_path_date(
-            "https://example.com/article?date=2025/03/15"
-        ) is None
+        assert extract_path_date("https://example.com/article?date=2025/03/15") is None
 
     def test_pre_2000_year(self):
         # Reject 1899 (we match 19xx/20xx only)
@@ -537,14 +557,15 @@ class TestExtractPathDate:
         assert extract_path_date("") is None
 
     def test_date_at_end_no_trailing_slash(self):
-        assert extract_path_date(
-            "https://example.com/news/2025/03/15"
-        ) == datetime.date(2025, 3, 15)
+        assert extract_path_date("https://example.com/news/2025/03/15") == datetime.date(
+            2025, 3, 15
+        )
 
 
 # ---------------------------------------------------------------------------
 # wayback_exists_at
 # ---------------------------------------------------------------------------
+
 
 class _WaybackResponse:
     def __init__(self, status_code: int, text: str):
@@ -591,16 +612,14 @@ class TestWaybackExistsAt:
     def _patch(self, monkeypatch, client):
         def factory(**_kwargs):
             return client
+
         monkeypatch.setattr(httpx, "Client", factory)
 
     def test_empty_url(self):
         assert wayback_exists_at("") == (False, None)
 
     def test_snapshot_found(self, monkeypatch):
-        text = (
-            '[["timestamp","original"],'
-            '["20250315123045","https://www.example.com/story"]]'
-        )
+        text = '[["timestamp","original"],["20250315123045","https://www.example.com/story"]]'
         client = _WaybackClient(_WaybackResponse(200, text))
         self._patch(monkeypatch, client)
         exists, snapshot = wayback_exists_at(
@@ -609,12 +628,11 @@ class TestWaybackExistsAt:
         )
         assert exists is True
         assert snapshot == (
-            "https://web.archive.org/web/20250315123045/"
-            "https://www.example.com/story"
+            "https://web.archive.org/web/20250315123045/https://www.example.com/story"
         )
 
     def test_no_snapshot(self, monkeypatch):
-        client = _WaybackClient(_WaybackResponse(200, '[]'))
+        client = _WaybackClient(_WaybackResponse(200, "[]"))
         self._patch(monkeypatch, client)
         assert wayback_exists_at(
             "https://www.example.com/missing",
@@ -631,19 +649,17 @@ class TestWaybackExistsAt:
         ) == (False, None)
 
     def test_api_error_status_returns_false(self, monkeypatch):
-        client = _WaybackClient(_WaybackResponse(503, ''))
+        client = _WaybackClient(_WaybackResponse(503, ""))
         self._patch(monkeypatch, client)
         assert wayback_exists_at("https://www.example.com/x") == (False, None)
 
     def test_malformed_json_returns_false(self, monkeypatch):
-        client = _WaybackClient(_WaybackResponse(200, 'not json'))
+        client = _WaybackClient(_WaybackResponse(200, "not json"))
         self._patch(monkeypatch, client)
         assert wayback_exists_at("https://www.example.com/x") == (False, None)
 
     def test_timeout_returns_false(self, monkeypatch):
-        self._patch(monkeypatch, _WaybackFailingClient(
-            httpx.TimeoutException("timed out")
-        ))
+        self._patch(monkeypatch, _WaybackFailingClient(httpx.TimeoutException("timed out")))
         assert wayback_exists_at("https://www.example.com/x") == (False, None)
 
     def test_network_error_returns_false(self, monkeypatch):
@@ -652,7 +668,7 @@ class TestWaybackExistsAt:
 
     def test_tolerance_applied_to_params(self, monkeypatch):
         capture: dict = {}
-        client = _WaybackClient(_WaybackResponse(200, '[]'), capture=capture)
+        client = _WaybackClient(_WaybackResponse(200, "[]"), capture=capture)
         self._patch(monkeypatch, client)
         wayback_exists_at(
             "https://example.com/x",
@@ -664,7 +680,7 @@ class TestWaybackExistsAt:
 
     def test_no_date_omits_date_params(self, monkeypatch):
         capture: dict = {}
-        client = _WaybackClient(_WaybackResponse(200, '[]'), capture=capture)
+        client = _WaybackClient(_WaybackResponse(200, "[]"), capture=capture)
         self._patch(monkeypatch, client)
         wayback_exists_at("https://example.com/x")
         assert "from" not in capture["params"]
@@ -672,10 +688,7 @@ class TestWaybackExistsAt:
 
     def test_columns_in_unexpected_order(self, monkeypatch):
         # CDX may return columns in any order; we locate them by name.
-        text = (
-            '[["original","timestamp"],'
-            '["https://example.com/page","20250510101010"]]'
-        )
+        text = '[["original","timestamp"],["https://example.com/page","20250510101010"]]'
         client = _WaybackClient(_WaybackResponse(200, text))
         self._patch(monkeypatch, client)
         exists, snapshot = wayback_exists_at("https://example.com/page")
@@ -693,7 +706,7 @@ class TestWaybackExistsAt:
     def test_verifies_tls_by_default(self, monkeypatch):
         monkeypatch.delenv("URL_CHECK_VERIFY_TLS", raising=False)
         captured: dict = {}
-        client = _WaybackClient(_WaybackResponse(200, '[]'))
+        client = _WaybackClient(_WaybackResponse(200, "[]"))
 
         def factory(**kwargs):
             captured.update(kwargs)
@@ -707,6 +720,7 @@ class TestWaybackExistsAt:
 # ---------------------------------------------------------------------------
 # fetch_url_content
 # ---------------------------------------------------------------------------
+
 
 class _ContentResponse:
     """Streaming stand-in: ``iter_bytes`` is what fetch_url_content consumes,
@@ -739,8 +753,9 @@ class _ContentResponse:
 class _ContentClient:
     """Stub for httpx.Client that captures stream calls and returns a canned body."""
 
-    def __init__(self, response: _ContentResponse | None = None,
-                 get_error: Exception | None = None):
+    def __init__(
+        self, response: _ContentResponse | None = None, get_error: Exception | None = None
+    ):
         self.response = response
         self.get_error = get_error
         self.captured: dict = {}
@@ -907,12 +922,17 @@ class TestFetchUrlContent:
 # extract_article_metadata
 # ---------------------------------------------------------------------------
 
+
 class TestExtractArticleMetadata:
     def test_empty_html(self):
         assert extract_article_metadata("") == {
-            "title": "", "description": "", "og_title": "",
-            "og_description": "", "twitter_title": "",
-            "twitter_description": "", "first_paragraph": "",
+            "title": "",
+            "description": "",
+            "og_title": "",
+            "og_description": "",
+            "twitter_title": "",
+            "twitter_description": "",
+            "first_paragraph": "",
         }
 
     def test_title_tag(self):
@@ -993,12 +1013,15 @@ class TestReExports:
     they are defined in the stdlib-only ``url_parse`` / ``url_html`` modules and
     must not be routed through the httpx-backed ``urls`` facade."""
 
-    @pytest.mark.parametrize("name", [
-        "archive_timestamp_is_round",
-        "canonical_url",
-        "domain_of",
-        "extract_path_date",
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "archive_timestamp_is_round",
+            "canonical_url",
+            "domain_of",
+            "extract_path_date",
+        ],
+    )
     def test_url_parse_helpers_reexported(self, name):
         import pf_core.utils as utils
         from pf_core.utils import url_parse

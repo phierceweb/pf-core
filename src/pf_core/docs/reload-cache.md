@@ -17,15 +17,19 @@ TTL-based hot-reload cache for config loaders: operators edit a config file and 
 from pf_core.utils.reload_cache import ReloadCache
 from pf_core.utils.env import resolve_int
 
+
 def _ttl() -> int:
     return resolve_int(None, "MYTOOL_CONFIG_RELOAD_SECONDS", default=60)
 
+
 _cache = ReloadCache(lambda path: _parse(Path(path)), ttl=_ttl)
+
 
 def load(force: bool = False) -> dict:
     return _cache.get(str(_config_path()), force=force)
 
-def clear_cache() -> None:   # test seam
+
+def clear_cache() -> None:  # test seam
     _cache.clear()
 ```
 

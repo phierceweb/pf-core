@@ -17,7 +17,7 @@ data = safe_json_loads(raw_string, fallback=[], label="config")
 data = safe_json_col(row["metadata"], fallback=[])
 
 # Canonical form for equality comparison or hashing
-key = canonical_json({"b": 1, "a": 2})   # '{"a":2,"b":1}'
+key = canonical_json({"b": 1, "a": 2})  # '{"a":2,"b":1}'
 ```
 
 ## Functions
@@ -27,10 +27,10 @@ key = canonical_json({"b": 1, "a": 2})   # '{"a":2,"b":1}'
 Parse a JSON string, returning `fallback` on failure.
 
 ```python
-safe_json_loads('{"a": 1}')                          # {"a": 1}
-safe_json_loads('bad data')                           # None
-safe_json_loads('bad data', fallback=[])              # []
-safe_json_loads('bad data', fallback=[], label="cfg") # [] + WARNING logged
+safe_json_loads('{"a": 1}')  # {"a": 1}
+safe_json_loads("bad data")  # None
+safe_json_loads("bad data", fallback=[])  # []
+safe_json_loads("bad data", fallback=[], label="cfg")  # [] + WARNING logged
 ```
 
 | Parameter | Type | Default | Description |
@@ -50,11 +50,11 @@ Normalize a value that may be a JSON string or already-parsed object.
 SQLite JSON columns return parsed `dict`/`list` objects directly, while other backends return raw strings. This function handles both.
 
 ```python
-safe_json_col('{"a": 1}')   # {"a": 1} (parsed from string)
-safe_json_col({"a": 1})     # {"a": 1} (returned as-is)
-safe_json_col([1, 2])       # [1, 2]   (returned as-is)
-safe_json_col(None)          # None
-safe_json_col(42)            # None     (unrecognized type)
+safe_json_col('{"a": 1}')  # {"a": 1} (parsed from string)
+safe_json_col({"a": 1})  # {"a": 1} (returned as-is)
+safe_json_col([1, 2])  # [1, 2]   (returned as-is)
+safe_json_col(None)  # None
+safe_json_col(42)  # None     (unrecognized type)
 ```
 
 | Parameter | Type | Default | Description |
@@ -70,10 +70,10 @@ Returns the parsed Python object, or `fallback`.
 Serialize a value to canonical JSON — sorted keys, compact `,`/`:` separators — so two semantically-equal objects produce byte-identical output. Use it for equality comparison ("did this config change?") or as the input to a hash.
 
 ```python
-canonical_json({"b": 1, "a": 2})              # '{"a":2,"b":1}'
+canonical_json({"b": 1, "a": 2})  # '{"a":2,"b":1}'
 canonical_json({"a": 1, "b": 2}) == canonical_json({"b": 2, "a": 1})  # True
-canonical_json([1, 2, 3])                      # '[1,2,3]'
-canonical_json({"when": date(2026, 4, 14)})    # '{"when":"2026-04-14"}'  (str fallback)
+canonical_json([1, 2, 3])  # '[1,2,3]'
+canonical_json({"when": date(2026, 4, 14)})  # '{"when":"2026-04-14"}'  (str fallback)
 ```
 
 | Parameter | Type | Default | Description |

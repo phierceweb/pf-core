@@ -59,10 +59,7 @@ class ValidationResult:
     @property
     def warnings(self) -> list[ValidationSignal]:
         """Signals with ``passed=False`` and severity in ``{info, warn}``."""
-        return [
-            s for s in self.signals
-            if not s.passed and s.severity in ("info", "warn")
-        ]
+        return [s for s in self.signals if not s.passed and s.severity in ("info", "warn")]
 
 
 def _coerce_signals(out: Any) -> list[ValidationSignal]:
@@ -77,7 +74,10 @@ def _coerce_signals(out: Any) -> list[ValidationSignal]:
 
 
 def _write_signals_to_db(
-    *, run_id: int, schema_version: int, agent_type: str,
+    *,
+    run_id: int,
+    schema_version: int,
+    agent_type: str,
     signals: list[ValidationSignal],
 ) -> None:
     """Persist signals to ``llm_run_validations`` and tag the schema version."""
@@ -99,7 +99,8 @@ def _write_signals_to_db(
         except Exception:  # noqa: BLE001 — logging must not break the caller
             logger.exception(
                 "validation_record_failed",
-                run_id=run_id, validator=sig.validator,
+                run_id=run_id,
+                validator=sig.validator,
             )
 
     tag = f"schema:{agent_type}_v{schema_version}"
@@ -177,7 +178,9 @@ def parse_and_validate(
             known_agents=list_agent_types(),
         )
         sig = ValidationSignal(
-            validator="no_pipeline_registered", severity="error", passed=False,
+            validator="no_pipeline_registered",
+            severity="error",
+            passed=False,
             details={
                 "agent_type": agent_type,
                 "known_agents": list_agent_types(),
@@ -198,13 +201,17 @@ def parse_and_validate(
         )
         signals.append(sig)
         result = ValidationResult(
-            ok=False, value=None, signals=signals,
+            ok=False,
+            value=None,
+            signals=signals,
             schema_version=pipeline.schema_version,
         )
         if run_id is not None:
             _write_signals_to_db(
-                run_id=run_id, schema_version=pipeline.schema_version,
-                agent_type=agent_type, signals=signals,
+                run_id=run_id,
+                schema_version=pipeline.schema_version,
+                agent_type=agent_type,
+                signals=signals,
             )
         return result
 
@@ -213,7 +220,8 @@ def parse_and_validate(
     # --- Shape ---
     if "shape" in stages and pipeline.shape is not None:
         coerced, shape_signal = pipeline.shape.validate_shape(
-            parsed, agent_type=agent_type,
+            parsed,
+            agent_type=agent_type,
         )
         signals.append(shape_signal)
         if shape_signal.passed:
@@ -229,7 +237,8 @@ def parse_and_validate(
             except Exception as e:  # noqa: BLE001
                 out = ValidationSignal(
                     validator=getattr(sem, "name", "semantic_unknown"),
-                    severity="error", passed=False,
+                    severity="error",
+                    passed=False,
                     details={"exception": repr(e)},
                 )
             signals.extend(_coerce_signals(out))
@@ -242,7 +251,8 @@ def parse_and_validate(
             except Exception as e:  # noqa: BLE001
                 out = ValidationSignal(
                     validator=getattr(cf, "name", "cross_field_unknown"),
-                    severity="error", passed=False,
+                    severity="error",
+                    passed=False,
                     details={"exception": repr(e)},
                 )
             signals.extend(_coerce_signals(out))
@@ -257,8 +267,10 @@ def parse_and_validate(
 
     if run_id is not None:
         _write_signals_to_db(
-            run_id=run_id, schema_version=pipeline.schema_version,
-            agent_type=agent_type, signals=signals,
+            run_id=run_id,
+            schema_version=pipeline.schema_version,
+            agent_type=agent_type,
+            signals=signals,
         )
 
     return result

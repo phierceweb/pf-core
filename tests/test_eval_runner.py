@@ -160,9 +160,7 @@ def test_eval_runner_run_dispatches_to_each_golden(tracking_db, monkeypatch):
         ).inserted_primary_key[0]
         for i in range(2):
             run_id = conn.execute(
-                llm_runs.insert().values(
-                    agent_type_id=aid, model_id=mid, status="success"
-                )
+                llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
             ).inserted_primary_key[0]
             conn.execute(
                 llm_run_payloads.insert().values(
@@ -218,9 +216,7 @@ def test_replay_runs_do_not_join_the_golden_set(tracking_db, monkeypatch):
     )
 
     with tracking_db.begin() as conn:
-        mid = conn.execute(
-            llm_models.insert().values(name="tagfix-model")
-        ).inserted_primary_key[0]
+        mid = conn.execute(llm_models.insert().values(name="tagfix-model")).inserted_primary_key[0]
         aid = conn.execute(
             llm_agent_types.insert().values(slug="tagfix_agent")
         ).inserted_primary_key[0]
@@ -240,9 +236,7 @@ def test_replay_runs_do_not_join_the_golden_set(tracking_db, monkeypatch):
         def chat(self, *, messages, model="", **kwargs):
             return '{"answer": 1}', {"duration_ms": 1}
 
-    monkeypatch.setattr(
-        "pf_core.clients.openrouter.get_client", lambda *a, **k: _FakeClient()
-    )
+    monkeypatch.setattr("pf_core.clients.openrouter.get_client", lambda *a, **k: _FakeClient())
 
     cfg = EvalConfig({"agents": {"tagfix_agent": {"compare": "structured_diff"}}})
     runner = EvalRunner.__new__(EvalRunner)
@@ -270,9 +264,7 @@ def test_replay_runs_do_not_join_the_golden_set(tracking_db, monkeypatch):
     assert len(repo.list(version="tagfix_v1")) == 1
 
 
-def test_golden_with_empty_parsed_output_falls_back_to_raw_response(
-    tracking_db, monkeypatch
-):
+def test_golden_with_empty_parsed_output_falls_back_to_raw_response(tracking_db, monkeypatch):
     """Consumers that validate post-record can store JSON-null ``parsed_output``
     (SQL ``IS NOT NULL`` can't see it). The runner must fall back to parsing the
     stored ``raw_response`` instead of scoring every replay against ``{}``."""
@@ -287,9 +279,9 @@ def test_golden_with_empty_parsed_output_falls_back_to_raw_response(
 
     golden_json = '{"category": "a", "confidence": 0.9}'
     with tracking_db.begin() as conn:
-        mid = conn.execute(
-            llm_models.insert().values(name="fallback-model")
-        ).inserted_primary_key[0]
+        mid = conn.execute(llm_models.insert().values(name="fallback-model")).inserted_primary_key[
+            0
+        ]
         aid = conn.execute(
             llm_agent_types.insert().values(slug="fallback_agent")
         ).inserted_primary_key[0]
@@ -311,9 +303,7 @@ def test_golden_with_empty_parsed_output_falls_back_to_raw_response(
         def chat(self, *, messages, model="", **kwargs):
             return golden_json, {"duration_ms": 1}
 
-    monkeypatch.setattr(
-        "pf_core.clients.openrouter.get_client", lambda *a, **k: _FakeClient()
-    )
+    monkeypatch.setattr("pf_core.clients.openrouter.get_client", lambda *a, **k: _FakeClient())
 
     cfg = EvalConfig(
         {
@@ -342,9 +332,7 @@ def _seed_golden(tracking_db, *, slug: str, parsed_output, raw_response=None) ->
         mid = conn.execute(
             llm_models.insert().values(name=f"seed-model-{slug}")
         ).inserted_primary_key[0]
-        aid = conn.execute(
-            llm_agent_types.insert().values(slug=slug)
-        ).inserted_primary_key[0]
+        aid = conn.execute(llm_agent_types.insert().values(slug=slug)).inserted_primary_key[0]
         gid = conn.execute(
             llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
         ).inserted_primary_key[0]

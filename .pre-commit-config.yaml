@@ -16,6 +16,18 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: ruff-format
+        name: ruff format
+        entry: .venv/bin/ruff format --check src tests
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: mypy
+        name: mypy
+        entry: .venv/bin/python -m mypy
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: docs-gates
         name: docs pins + version-reference gate
         entry: .venv/bin/pytest tests/test_docs_pins.py -q
@@ -23,10 +35,12 @@ repos:
         pass_filenames: false
         always_run: true
       # The gate script is gitignored (it names private consumers), so it is
-      # absent in a public clone — skip rather than fail there.
+      # absent in a public clone. Skip only when the whole directory is gone —
+      # a missing script inside an existing .ai/scripts/keep/ is a deletion,
+      # and must fail loudly rather than pass silently.
       - id: fingerprints
         name: fingerprint gate
-        entry: bash -c 'if [ -f .ai/scripts/check-fingerprints.sh ]; then bash .ai/scripts/check-fingerprints.sh; else echo "fingerprint gate not present - skipped"; fi'
+        entry: bash -c 'if [ -f .ai/scripts/keep/check-fingerprints.sh ]; then bash .ai/scripts/keep/check-fingerprints.sh; elif [ -d .ai/scripts/keep ]; then echo "fingerprint gate MISSING from .ai/scripts/keep/ — recover it, do not rewrite it" >&2; exit 1; else echo "fingerprint gate not present (public clone) - skipped"; fi'
         language: system
         pass_filenames: false
         always_run: true

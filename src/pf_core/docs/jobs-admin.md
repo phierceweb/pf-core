@@ -18,13 +18,15 @@ Mountable jobs list/detail pages plus a polling JSON API and cancel endpoint —
 from pf_core.web.jobs_admin import make_jobs_router
 from pf_core.jobs.workers import terminate_job
 
-app.include_router(make_jobs_router(
-    auth_dep=require_admin,                       # required — see Auth below
-    kind_labels={"grading_pass": "grade"},
-    describe=lambda job: {"label": section_label(job), "href": section_url(job)},
-    terminate_hook=terminate_job,                 # only when jobs run as subprocesses
-    prefix="/jobs",
-))
+app.include_router(
+    make_jobs_router(
+        auth_dep=require_admin,  # required — see Auth below
+        kind_labels={"report_pass": "report"},
+        describe=lambda job: {"label": section_label(job), "href": section_url(job)},
+        terminate_hook=terminate_job,  # only when jobs run as subprocesses
+        prefix="/jobs",
+    )
+)
 ```
 
 `describe` receives the job row and returns the consumer's scope link (`{"label", "href"}`) or `None`; `kind_labels` maps kinds to human action names. Both default to raw values.

@@ -160,8 +160,8 @@ class TestLoggerNameAdoption:
         log_mod._setup_done = False
 
         setup_logging()
-        assert logging.getLogger().handlers              # root got the handlers
-        assert logging.getLogger("app").handlers == []   # not the legacy "app" logger
+        assert logging.getLogger().handlers  # root got the handlers
+        assert logging.getLogger("app").handlers == []  # not the legacy "app" logger
         assert log_mod._app_logger_name == ""
 
     def test_arbitrary_package_logger_has_no_own_handler_but_is_reachable(self):
@@ -172,7 +172,7 @@ class TestLoggerNameAdoption:
         setup_logging(level="INFO")
 
         consumer = logging.getLogger("ingester.services.fetch")
-        assert consumer.handlers == []                       # relies on propagation
+        assert consumer.handlers == []  # relies on propagation
         assert consumer.getEffectiveLevel() <= logging.INFO  # reaches root handler
 
     def test_named_scoping_still_works(self):

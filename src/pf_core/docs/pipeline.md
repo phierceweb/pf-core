@@ -131,23 +131,25 @@ Describe your pipeline as an ordered list of stages, each with two classes of fi
 ```python
 from pf_core.pipeline.cache import StageDefinition, StageRegistry
 
-REGISTRY = StageRegistry(stages=(
-    StageDefinition(
-        name="extract",
-        structural_files=("{stem}.raw.md",),
-        content_keyed_files=(),
-    ),
-    StageDefinition(
-        name="enrich",
-        structural_files=("{stem}.enrich.md",),
-        content_keyed_files=(".enrich-cache",),  # content-hash-keyed, preserved across cascade
-    ),
-    StageDefinition(
-        name="split",
-        structural_files=("sections", "INDEX.md", "{stem}.md"),
-        content_keyed_files=(),
-    ),
-))
+REGISTRY = StageRegistry(
+    stages=(
+        StageDefinition(
+            name="extract",
+            structural_files=("{stem}.raw.md",),
+            content_keyed_files=(),
+        ),
+        StageDefinition(
+            name="enrich",
+            structural_files=("{stem}.enrich.md",),
+            content_keyed_files=(".enrich-cache",),  # content-hash-keyed, preserved across cascade
+        ),
+        StageDefinition(
+            name="split",
+            structural_files=("sections", "INDEX.md", "{stem}.md"),
+            content_keyed_files=(),
+        ),
+    )
+)
 ```
 
 | File class | Behavior |
@@ -227,25 +229,33 @@ A `Phase` is one stage — a `name` and a `run(ctx)`. The `ctx` is opaque to the
 ```python
 from pf_core.pipeline.sequencer import run_pipeline
 
+
 class Extract:
     name = "extract"
+
     def run(self, ctx): ...
+
 
 class Transform:
     name = "transform"
+
     def run(self, ctx): ...
+
 
 class Load:
     name = "load"
+
     def run(self, ctx): ...
+
 
 phases = [Extract(), Transform(), Load()]
 
-run_pipeline(phases, ctx=ctx)                                # ["extract","transform","load"]
-run_pipeline(phases, ctx=ctx, start="transform")             # ["transform","load"]
-run_pipeline(phases, ctx=ctx, stop_after="transform")        # ["extract","transform"]
-run_pipeline(phases, ctx=ctx, start="transform",
-             stop_after="transform")                         # ["transform"]  (single phase)
+run_pipeline(phases, ctx=ctx)  # ["extract","transform","load"]
+run_pipeline(phases, ctx=ctx, start="transform")  # ["transform","load"]
+run_pipeline(phases, ctx=ctx, stop_after="transform")  # ["extract","transform"]
+run_pipeline(
+    phases, ctx=ctx, start="transform", stop_after="transform"
+)  # ["transform"]  (single phase)
 ```
 
 `run_pipeline` returns the names of the phases actually run, in order.
@@ -268,8 +278,10 @@ Precedence, highest first:
 ```python
 from pf_core.pipeline.resume import is_snapshot_valid
 
+
 def fresh(phase):
     return is_snapshot_valid(checkpoint_for(phase.name), validator_for(phase.name))
+
 
 run_pipeline(phases, ctx=ctx, skip_fresh=fresh)
 ```

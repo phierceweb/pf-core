@@ -25,33 +25,38 @@ def domain_of(url: str) -> str:
     Returns:
         Lowercase domain string, or empty string if unparseable.
     """
-    host = (urlparse(url).hostname or "").lower()
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:  # malformed netloc, e.g. an unclosed IPv6 bracket
+        return ""
     return host[4:] if host.startswith("www.") else host
 
 
 # Pure tracking / attribution query params — dropped when deduplicating URLs so
 # the same article reached via different shares collapses to one canonical URL.
 _TRACKING_PARAM_PREFIXES: tuple[str, ...] = ("utm_", "__hs", "pk_", "vero_")
-_TRACKING_PARAMS: frozenset[str] = frozenset({
-    "fbclid",                 # Facebook click ID
-    "gclid",                  # Google Ads click ID
-    "dclid",                  # Google Campaign Manager
-    "gbraid",                 # Google ad network
-    "wbraid",                 # Google ad network (web)
-    "msclkid",                # Microsoft Ads
-    "yclid",                  # Yandex click ID
-    "_ga",                    # Google Analytics cross-domain
-    "_gl",                    # Google Analytics cross-domain
-    "mc_cid",                 # Mailchimp campaign ID
-    "mc_eid",                 # Mailchimp email ID
-    "ref_src",                # generic referrer source (Twitter share)
-    "ref_url",
-    "referrer",
-    "__twitter_impression",
-    "hsctatracking",          # HubSpot CTA
-    "igshid",                 # Instagram share
-    "si",                     # YouTube share identifier
-})
+_TRACKING_PARAMS: frozenset[str] = frozenset(
+    {
+        "fbclid",  # Facebook click ID
+        "gclid",  # Google Ads click ID
+        "dclid",  # Google Campaign Manager
+        "gbraid",  # Google ad network
+        "wbraid",  # Google ad network (web)
+        "msclkid",  # Microsoft Ads
+        "yclid",  # Yandex click ID
+        "_ga",  # Google Analytics cross-domain
+        "_gl",  # Google Analytics cross-domain
+        "mc_cid",  # Mailchimp campaign ID
+        "mc_eid",  # Mailchimp email ID
+        "ref_src",  # generic referrer source (Twitter share)
+        "ref_url",
+        "referrer",
+        "__twitter_impression",
+        "hsctatracking",  # HubSpot CTA
+        "igshid",  # Instagram share
+        "si",  # YouTube share identifier
+    }
+)
 
 # Ports that are always redundant in the canonical (https) form — 80 is
 # http's default, 443 is https's default, and we upgrade http→https so both
@@ -81,6 +86,9 @@ def canonical_url(url: str) -> str:
         return ""
     try:
         parsed = urlparse(url)
+        # .hostname/.port defer netloc validation to property access, so an
+        # invalid port raises ValueError here rather than at parse time.
+        hostname, port = parsed.hostname, parsed.port
     except Exception:
         return ""
 
@@ -92,13 +100,12 @@ def canonical_url(url: str) -> str:
     # should not be using the canonical form.
     scheme = "https"
 
-    host = (parsed.hostname or "").lower()
+    host = (hostname or "").lower()
     if not host:
         return ""
     if host.startswith("www."):
         host = host[4:]
 
-    port = parsed.port
     if port is not None and port not in _CANONICAL_DEFAULT_PORTS:
         netloc = f"{host}:{port}"
     else:

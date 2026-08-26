@@ -25,7 +25,7 @@ result = llm_step(
     spec=spec,                     # prompt registration, as in tracked_messages_call
     provider="openrouter",
     cache=True,                    # lookup before, store after (only on valid)
-    budget=BudgetEstimate(job_id=job_id, job_kind="grading_pass"),
+    budget=BudgetEstimate(job_id=job_id, job_kind="report_pass"),
     validate="object",             # parse_and_validate expect=
 )
 if result.validation and not result.validation.ok:
