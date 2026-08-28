@@ -98,8 +98,8 @@ Creates tables before the test runs. Two ways to provide DDL:
 **Via marker** (per-test):
 
 ```python
-@pytest.mark.pf_tables("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
-def test_items(pf_tables, pf_connection): ...
+@pytest.mark.pf_tables("CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+def test_widgets(pf_tables, pf_connection): ...
 ```
 
 **Via fixture** (project-wide):
@@ -117,7 +117,16 @@ def pf_schema():
 def test_items(pf_tables, pf_connection): ...
 ```
 
-Both can be combined — marker DDL runs after `pf_schema`.
+A `pf_schema` fixture applies to every test that uses `pf_tables`, whether or not the test names `pf_schema` in its arguments, and whether or not it is `autouse`.
+
+Both can be combined — marker DDL runs after `pf_schema` and **supplements** it. Marker DDL that re-creates a table, index, or view `pf_schema` already creates raises `InvalidInputError` naming the object. To give one module a different shape for a shared table, override `pf_schema` in that module instead:
+
+```python
+# test_widgets.py — module-local schema replaces the conftest one
+@pytest.fixture
+def pf_schema():
+    return ["CREATE TABLE items (id INTEGER PRIMARY KEY, other TEXT)"]
+```
 
 ### pf_app_client
 

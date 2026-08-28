@@ -66,6 +66,8 @@ def make_admin_router(
 | `/cache` | Hit rate by agent + top cache entries by hit count |
 | `/budgets` | Every active budget with current-period spent, %-of-limit, action |
 
+`/budgets` reports the same number the guard enforces on: `pf_core.budget.current_spent()` (snapshot + live delta) over the UTC period from `compute_period_start()` — see [cost-budget.md](cost-budget.md#spent-calculation). It is therefore correct even where `refresh_snapshots()` was never wired up.
+
 Each HTML page has a matching `/api/*.json` endpoint returning `{data, meta}`. Drives shell scripts, Grafana (JSON datasource), external dashboards.
 
 ## Window parameters

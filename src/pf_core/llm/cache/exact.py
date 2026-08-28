@@ -2,7 +2,7 @@
 Exact-cache repository for ``llm_cache_entries``.
 
 Looks up and stores cache entries keyed by ``input_hash`` (SHA256 of model +
-rendered prompts + sampling + configs — computed by
+prompts + sampling + configs — computed by
 :func:`pf_core.llm.tracking.compute_input_hash`).
 
 Usage::
@@ -103,7 +103,7 @@ class ExactCacheRepo(Repository):
     ) -> int:
         """Insert a cache entry, refreshing it in place on a conflict.
 
-        ``input_hash`` covers model, rendered prompts, sampling, and configs, so
+        ``input_hash`` covers model, prompts, sampling, and configs, so
         a conflicting row is the same logical request — a re-store overwrites
         the response and expiry (keeping the row's id, age, and hit counters)
         rather than returning a possibly-expired existing row.

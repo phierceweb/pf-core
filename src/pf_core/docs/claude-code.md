@@ -27,12 +27,13 @@ content, usage = client.chat(
   3. Env var `$PF_CORE_CLAUDE_CODE_MODEL`
   4. No `--model` flag → CLI uses the active interactive session model. For Claude Max users this can silently route batch work onto Sonnet/Opus and chew through quota — pin a model whenever you batch.
 - **Temperature / max_tokens / top_p / response_format** — accepted as kwargs for API parity with `OpenRouterClient` but **ignored**. The active Claude Code session controls sampling. Passing them won't error; they just don't reach the CLI.
-- **Token counts** — always `0`. The CLI doesn't expose them.
+- **Token counts** — always `0`. The client does not surface the CLI's own counts.
 - **Cost** — always `0.0`. Claude Max sessions don't bill per call.
 - **Duration** — wall-clock from invocation, in milliseconds.
 - **`system_fingerprint`** — always `None`.
+- **`finish_reason`** — the model's stop reason, read off the `--output-format json` envelope. Present whenever that envelope reports one (see [Truncation reporting](#truncation-reporting)).
 - **Authentication** — the child `claude` process inherits the parent environment with `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` stripped out. This protects the Claude Max session path: a stray key in a project's `.env` would otherwise hijack `claude --print` into billable — and possibly invalid — external API-key auth. All other env vars (PATH, HOME, session config) pass through.
-- **Isolation** — by default (`isolate=True`) the call runs with `--safe-mode`, so `claude --print` starts with all customizations **off**: the surrounding project's `CLAUDE.md`, skills, hooks, and plugins are not loaded (auth, model, and explicit flags like `--allowedTools` still apply). This is the secure default for a programmatic call, which runs in whatever directory the consumer happens to be in and almost never wants that directory's ambient instructions steering it — without it, a weaker model can be hijacked into obeying an ambient "invoke the relevant skill" instruction and emit skill text where the caller expected a completion. Pass `isolate=False` only when you deliberately run claude inside a project to use that project's customizations. Requires a `claude` CLI new enough to support `--safe-mode` (Claude Code 2.x); on an older binary the call exits non-zero with `unknown option '--safe-mode'` — set `isolate=False` to fall back.
+- **Isolation** — by default (`isolate=True`) the call runs with `--safe-mode`, so `claude --print` starts with all customizations **off**: the surrounding project's `CLAUDE.md`, skills, hooks, and plugins are not loaded (auth, model, and explicit flags like `--allowedTools` still apply). This is the secure default for a programmatic call, which runs in whatever directory the consumer happens to be in and almost never wants that directory's ambient instructions steering it — without it, a weaker model can be hijacked into obeying an ambient "invoke the relevant skill" instruction and emit skill text where the caller expected a completion. Pass `isolate=False` only when you deliberately run claude inside a project to use that project's customizations. Note `--safe-mode` does not remove the CLI's own workspace context: a call made from inside a git repo can see that repo's status, and a weak model may answer about it instead of the prompt — run batch consumers from a neutral cwd. Requires a `claude` CLI new enough to support `--safe-mode` (Claude Code 2.x); on an older binary the call exits non-zero with `unknown option '--safe-mode'` — set `isolate=False` to fall back.
 
 ## Message flattening
 
@@ -76,7 +77,7 @@ ClaudeCodeClient(
 |-----------|------|---------|-------------|
 | `timeout` | `int` | `600` | Wall-clock cap (seconds) for one CLI call |
 | `binary` | `str` | `"claude"` | Path or name of the executable to run |
-| `extra_args` | `list[str]` | `None` | Flags inserted after `--safe-mode`, before `--model` / `--print` (e.g. `["--allowedTools", "Bash"]`) |
+| `extra_args` | `list[str]` | `None` | Flags inserted after `--safe-mode`, before `--model` / `--output-format` / `--print` (e.g. `["--allowedTools", "Bash"]`). Passing `--output-format` or `--verbose` here suppresses the client's envelope — see [Truncation reporting](#truncation-reporting) |
 | `model` | `str \| None` | `None` | Default model passed as `--model X` on every call. Falls back to `$PF_CORE_CLAUDE_CODE_MODEL`; `None` omits the flag entirely. Per-call `chat(model=...)` overrides for one call. |
 | `retry` | `int` | `0` | Auto-retry count for transient failures, sleeping `0.5 * attempt` seconds between attempts. `retry=0` (default) raises on the first failure. `retry=1` makes up to 2 total attempts; `retry=N` makes up to N+1. Both timeout and non-zero exit are retried (transient causes: rate-limit windows, momentary auth refresh, model warm-up). Missing binary and empty messages are NOT retried (deterministic config errors). |
 | `isolate` | `bool` | `True` | Run with `--safe-mode` so the call ignores the ambient project's `CLAUDE.md` / skills / hooks / plugins (auth, model, and explicit flags still apply). `True` is the secure default for a programmatic call; set `False` only to deliberately use the surrounding project's customizations. See **Isolation** above. |
@@ -96,7 +97,7 @@ client.chat(
 ) -> tuple[str, dict]
 ```
 
-Returns `(content, usage)`. The `usage` dict carries the same keys as [`OpenRouterClient.chat`](openrouter.md):
+Returns `(content, usage)`. The `usage` dict carries the same token/cost keys as [`OpenRouterClient.chat`](openrouter.md):
 
 ```python
 {
@@ -108,8 +109,28 @@ Returns `(content, usage)`. The `usage` dict carries the same keys as [`OpenRout
     "cost_usd": 0.0,
     "duration_ms": <int, wall-clock>,
     "system_fingerprint": None,
+    "finish_reason": <str, when the JSON envelope is readable>,
 }
 ```
+
+## Truncation reporting
+
+Text-mode stdout carries the answer and nothing else, so a truncated response is indistinguishable from a complete one. The client therefore adds **`--output-format json`** to the command and reads the CLI's envelope: `result` holds the same text stdout would have carried, and the top-level `stop_reason` is the model's own.
+
+`stop_reason` maps onto the shared `usage["finish_reason"]` vocabulary the other clients use, so [`truncated_from_usage`](llm-parse.md#detecting-truncation-truncated-not-the-text) needs no special case:
+
+| Envelope | `usage["finish_reason"]` |
+|---|---|
+| `stop_reason` is `max_tokens` or `model_context_window_exceeded` | `"length"` (also logs a `claude_code_truncated` warning) |
+| any other `stop_reason` string | that string, verbatim — the CLI types it as a free string, not an enum |
+| `stop_reason` null | key omitted — unknown, never guessed |
+| `is_error` true | `ClaudeCodeError` raised, quoting the envelope's `result` — an error report is never returned as the answer |
+
+A `--verbose` transcript array unwraps via its final `result` entry.
+
+Passing `--output-format` or `--verbose` in `extra_args` suppresses envelope mode entirely: your flag wins, the client adds none of its own, and stdout is read as plain text with no `finish_reason`. Consumers that pass `--allowedTools` and nothing else are unaffected.
+
+When the client *did* request the envelope and stdout is still unreadable — not valid JSON, or no string `result` (an older CLI, a wrapper script, a changed schema) — `chat()` raises `ClaudeCodeError` rather than returning machine output as the answer. The error names the remediation: upgrade the CLI, or pass `extra_args=["--output-format", "text"]` to restore text-mode output (truncation then unreportable).
 
 ## Preflight check
 

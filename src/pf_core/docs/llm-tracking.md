@@ -32,6 +32,7 @@ This doc is the implementation reference. The column-by-column schema definition
 - **run** — one row in `llm_runs` = one LLM invocation. The unit of accounting.
 - **agent type / model / prompt** — reference rows (`llm_agent_types`, `llm_models`, `llm_prompts`). Prompts are versioned per `(agent_type, part)` where `part ∈ {'system', 'user', 'full'}`. Use `resolve_prompt_id()` to upsert a prompt row and get back the FK for `llm_runs.system_prompt_id` / `user_prompt_id` — see [prompts.md](prompts.md#registering-in-the-db).
 - **payload** — cold sidecar holding rendered prompts, raw response, parsed output.
+- A run whose `usage` carries a truncation finish reason is tagged `truncated` in `llm_run_tags` automatically — `SELECT llm_run_id FROM llm_run_tags WHERE tag = 'truncated'` finds every cut-off run in a batch.
 - **config** — parameter snapshot attached as `(config_kind, config_id)`. Soft FK into project tables.
 - **validation** — quality signal at call time: `(validator, passed, severity, details)`.
 - **outcome** — downstream business signal backfilled later (e.g. `summary_accepted`).
@@ -116,7 +117,7 @@ run_id = LlmRunRepo().record(
 **Behavior notes:**
 
 - Reference-table FKs (`agent_type_id`, `model_id`) are resolved in their own short transactions *before* the write transaction opens — this avoids InnoDB lock cycles when parallel workers log the same agent/model pair simultaneously.
-- `input_hash` is autocomputed as `SHA256(model + rendered prompts + sampling + configs)` if not provided. Pass an explicit value only to override the canonical algorithm.
+- `input_hash` is autocomputed as `SHA256(model + rendered prompts + sampling + configs)` if not provided. `record()` only sees `rendered_prompts`, which drop multi-part (vision) content and assistant/tool turns — those calls would all share one hash. A caller holding the `messages` list must pass `input_hash=compute_input_hash(model=..., messages=..., sampling=..., configs=...)`, which folds in a digest of the parts rendering discards; `@track_run`, `tracked_messages_call`, and `llm_step` already do. See [llm-cache.md](llm-cache.md#compute_input_hash).
 - `validations` is a list of 4-tuples (positional, not kwargs): `(validator, passed, severity, details)`.
 - `configs` is a flat `{kind: id}` dict — composite PK forbids two configs of the same kind on one run.
 - Writing the same `(run_id, kind)` twice raises an integrity error. Use the sub-repos to overwrite.
@@ -153,7 +154,7 @@ Pass `provider=` explicitly — the backend name written to `llm_runs.provider`.
 **Contract:**
 
 - The wrapped function MUST be called with `model=` as a keyword argument.
-- It SHOULD accept `messages=` if you want rendered prompts captured (system + user only; assistant/tool messages and multi-part content are skipped).
+- It SHOULD accept `messages=` if you want rendered prompts captured (system + user only; assistant/tool messages and multi-part content are skipped). The whole list, skipped parts included, still keys the row's `input_hash` — so a hash computed by `compute_input_hash(messages=...)` at the call site matches what the decorator writes.
 - Sampling kwargs (`temperature`, `top_p`, `max_tokens`, `seed`, `stop_sequences`) are captured opportunistically.
 
 **On success:** records the run, stamps `_llm_run_id` onto the returned `usage` dict so the caller can attach configs/metrics/tags/outcomes after parsing.
@@ -174,12 +175,13 @@ LlmRunOutcomeRepo().record(run_id, outcome_kind="summary_accepted", score=1.0)
 
 ## Sidecar writers
 
-Outcomes, validations, and links arrive after the original call (reviewer actions, async checks, retries). Each sub-repo uses pf-core's portable `insert_ignore` / `upsert` helpers (keyed on the table's primary key) so re-recording the same composite key is idempotent across all three dialects — without the secondary-index gap locks a delete-then-insert would take, which deadlock under concurrent writers.
+Outcomes, validations, metrics, and links arrive after the original call (reviewer actions, async checks, eval scoring, retries). Each sub-repo uses pf-core's portable `insert_ignore` / `upsert` helpers (keyed on the table's primary key) so re-recording the same composite key is idempotent across all three dialects — without the secondary-index gap locks a delete-then-insert would take, which deadlock under concurrent writers.
 
 ```python
 from pf_core.llm.tracking import (
     LlmRunOutcomeRepo,
     LlmRunValidationRepo,
+    LlmRunMetricRepo,
     LlmRunLinkRepo,
 )
 
@@ -192,11 +194,14 @@ LlmRunValidationRepo().record(
     run_id, validator="post_hoc_check", passed=False, severity="warn", details={"flagged_items": 2}
 )
 
+LlmRunMetricRepo().record(run_id, metrics={"field_ratio": 0.82})
+
 LlmRunLinkRepo().link(parent_id=run_a, child_id=run_b, relation="critic")
 
 # Reads
 LlmRunOutcomeRepo().list_for_run(run_id)
 LlmRunValidationRepo().list_for_run(run_id)
+LlmRunMetricRepo().list_for_run(run_id)  # metric_name -> value
 LlmRunLinkRepo().children(parent_id=run_a, relation="retry")
 LlmRunLinkRepo().parents(child_id=run_b)
 ```
@@ -232,7 +237,7 @@ Returned rows are plain dicts. `Decimal` values (Postgres `NUMERIC`) are coerced
 
 **Tags** — colon-namespaced strings, `kind:value`. Conventional prefixes (not enforced): `env:*`, `experiment:*`, `cohort:*`, `eval:*`, `agent:*`. Stick to them so cohort queries stay tractable.
 
-**Metrics** — numeric only. Composite PK is `(llm_run_id, metric_name)`; overwrite by deleting and re-inserting.
+**Metrics** — numeric only. Composite PK is `(llm_run_id, metric_name)`; `LlmRunMetricRepo.record()` upserts on that key.
 
 ## Patterns that use this module
 

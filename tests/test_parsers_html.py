@@ -250,3 +250,78 @@ class TestReExports:
         assert r6 is h6
         assert r7 is h7
         assert r8 is h8
+
+
+# ---------------------------------------------------------------------------
+# BodyExtractor — offset bookkeeping (incremental counter)
+# ---------------------------------------------------------------------------
+
+
+class _ReferenceExtractor(BodyExtractor):
+    """Recomputes the buffer offset by summing chunks on every access."""
+
+    def _emit(self, chunk: str) -> None:
+        self.text_parts.append(chunk)
+
+    @property  # type: ignore[misc]
+    def _buffer_offset(self) -> int:
+        return sum(len(p) for p in self.text_parts)
+
+    @_buffer_offset.setter
+    def _buffer_offset(self, value: int) -> None:
+        pass
+
+
+class _CountingList(list):
+    """A list that records how often it is iterated."""
+
+    def __init__(self):
+        super().__init__()
+        self.iter_count = 0
+
+    def __iter__(self):
+        self.iter_count += 1
+        return super().__iter__()
+
+
+VARIED_HTML = (
+    "<div><h2>Head &amp; shoulders</h2>"
+    '<p>Intro text with <a href="https://a.example">first link</a> inline.<br>'
+    "second line &mdash; still the same paragraph.</p>"
+    "<ul><li>bullet one</li>"
+    '<li>bullet <em>two</em> with <a href="https://b.example">second link</a></li></ul>'
+    "<script>var x = 1;</script>"
+    '<blockquote>Quoted <a href="https://c.example">third link</a> text</blockquote>'
+    '<p><a href="">dropped</a> and <a href="https://d.example"></a> too, '
+    'but <a href="https://e.example">fourth link</a> stays.</p></div>'
+)
+
+
+class TestBodyExtractorOffsets:
+    def test_offsets_match_recomputed_reference(self):
+        """Incremental counter must agree with summing text_parts, chunk for chunk."""
+        fast = BodyExtractor()
+        fast.feed(VARIED_HTML)
+        fast.close()
+
+        reference = _ReferenceExtractor()
+        reference.feed(VARIED_HTML)
+        reference.close()
+
+        assert fast.text_parts == reference.text_parts
+        assert fast.link_records == reference.link_records
+        assert len(fast.link_records) == 4
+
+    def test_counter_tracks_every_append_site(self):
+        ex = BodyExtractor()
+        ex.feed(VARIED_HTML)
+        ex.close()
+        assert ex._buffer_offset == len("".join(ex.text_parts))
+
+    def test_offset_never_re_sums_the_buffer(self):
+        """Quadratic guard: recording a link must not walk text_parts."""
+        ex = BodyExtractor()
+        ex.text_parts = _CountingList()
+        ex.feed(VARIED_HTML)
+        ex.close()
+        assert ex.text_parts.iter_count == 0

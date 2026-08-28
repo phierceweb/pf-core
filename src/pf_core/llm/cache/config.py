@@ -45,7 +45,6 @@ class AgentCacheConfig:
     semantic_threshold: float = 0.93
     semantic_embedding_model: str = ""
     canonicalize: dict[str, bool] = field(default_factory=dict)
-    max_entries_per_agent: int = 10_000
     on_miss: str = "proceed"  # 'proceed' | 'warn_log'
 
 
@@ -60,13 +59,33 @@ _DEFAULTS = AgentCacheConfig()
 # cache-less deploys).
 _DISABLED_SENTINELS = frozenset({"off", "disabled", "none", "0"})
 
+# Keys accepted by older releases that no longer map to any behaviour.
+_IGNORED_KEYS = frozenset({"max_entries_per_agent"})
+
+# Warned-key set survives config reloads so a legacy key logs once per process,
+# not once every CACHE_CONFIG_RELOAD_SECONDS.
+_warned_ignored_keys: set[str] = set()
+
+
+def _warn_ignored_keys(raw: dict[str, Any]) -> None:
+    """Log ``cache_config_ignored_key`` once per process for each dead key present."""
+    agents = raw.get("agents")
+    sections = [raw.get("defaults") or {}, *(agents.values() if isinstance(agents, dict) else [])]
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        for key in sorted(_IGNORED_KEYS & set(section)):
+            if key not in _warned_ignored_keys:
+                _warned_ignored_keys.add(key)
+                logger.warning("cache_config_ignored_key", key=key)
+
 
 def _reload_seconds() -> int:
     return resolve_int(None, "CACHE_CONFIG_RELOAD_SECONDS", default=60)
 
 
 def _load_config(config_path: str) -> dict[str, Any]:
-    """Fail-empty loader: a missing or unparseable config yields ``{}``."""
+    """Fail-empty loader: a missing, unparseable, or non-mapping config yields ``{}``."""
     if config_path.strip().lower() in _DISABLED_SENTINELS:
         return {"defaults": {"exact": False, "semantic": False}}
 
@@ -80,11 +99,17 @@ def _load_config(config_path: str) -> dict[str, Any]:
     try:
         with open(path) as fh:
             raw = yaml.safe_load(fh) or {}
-        logger.debug("cache_config_loaded", path=str(path))
-        return raw
     except Exception as exc:
         logger.warning("cache_config_load_failed", path=str(path), error=str(exc))
         return {}
+
+    if not isinstance(raw, dict):
+        logger.warning("cache_config_not_a_mapping", path=str(path), got=type(raw).__name__)
+        return {}
+
+    logger.debug("cache_config_loaded", path=str(path))
+    _warn_ignored_keys(raw)
+    return raw
 
 
 _cache: ReloadCache[str, dict[str, Any]] = ReloadCache(loader=_load_config, ttl=_reload_seconds)
@@ -101,9 +126,6 @@ def _build_config(raw: dict[str, Any]) -> AgentCacheConfig:
             raw.get("semantic_embedding_model", _DEFAULTS.semantic_embedding_model)
         ),
         canonicalize=dict(raw.get("canonicalize", {})),
-        max_entries_per_agent=int(
-            raw.get("max_entries_per_agent", _DEFAULTS.max_entries_per_agent)
-        ),
         on_miss=str(raw.get("on_miss", _DEFAULTS.on_miss)),
     )
 
@@ -123,13 +145,20 @@ def get_agent_cache_config(agent_type: str) -> AgentCacheConfig:
     """
     raw = _cache.get(os.environ.get("CACHE_CONFIG", "config/cache.yaml"))
 
-    global_defaults = raw.get("defaults", {})
-    agent_overrides = (raw.get("agents") or {}).get(agent_type, {})
+    # A section of the wrong YAML type degrades to defaults; the loader is fail-empty.
+    global_defaults = raw.get("defaults")
+    agents = raw.get("agents")
+    agent_overrides = agents.get(agent_type) if isinstance(agents, dict) else None
+    if not isinstance(global_defaults, dict):
+        global_defaults = {}
+    if not isinstance(agent_overrides, dict):
+        agent_overrides = {}
 
     merged = {**global_defaults, **agent_overrides}
     return _build_config(merged)
 
 
 def clear_config_cache() -> None:
-    """Reset the in-process config cache (useful for testing)."""
+    """Reset the in-process config cache and the once-per-process warned-key set."""
     _cache.clear()
+    _warned_ignored_keys.clear()

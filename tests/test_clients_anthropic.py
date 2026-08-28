@@ -36,6 +36,7 @@ def _mock_sdk_response(
     cache_creation_input_tokens: int = 0,
     thinking_tokens: int = 0,
     extra_blocks: list | None = None,
+    stop_reason: str | None = "end_turn",
 ):
     """Build a MagicMock that imitates anthropic.types.Message shape."""
     block = MagicMock()
@@ -54,6 +55,7 @@ def _mock_sdk_response(
     response = MagicMock()
     response.content = content_blocks
     response.usage = usage
+    response.stop_reason = stop_reason
     return response
 
 
@@ -256,6 +258,36 @@ class TestAnthropicClientChat:
             # One-shot: warned on the first call only, not the second.
             assert mock_warn.call_count == 1
         _resolver._unknown_warned.discard("anthropic:totally-made-up-model")
+
+
+class TestFinishReason:
+    """stop_reason → usage["finish_reason"], normalised to OpenRouter's vocabulary."""
+
+    def _usage_for(self, stop_reason):
+        with patch("anthropic.Anthropic") as mock_sdk:
+            mock_sdk.return_value.messages.create.return_value = _mock_sdk_response(
+                stop_reason=stop_reason
+            )
+            client = AnthropicClient(api_key="k", model="claude-haiku-4-5")
+            _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}])
+        return usage
+
+    @pytest.mark.parametrize("stop_reason", ["max_tokens", "model_context_window_exceeded"])
+    def test_truncating_stop_reasons_normalise_to_length(self, stop_reason):
+        assert self._usage_for(stop_reason)["finish_reason"] == "length"
+
+    def test_complete_response_is_not_length(self):
+        assert self._usage_for("end_turn")["finish_reason"] == "end_turn"
+
+    def test_absent_stop_reason_is_none(self):
+        assert self._usage_for(None)["finish_reason"] is None
+
+    def test_truncation_logs_a_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="pf_core.clients.anthropic"):
+            self._usage_for("max_tokens")
+        assert any("anthropic_truncated" in r.getMessage() for r in caplog.records)
 
 
 class TestGetClient:

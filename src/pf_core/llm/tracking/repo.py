@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import select
 
 from pf_core.db.repository import Repository
+from pf_core.llm.parse import truncated_from_usage
 from pf_core.llm.tracking import schema as s
 from pf_core.llm.tracking._resolvers import (
     resolve_agent_type_id,
@@ -39,6 +40,9 @@ _USAGE_COLS = (
     "duration_ms",
 )
 
+# Recursion cap for the messages digest; message trees are a few levels deep.
+_DIGEST_MAX_DEPTH = 12
+
 
 def _compute_input_hash(
     *,
@@ -47,15 +51,16 @@ def _compute_input_hash(
     rendered_user: str | None,
     sampling: dict | None,
     configs: dict | None,
+    messages_digest: str | None = None,
 ) -> str:
-    """SHA256 of model + rendered prompts + sampling + configs.
+    """SHA256 of model + rendered prompts + sampling + configs (+ messages digest).
 
     Stable across calls — dicts ordered by key for determinism. Only the
     ``_SAMPLING_COLS`` keys participate from ``sampling``: the filter lives
-    HERE so every producer of this hash (``record()``, the public
-    ``compute_input_hash``, the exact cache keyed on it) agrees by
-    construction — a dirty sampling dict (``model``, transport kwargs)
-    cannot fork the hash.
+    HERE so a dirty sampling dict (``model``, transport kwargs) cannot fork
+    the hash between producers. Producers holding a ``messages`` list must
+    route through :func:`compute_input_hash` so ``messages_digest`` is filled
+    in; ``record()``'s own fallback sees only rendered prompts.
     """
     payload = {
         "model": model,
@@ -66,7 +71,50 @@ def _compute_input_hash(
         ),
         "configs": dict(sorted((configs or {}).items())),
     }
+    if messages_digest is not None:
+        payload["messages_digest"] = messages_digest
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _is_fully_rendered(message: Any) -> bool:
+    """True when ``rendered_system``/``rendered_user`` capture this message whole."""
+    return (
+        isinstance(message, dict)
+        and set(message) <= {"role", "content"}
+        and message.get("role") in ("system", "user")
+        and isinstance(message.get("content"), str)
+    )
+
+
+def _jsonable(value: Any, depth: int = 0) -> Any:
+    """Key-ordered, JSON-safe reduction of *value*.
+
+    Total by construction: ``str()`` is the floor, so no message shape can turn
+    hashing into a raise.
+    """
+    if depth >= _DIGEST_MAX_DEPTH:
+        return str(value)
+    if isinstance(value, dict):
+        return [
+            [str(k), _jsonable(v, depth + 1)]
+            for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))
+        ]
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v, depth + 1) for v in value]
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    return str(value)
+
+
+def _messages_digest(messages: list[dict]) -> str | None:
+    """Digest of the whole list, or ``None`` when the rendered prompts already
+    carry it — everything rendering drops (multi-part content, assistant/tool
+    turns, ``tool_calls``, ``name``) would otherwise collide.
+    """
+    if all(_is_fully_rendered(m) for m in messages):
+        return None
+    blob = json.dumps(_jsonable(messages), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -83,10 +131,15 @@ def compute_input_hash(
 
     Accepts either pre-rendered prompts or a ``messages`` list (OpenRouter
     chat format). When ``messages`` is provided, system and user content is
-    extracted from it.
+    extracted from it; anything the extraction drops — multi-part content,
+    assistant/tool turns, ``tool_calls`` — additionally folds a digest of the
+    whole list into the hash. A list of plain ``{role, content}`` system/user
+    string messages hashes exactly as it did before that digest existed.
 
-    This is the same hash written to ``llm_runs.input_hash`` by
-    :class:`LlmRunRepo` and is the primary key for the exact cache.
+    This is the hash written to ``llm_runs.input_hash`` and the primary key for
+    the exact cache. ``LlmRunRepo.record()`` autocomputes from the rendered
+    prompts it is given, so a caller holding a ``messages`` list must pass
+    ``input_hash=compute_input_hash(...)`` to keep the two in agreement.
 
     Args:
         model: Model slug (e.g. ``"anthropic/claude-opus-4-7"``).
@@ -100,6 +153,7 @@ def compute_input_hash(
     Returns:
         64-character lowercase hex SHA256 string.
     """
+    digest = _messages_digest(messages) if messages else None
     if messages and rendered_system is None and rendered_user is None:
         from pf_core.llm.tracking.decorator import _extract_rendered_prompts
 
@@ -111,6 +165,7 @@ def compute_input_hash(
         rendered_user=rendered_user,
         sampling=sampling,
         configs=configs,
+        messages_digest=digest,
     )
 
 
@@ -155,6 +210,10 @@ class LlmRunRepo(Repository):
         Required: ``agent_type``, ``model``. Everything else is optional —
         the minimum-viable record is just those two plus implicit defaults.
 
+        An omitted ``input_hash`` is computed from ``rendered_prompts``, which
+        cannot represent multi-part or assistant/tool content; a caller holding
+        the ``messages`` list must pass ``compute_input_hash(messages=...)``.
+
         ``extra_run_values`` is an escape hatch for consumers that have added
         project-specific columns to the ``llm_runs`` table via migration (and
         taught the SQLAlchemy ``llm_runs`` Table about them — see
@@ -196,6 +255,11 @@ class LlmRunRepo(Repository):
                 sampling=sampling,
                 configs=configs,
             )
+
+        # Persist the truncation verdict where it is queryable (indexed tag);
+        # usage itself is not stored and a cache replay carries no finish reason.
+        if truncated_from_usage(usage or {}) is True:
+            tags = [*(tags or []), "truncated"]
 
         run_values: dict[str, Any] = {
             "agent_type_id": agent_type_id,

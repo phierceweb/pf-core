@@ -2,7 +2,9 @@
 Comparator registry and built-in comparators.
 
 A comparator takes a golden output dict, a replay output dict, and a context
-dict (sourced from AgentEvalConfig) and returns a float 0.0–1.0 score.
+dict (sourced from AgentEvalConfig) and returns a float 0.0–1.0 score, or a
+``(score, metrics)`` pair whose metrics are stored on the replay run and are
+what ``eval.yaml`` metric gates read.
 
 Built-in comparators:
 - ``structured_diff`` — field-by-field comparison with per-field tolerances.
@@ -14,6 +16,10 @@ Projects register custom comparators::
     @register_comparator("my_compare")
     def my_compare(golden: dict, replay: dict, *, context: dict) -> float:
         ...
+
+    @register_comparator("my_gated_compare")
+    def my_gated_compare(golden: dict, replay: dict, *, context: dict):
+        return 0.9, {"field_ratio": 0.75}
 
 Then reference in eval.yaml::
 
@@ -68,6 +74,17 @@ def get_comparator(name: str) -> Callable[..., float]:
 def list_comparators() -> list[str]:
     """Return all registered comparator names."""
     return sorted(_registry)
+
+
+def split_comparator_result(result: Any) -> tuple[float, dict[str, float]]:
+    """Normalize a comparator return value into ``(score, metrics)``.
+
+    Accepts a bare float or a ``(score, {metric_name: value})`` pair.
+    """
+    if isinstance(result, tuple):
+        score, metrics = result
+        return float(score), {str(k): float(v) for k, v in (metrics or {}).items()}
+    return float(result), {}
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +158,16 @@ def structured_diff(golden: dict, replay: dict, *, context: dict) -> float:
         diff_fields: Fields to compare. Defaults to all keys in the golden dict.
         tolerances: ``{field_name: abs_tolerance}`` for numeric fields.
 
+    A field named in ``diff_fields`` but absent from the golden dict scores
+    0.0 — unlike an explicit null on both sides, which is a legitimate match.
+
     Returns:
         Mean per-field score across all ``diff_fields``. 1.0 = exact match.
+
+    Raises:
+        ConfigurationError: If no name in ``diff_fields`` exists in the golden
+            dict — a typo'd or renamed field would otherwise score every
+            replay 1.0.
     """
     diff_fields: list[str] = context.get("diff_fields") or list(golden.keys())
     tolerances: dict[str, float] = context.get("tolerances") or {}
@@ -150,7 +175,14 @@ def structured_diff(golden: dict, replay: dict, *, context: dict) -> float:
     if not diff_fields:
         return 1.0
 
+    if not any(f in golden for f in diff_fields):
+        raise ConfigurationError(
+            f"structured_diff: none of diff_fields {diff_fields!r} exist in the golden "
+            f"output (golden keys: {sorted(golden)})."
+        )
+
     scores = [
-        _field_score(golden.get(f), replay.get(f), tolerance=tolerances.get(f)) for f in diff_fields
+        _field_score(golden[f], replay.get(f), tolerance=tolerances.get(f)) if f in golden else 0.0
+        for f in diff_fields
     ]
     return sum(scores) / len(scores)

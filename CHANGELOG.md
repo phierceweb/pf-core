@@ -2,6 +2,76 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.21.0 — 2026-08-27
+
+Correctness fixes from an adversarial review of the framework. Behaviour changes throughout —
+a minor bump, not a patch.
+
+### Breaking
+- `pf_core.web.health.require_db()` is a plain function, not a coroutine. `Depends(require_db)`
+  is unchanged; a consumer calling `await require_db()` directly must drop the `await`.
+  `require_db_sync()` is unchanged.
+- `AgentCacheConfig.max_entries_per_agent` is removed. Nothing ever read it — it documented an
+  LRU eviction that does not exist. A `cache.yaml` still carrying the key loads fine and logs
+  `cache_config_ignored_key` once.
+
+### Fixed
+- `parse_llm_json(..., on_truncation="raise")` honours a provider-reported truncation. It
+  previously governed only the structured-recovery step, so a response cut off before its first
+  element closed fell through to `json_repair`, which sealed the payload and returned it — a
+  chopped string, or a number missing its final digits, with no exception and no warning. The
+  signal is authoritative, never inferred from the text: with no signal, parsing is unchanged,
+  so a malformed-but-complete payload (an unescaped inner quote) still parses exactly as before.
+- A known-truncated response is never written to the exact cache, and `tracked_call` does not
+  spend its JSON retry on one — the retry resends the same prompt under the same token cap and
+  truncates identically.
+- Runs whose `usage` carries a truncation finish reason are tagged `truncated` in
+  `llm_run_tags`, so cut-off calls in a batch are queryable after the fact.
+
+- `compute_input_hash` keys off the whole `messages` list whenever rendering cannot represent
+  it — multi-part (vision) content, assistant/tool turns, `tool_calls`, `name`. Every multipart
+  call on one model previously collapsed to a single `input_hash`, so `llm_step(cache=True)`
+  returned the first page's answer for every later page. `@track_run` and `tracked_messages_call`
+  now compute the same key rather than leaving it to `LlmRunRepo.record()`, whose rendered-prompt
+  fallback cannot see those parts. Lists of plain string `system`/`user` messages keep their
+  existing hash; other shapes re-key and repopulate on next use.
+- Job leases are renewed while a worker is alive: every job write restamps `claimed_at`, and
+  `run_subprocess_job` renews on a timer while its child runs. `reclaim_stale` no longer
+  re-queues a still-running job, so a second worker cannot execute it concurrently.
+- `GET /health` and `require_db()` are sync, so FastAPI runs the blocking DB probe in the
+  threadpool instead of on the event loop, where one slow connect stalled every route in the
+  worker. The DB connect is bounded by `DB_CONNECT_TIMEOUT_S`, and an explicit `connect_timeout`
+  already in `DATABASE_URL` still wins.
+- The admin `/budgets` page computes spend the way the guard does — snapshot plus live delta,
+  keyed on the UTC period — instead of a snapshot-only figure keyed on the host's local date.
+  A budget already blocking calls no longer displays `$0.00`.
+- `eval.yaml` metric gates fire. The runner read back metrics from a replay run nothing wrote
+  them to, so every gate silently passed.
+- `structured_diff` no longer scores 1.0 for a field absent from both sides, which made a
+  typo'd or renamed `diff_fields` certify any replay as a perfect match.
+- `parse_body_html` tracks its buffer offset incrementally instead of re-summing every chunk on
+  each anchor — the walk was quadratic, so a 1.5 MB link-heavy page burned ~15 s of CPU.
+- `pf_tables` applies a `pf_schema` fixture whether or not the test names it. A plain
+  non-autouse `pf_schema`, exactly as `docs/testing.md` shows it, previously created zero tables.
+  Marker DDL that redefines an object `pf_schema` already creates now raises `InvalidInputError`
+  naming it; marker DDL that drops the object first is a replacement, not a collision.
+- A `cache.yaml` section of the wrong YAML type (`agents: "searcher"`, `defaults: "nope"`) falls
+  back to framework defaults instead of raising `AttributeError`, matching the loader's
+  documented fail-empty contract.
+
+### Added
+- `pf_core.llm.truncated_from_usage(usage)` — three-way verdict (`True`/`False`/`None`) from
+  `usage["finish_reason"]`, recognising each provider's vocabulary; unrecognised values are
+  unknown, not complete. `parse_llm_json` and `parse_and_validate` accept `truncated=`;
+  `llm_step` gains `on_truncation="warn"|"fail"` (`"fail"` needs `validate` set).
+- `AnthropicClient` reports `usage["finish_reason"]` from the SDK's `stop_reason`;
+  `ClaudeCodeClient` runs `claude --print` with `--output-format json` and reports it from the
+  envelope's `stop_reason`. Passing `--output-format` or `--verbose` via `extra_args` suppresses
+  the envelope (text mode, no signal); an unreadable envelope in the client's own JSON mode
+  raises `ClaudeCodeError` naming the remediation rather than returning machine output.
+- `JobRepo.renew_lease(job_id)` — heartbeat for worker loops that go longer than the lease
+  without a write. Returns `False` once the claim is gone.
+
 ## v0.20.0 — 2026-08-26
 
 ### Added

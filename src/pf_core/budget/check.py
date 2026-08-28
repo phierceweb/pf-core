@@ -229,8 +229,12 @@ def compute_period_end(period: str, start: dt.date) -> dt.date:
 # ---------------------------------------------------------------------------
 
 
-def _current_spent(budget: dict, *, conn=None) -> float:
-    """Return current spent for *budget* = snapshot + live delta since snapshot."""
+def current_spent(budget: dict, *, conn=None) -> float:
+    """Return current spent for *budget* = snapshot + live delta since snapshot.
+
+    The one definition of "spent" — the guard, the admin pages, and anything
+    else reporting budget state must agree.
+    """
     from pf_core.budget.repo import BudgetSnapshotRepo, aggregate_spent
 
     now = dt.datetime.now(dt.timezone.utc)
@@ -268,6 +272,9 @@ def _current_spent(budget: dict, *, conn=None) -> float:
         with transaction() as c:
             delta = _delta(c)
     return float(snap["spent_usd"]) + delta
+
+
+_current_spent = current_spent
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +417,7 @@ def check_budget(
     budgets.sort(key=lambda b: (order.get(b["scope_kind"], 99), b["period"]))
 
     for budget in budgets:
-        spent = _current_spent(budget)
+        spent = current_spent(budget)
         after = spent + projected_cost_usd
         _maybe_log_threshold(budget=budget, spent_before=spent, spent_after=after)
 

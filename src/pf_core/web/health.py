@@ -82,7 +82,7 @@ def health_router(
     router = APIRouter(prefix=prefix)
 
     @router.get("/health")
-    async def health():
+    def health():
         checks: dict[str, str] = {}
         if check_db:
             checks["db"] = _check_db()
@@ -101,15 +101,10 @@ def health_router(
     return router
 
 
-async def require_db() -> None:
+def require_db() -> None:
     """FastAPI dependency that raises 503 if the database is unreachable.
 
-    Usage::
-
-        from pf_core.web.health import require_db
-
-        @app.get("/data", dependencies=[Depends(require_db)])
-        async def get_data(): ...
+    Sync so FastAPI runs the blocking ping in the threadpool, not on the loop.
     """
     result = _check_db()
     if result != "ok":
@@ -117,11 +112,5 @@ async def require_db() -> None:
 
 
 def require_db_sync() -> None:
-    """Sync twin of :func:`require_db` — raises 503 if the database is unreachable.
-
-    Callable inline from sync or async code; under ``Depends()`` FastAPI runs it
-    in a threadpool.
-    """
-    result = _check_db()
-    if result != "ok":
-        raise HTTPException(status_code=503, detail=f"Database unavailable: {result}")
+    """Alias of :func:`require_db`, kept for consumers that call the guard inline."""
+    require_db()

@@ -223,6 +223,40 @@ class TestDbChecks:
         assert connect.status == "FAIL"
         assert not db_file.exists()  # read-only invariant: no file created
 
+    def test_network_probe_uses_the_shared_connect_args(self, monkeypatch):
+        import sqlalchemy
+
+        monkeypatch.delenv("DB_CONNECT_TIMEOUT_S", raising=False)
+        monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@127.0.0.1:3306/db")
+        captured: dict = {}
+
+        def fake_create_engine(_url, **kwargs):
+            captured.update(kwargs)
+            raise RuntimeError("no connect")
+
+        monkeypatch.setattr(sqlalchemy, "create_engine", fake_create_engine)
+        db_checks()
+        assert captured["connect_args"] == {"connect_timeout": 5}
+
+    def test_network_probe_defers_to_a_url_that_sets_the_timeout(self, monkeypatch):
+        import sqlalchemy
+
+        monkeypatch.setenv(
+            "DATABASE_URL", "mysql+pymysql://u:p@127.0.0.1:3306/db?connect_timeout=45"
+        )
+        captured: dict = {}
+
+        def fake_create_engine(_url, **kwargs):
+            captured.update(kwargs)
+            raise RuntimeError("no connect")
+
+        monkeypatch.setattr(sqlalchemy, "create_engine", fake_create_engine)
+        db_checks()
+        assert captured["connect_args"] == {}
+
+    def test_no_second_connect_args_helper(self):
+        assert not hasattr(doctor, "_connect_args")
+
     def test_sqlite_existing_file_connects(self, tmp_path, monkeypatch):
         db_file = tmp_path / "real.db"
         sqlite3.connect(db_file).close()

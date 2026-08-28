@@ -112,6 +112,10 @@ class WorkerOpsMixin:
         """Clear ``claimed_by`` on jobs whose lease expired and still show
         as ``running``. Returns number of rows reset.
 
+        A live worker refreshes ``claimed_at`` — every write it makes, plus
+        :meth:`renew_lease` — so only a job silent for a whole lease window
+        is reclaimed, never one that is merely slow.
+
         A follow-up worker's ``claim_next`` will pick them back up.
         """
         lease = lease_seconds if lease_seconds is not None else _default_lease_seconds()
@@ -133,6 +137,20 @@ class WorkerOpsMixin:
                 )
             )
             return int(result.rowcount or 0)
+
+    def renew_lease(self, job_id: int) -> bool:
+        """Stamp ``claimed_at`` so a long-running worker keeps its claim.
+
+        Returns False when the row is no longer claimed — reclaimed or finished.
+        ``updated_at`` is untouched so it keeps meaning "last real activity".
+        """
+        with self._tx() as conn:
+            result = conn.execute(
+                update(s.jobs)
+                .where(and_(s.jobs.c.id == job_id, s.jobs.c.claimed_by.is_not(None)))
+                .values(claimed_at=func.now())
+            )
+            return bool(result.rowcount)
 
     def purge(
         self,

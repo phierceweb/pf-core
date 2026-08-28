@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from pf_core.jobs._repo_util import _default_lease_seconds
 from pf_core.jobs.repo import JobRepo
 from pf_core.jobs.runtime import Job
 from pf_core.log import get_logger
@@ -43,6 +44,10 @@ __all__ = [
 
 _RUNNING: dict[int, subprocess.Popen] = {}
 _RUNNING_LOCK = threading.Lock()
+
+# Renew several times per lease window so one failed touch is survivable.
+_LEASE_RENEW_FRACTION = 0.25
+_LEASE_RENEW_MIN_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -150,6 +155,33 @@ def stop_workers(handle: WorkerHandle, *, timeout: float = 2.0) -> None:
         t.join(timeout=timeout)
 
 
+def _wait_renewing_lease(proc: subprocess.Popen, job_id: int, repo: JobRepo) -> int:
+    """Block until ``proc`` exits, renewing the job's lease on each tick.
+
+    Without this a child outliving ``JOB_LEASE_SECONDS`` is reclaimed and
+    run a second time — the runner makes no DB writes while it waits.
+    """
+    interval = max(_LEASE_RENEW_MIN_SECONDS, _default_lease_seconds() * _LEASE_RENEW_FRACTION)
+    held = False
+    while True:
+        try:
+            return proc.wait(timeout=interval)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            renewed = repo.renew_lease(job_id)
+        except Exception as exc:
+            logger.warning("job_lease_renew_failed", job_id=job_id, error=repr(exc))
+            continue
+        # Only a lease we actually held can be lost; an unclaimed job (direct
+        # single-process call) never had one.
+        if renewed:
+            held = True
+        elif held:
+            held = False
+            logger.warning("job_lease_lost", job_id=job_id)
+
+
 def run_subprocess_job(job_row: dict, spec: SubprocessJobSpec) -> None:
     """Run one claimed job as a subprocess and transition it terminally.
 
@@ -184,7 +216,7 @@ def run_subprocess_job(job_row: dict, spec: SubprocessJobSpec) -> None:
             with _RUNNING_LOCK:
                 _RUNNING[job_id] = proc
             try:
-                rc = proc.wait()
+                rc = _wait_renewing_lease(proc, job_id, repo)
             finally:
                 with _RUNNING_LOCK:
                     _RUNNING.pop(job_id, None)

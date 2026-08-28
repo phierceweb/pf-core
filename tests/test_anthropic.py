@@ -63,6 +63,7 @@ def _ok_response():
     response = MagicMock()
     response.content = [block]
     response.usage = usage
+    response.stop_reason = "end_turn"
     return response
 
 

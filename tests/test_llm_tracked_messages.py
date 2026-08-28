@@ -150,6 +150,58 @@ class TestSuccessPath:
         parts = [r[0] for r in pf_connection.execute(text("SELECT part FROM llm_prompts"))]
         assert parts == ["system"]
 
+    def test_omitted_input_hash_keys_off_multipart_messages(self, pf_tables, pf_connection):
+        """With no input_hash the row must still carry the messages-derived key:
+        record()'s rendered-prompt fallback cannot see multipart content, so
+        every vision call would otherwise land on one colliding hash."""
+        from pf_core.llm.tracked import tracked_messages_call
+        from pf_core.llm.tracking import compute_input_hash
+
+        multipart = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "describe"},
+                    {"type": "image_url", "image_url": {"url": "https://x/page2.png"}},
+                ],
+            }
+        ]
+        tracked_messages_call(
+            client=FakeChat(),
+            agent_type="probe",
+            messages=multipart,
+            model="test-model",
+            sampling={"temperature": 0.2},
+            configs={"report_config": 7},
+        )
+        assert _one_run(pf_connection)["input_hash"] == compute_input_hash(
+            model="test-model",
+            messages=multipart,
+            sampling={"temperature": 0.2},
+            configs={"report_config": 7},
+        )
+
+    def test_omitted_input_hash_unchanged_for_string_messages(self, pf_tables, pf_connection):
+        """Golden-value pin: the string-message path must keep writing the
+        historical key so existing cache entries stay reachable."""
+        from pf_core.llm.tracked import tracked_messages_call
+
+        tracked_messages_call(
+            client=FakeChat(),
+            agent_type="probe",
+            messages=[
+                {"role": "system", "content": "sys text"},
+                {"role": "user", "content": "user text"},
+            ],
+            model="pin-model",
+            sampling={"temperature": 0.5, "max_tokens": 100},
+            configs={"report_config": 7},
+        )
+        assert (
+            _one_run(pf_connection)["input_hash"]
+            == "37e1fb656f1b92c993a4de63cf71d9f13410b40e4dc41e0b1b83259929c8c0d1"
+        )
+
     def test_input_hash_configs_tags_metrics_items_out(self, pf_tables, pf_connection):
         from pf_core.llm.tracked import tracked_messages_call
 

@@ -74,8 +74,13 @@ With `expect_json=True` the response is parsed via `parse_llm_json(recover=True,
 - Parse succeeds → return `(parsed, run_id)`.
 - Parse fails and `json_retry=True` (default) → invoke once more. The retry writes a **second** `llm_runs` row linked to the first via `llm_run_links` with `relation="retry"`. The returned `run_id` is the retry's.
 - Both attempts unparseable, or `json_retry=False` and the first parse failed → raise `LlmJsonError`.
+- Parse fails **and the provider reported truncation** → raise `LlmJsonError` immediately, no retry (see below).
 
 `LlmJsonError` carries the last raw response on `.raw` so callers can persist it for debugging (e.g. write `<label>.json.error` next to the output).
+
+**Truncation.** `on_truncation` defaults to `"raise"` here (the parser's own default is `"warn"`), so a response the model cut short is surfaced as `LlmJsonError` instead of returning a short list or a sealed partial record. `tracked_call` reads the client's `usage["finish_reason"]` and passes it to `parse_llm_json` as the authoritative [`truncated=` flag](llm-parse.md#detecting-truncation-truncated-not-the-text), so a payload that `json_repair` would otherwise seal into a plausible answer still fails.
+
+**A known-truncated response does not spend the retry.** The retry resends the same prompt under the same token cap, so it truncates again and fails identically — at twice the price. `json_retry` therefore applies only when truncation is unknown or ruled out; a `usage["finish_reason"]` in the truncation vocabulary short-circuits straight to `LlmJsonError` after exactly one client call. Raise the cap (or shorten the prompt) rather than retrying. OpenRouter and Anthropic always report a finish reason; [Claude Code](claude-code.md) reports one whenever its envelope carries it.
 
 ---
 
@@ -101,12 +106,14 @@ content, usage, run_id = tracked_messages_call(
     chat_kwargs={"response_format": {"type": "json_object"}, "timeout": 120},  # forwarded only
     spec=spec,  # registers system (+ user) prompt ids
     provider="openrouter",
-    input_hash=input_hash,  # pair with your cache lookup
+    input_hash=input_hash,  # optional; defaults to compute_input_hash over messages
     configs={"report_config": config_id},
 )
 ```
 
 Differences from `tracked_call`: messages pass through verbatim (rendered system/user are extracted by role for `llm_run_payloads`); `spec` is optional and may be minimal (`{"version": int, "system": str}` for canonical-template registration; a full `load_prompt_spec` dict also registers the `user` part, with `spec_on_change` forwarded to `resolve_prompt_id`); there is no JSON retry (validate downstream with `parse_and_validate`); it returns `(content, usage, run_id)`. Client exceptions record a `status="failed"` row and re-raise, same as `tracked_call`. `on_record_error="warn"` makes the tracking sink best-effort — a failed `record()` logs a warning and returns `run_id=None` instead of masking the call result (for pipelines where tracking must never break the work).
+
+Omitting `input_hash=` keys the row with [`compute_input_hash`](llm-cache.md#compute_input_hash) over the message list, so the recorded value matches what a cache lookup computes even for multi-part or assistant/tool content.
 
 Two attribution kwargs: `metadata=` takes a flat dict, split into tags/metrics via [`split_metadata`](llm-recording.md#split_metadata) and merged beneath any explicit `tags=`/`metrics=` (tags concatenated + deduped; explicit metrics win); `job_id=` attributes the run explicitly, with `None` keeping the ambient-Job fallback. When a [recording window](llm-recording.md) is open, its session metadata merges beneath `metadata=` (call wins) and a per-call summary is appended to the window on success and failure.
 

@@ -36,7 +36,7 @@ Pure-stdlib (`html.parser.HTMLParser`) walker that turns post body HTML into a n
 | Symbol | Purpose |
 |---|---|
 | `parse_body_html(html, *, context_window_chars=120) -> (text, links)` | High-level entry point. Raises `ParseError` if the parser crashes; empty input returns `("", [])`. |
-| `BodyExtractor` | The `HTMLParser` subclass. Subclass for custom tag handling; expose `text_parts` + `link_records` after `feed()`+`close()`. |
+| `BodyExtractor` | The `HTMLParser` subclass. Subclass for custom tag handling; expose `text_parts` + `link_records` after `feed()`+`close()`. A subclass that emits text must call `self._emit(chunk)` rather than appending to `text_parts` directly, or recorded link offsets drift. |
 | `normalize_plain_text(text) -> str` | Strip leading/trailing whitespace; collapse 3+ consecutive blank lines to one. Idempotent. |
 | `BLOCK_TAGS` | `frozenset` of tags whose open/close emits a paragraph break in the buffer (`p`, `div`, `li`, headers, `blockquote`, …). |
 | `SKIP_TAGS` | `frozenset` of tags whose inner text is dropped (`script`, `style`). |

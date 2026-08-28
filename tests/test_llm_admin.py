@@ -283,6 +283,71 @@ def test_budgets_json(admin_db):
     assert payload["data"][0]["scope_value"] == "drafter"
 
 
+# ---------------------------------------------------------------------------
+# Budget spend — must agree with the guard
+# ---------------------------------------------------------------------------
+
+
+def _insert_budget(*, limit_usd: float, period: str = "daily") -> int:
+    with transaction() as conn:
+        res = conn.execute(
+            llm_budgets.insert().values(
+                scope_kind="agent",
+                scope_value="drafter",
+                period=period,
+                limit_usd=limit_usd,
+                action="block",
+                enabled=True,
+            )
+        )
+        return int(res.inserted_primary_key[0])
+
+
+def test_budget_spend_counts_unsnapshotted_runs(admin_db):
+    from pf_core.web.llm_admin.queries import list_budgets_with_spend
+
+    _insert_budget(limit_usd=10.0)
+    LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        usage={"cost_usd": 9.5, "prompt_tokens": 100, "completion_tokens": 50},
+        status="success",
+    )
+
+    row = list_budgets_with_spend()[0]
+    assert row["spent_usd"] == pytest.approx(9.5)
+    assert row["run_count"] == 1
+    assert row["pct_of_limit"] == pytest.approx(0.95)
+
+
+def test_budget_period_start_is_utc_not_host_local(admin_db, monkeypatch):
+    import time
+
+    from pf_core.budget import compute_period_start
+    from pf_core.web.llm_admin.queries import list_budgets_with_spend
+
+    utc_now = dt.datetime.now(dt.timezone.utc)
+    # A zone whose local date is guaranteed to differ from UTC's right now.
+    monkeypatch.setenv("TZ", "Etc/GMT+12" if utc_now.hour < 12 else "Etc/GMT-14")
+    time.tzset()
+    try:
+        assert dt.date.today() != utc_now.date()
+        bid = _insert_budget(limit_usd=10.0)
+        BudgetSnapshotRepo().upsert(
+            budget_id=bid,
+            period_start=compute_period_start("daily"),
+            spent_usd=4.0,
+            run_count=2,
+        )
+
+        row = list_budgets_with_spend()[0]
+        assert row["period_start"] == compute_period_start("daily")
+        assert row["spent_usd"] == pytest.approx(4.0)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
 def test_run_detail_json(admin_db):
     seeded = _seed()
     client = _make_client(admin_db)

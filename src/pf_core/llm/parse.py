@@ -39,6 +39,46 @@ from pf_core.log import get_logger
 logger = get_logger(__name__)
 
 
+# Matched case-folded: a routed provider passes its own casing through.
+_TRUNCATED_REASONS = frozenset(
+    {
+        "length",
+        "max_tokens",
+        "model_context_window_exceeded",
+    }
+)
+_COMPLETE_REASONS = frozenset(
+    {
+        "stop",
+        "end_turn",
+        "stop_sequence",
+        "eos",
+        "tool_use",
+        "tool_calls",
+        "function_call",
+    }
+)
+
+
+def truncated_from_usage(usage: dict | None) -> bool | None:
+    """Read the authoritative truncation flag out of a client ``usage`` dict.
+
+    Returns ``True`` for a recognised token-limit reason, ``False`` for a
+    recognised completion reason, and ``None`` when the client reports
+    nothing or reports a reason outside both vocabularies — an unrecognised
+    reason is unknown, not complete. Never inferred from the response text.
+    """
+    finish_reason = (usage or {}).get("finish_reason")
+    if not isinstance(finish_reason, str):
+        return None
+    normalised = finish_reason.strip().lower()
+    if normalised in _TRUNCATED_REASONS:
+        return True
+    if normalised in _COMPLETE_REASONS:
+        return False
+    return None
+
+
 def parse_llm_json(
     raw: str,
     *,
@@ -46,6 +86,7 @@ def parse_llm_json(
     recover: bool = True,
     strict: bool = False,
     on_truncation: str = "warn",
+    truncated: bool | None = None,
 ) -> dict | list | None:
     """Parse JSON from an LLM response, with fallbacks.
 
@@ -80,11 +121,19 @@ def parse_llm_json(
             fallback. ``False`` opts out of both.
         strict: If ``True``, raise :class:`InvalidInputError` instead
             of returning ``None`` on parse failure.
-        on_truncation: What step 4 does when it salvages a prefix —
-            ``"warn"`` (default) returns the partial list and logs a
-            WARNING; ``"raise"`` raises :class:`InvalidInputError`
+        on_truncation: What happens when the response is known to be
+            truncated — ``"warn"`` (default) returns what was salvaged and
+            logs a WARNING; ``"raise"`` raises :class:`InvalidInputError`
             instead, for callers that need completeness. Independent of
             *strict*.
+        truncated: Authoritative truncation flag from the provider —
+            :func:`truncated_from_usage` reads it off a client ``usage``
+            dict. ``True`` gates the whole pipeline (a truncated response
+            is incomplete even when step 2 parsed it cleanly), ``None``
+            means unknown and leaves every step exactly as it is. Never
+            infer this from the response text: an unescaped inner quote or
+            trailing commentary makes text-based detection fire on
+            complete payloads.
 
     Returns:
         Parsed ``dict`` or ``list``, or ``None`` if parsing fails and
@@ -98,6 +147,11 @@ def parse_llm_json(
     """
     if on_truncation not in ("warn", "raise"):
         raise InvalidInputError(f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}")
+
+    if truncated and on_truncation == "raise":
+        raise InvalidInputError(
+            "LLM response was truncated (the provider reported hitting the token limit)"
+        )
 
     cleaned = strip_markdown_fences(raw)
 
@@ -127,6 +181,8 @@ def parse_llm_json(
         elif result is not None:
             logger.debug("parse_llm_json_succeeded", step="extract")
 
+    warned_truncated = False
+
     # Recovery salvages a prefix and DROPS the tail; the return carries no
     # flag, so the WARNING is the only signal under on_truncation="warn".
     if result is None and recover and expect in ("array", "any"):
@@ -138,6 +194,7 @@ def parse_llm_json(
                     f"LLM response was truncated; recovered {recovered} complete "
                     "item(s) and dropped the tail"
                 )
+            warned_truncated = True
             logger.debug("parse_llm_json_succeeded", step="recover_truncated")
             logger.warning(
                 "parse_llm_json_recovered_truncated",
@@ -165,6 +222,14 @@ def parse_llm_json(
             result = None
         elif expect == "object" and not isinstance(result, dict):
             result = None
+
+    if truncated and not warned_truncated:
+        logger.warning(
+            "parse_llm_json_recovered_truncated",
+            recovered_items=len(result) if isinstance(result, list) else None,
+            raw_len=len(raw),
+            hint="provider reported the response hit the token limit",
+        )
 
     if result is None and strict:
         raise InvalidInputError("Failed to parse JSON from LLM response")

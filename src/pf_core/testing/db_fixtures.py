@@ -30,7 +30,8 @@ pf_connection
 
 pf_tables
     DDL runner. Use the ``@pytest.mark.pf_tables("CREATE TABLE ...")`` marker
-    or define a ``pf_schema`` fixture returning a list of SQL strings.
+    and/or define a ``pf_schema`` fixture returning a list of SQL strings.
+    ``pf_schema`` applies to every test using ``pf_tables``, named or not.
 
 Helpers
 -------
@@ -53,6 +54,9 @@ from sqlalchemy import MetaData, create_engine, event, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.pool import NullPool, StaticPool
 from sqlalchemy.schema import CreateIndex, CreateTable
+
+from pf_core.exceptions import InvalidInputError
+from pf_core.testing import _ddl
 
 
 def _create_test_engine(url: str = "sqlite://") -> Engine:
@@ -231,51 +235,29 @@ def pf_connection(pf_engine: Engine) -> Iterator[Connection]:
 
 @pytest.fixture()
 def pf_tables(request, pf_engine: Engine) -> Engine:
-    """Create tables from marker DDL or from a ``pf_schema`` fixture.
+    """Create tables from a ``pf_schema`` fixture and/or ``@pytest.mark.pf_tables``.
 
-    Usage with marker::
+    ``pf_schema`` applies whether or not the test names it. Marker DDL runs
+    after it and supplements it. See ``docs/testing.md``.
 
-        @pytest.mark.pf_tables(
-            "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
-        )
-        def test_something(pf_tables, pf_connection):
-            pf_connection.execute(text("INSERT INTO items ..."), {...})
-
-    Usage with fixture (for project-wide schemas)::
-
-        # In conftest.py:
-        @pytest.fixture
-        def pf_schema():
-            return [
-                "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)",
-                "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)",
-            ]
-
-        def test_something(pf_tables, pf_connection):
-            ...
-
-    Both approaches can be combined — marker DDL runs after pf_schema.
+    Raises:
+        InvalidInputError: Marker DDL redefines a ``pf_schema`` object.
     """
-    ddl_statements: list[str] = []
+    from_schema = _ddl.schema_ddl(request)
+    from_marker = _ddl.marker_ddl(request)
 
-    # Collect from pf_schema fixture if available
-    if "pf_schema" in request.fixturenames:
-        schema_fixture = request.getfixturevalue("pf_schema")
-        if isinstance(schema_fixture, list):
-            ddl_statements.extend(schema_fixture)
-        elif isinstance(schema_fixture, str):
-            ddl_statements.append(schema_fixture)
+    # A marker that drops the object first is replacing it, not colliding.
+    marker_owns = _ddl.created_objects(from_marker) - _ddl.dropped_objects(from_marker)
+    collisions = _ddl.created_objects(from_schema) & marker_owns
+    if collisions:
+        named = ", ".join(f"{kind} {name}" for kind, name in sorted(collisions))
+        raise InvalidInputError(
+            f"@pytest.mark.pf_tables on {request.node.nodeid} redefines {named}, "
+            "already created by the pf_schema fixture. Marker DDL supplements "
+            "pf_schema; drop the duplicate or override pf_schema for this module."
+        )
 
-    # Collect from @pytest.mark.pf_tables(...) marker
-    marker = request.node.get_closest_marker("pf_tables")
-    if marker:
-        for arg in marker.args:
-            if isinstance(arg, str):
-                ddl_statements.append(arg)
-            elif isinstance(arg, (list, tuple)):
-                ddl_statements.extend(arg)
-
-    # Execute DDL
+    ddl_statements = from_schema + from_marker
     if ddl_statements:
         with pf_engine.connect() as conn, conn.begin():
             for stmt in ddl_statements:

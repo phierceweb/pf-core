@@ -63,6 +63,22 @@ When using SQLite, the engine automatically enables:
 - `PRAGMA journal_mode = WAL`
 - `PRAGMA busy_timeout = <SQLITE_BUSY_TIMEOUT>` — how long (ms) concurrent writers wait for a lock before failing. Defaults to `30000` (30s). Set the `SQLITE_BUSY_TIMEOUT` env var to override (e.g. `0` to fail immediately).
 
+### Connect timeout
+
+MySQL and PostgreSQL engines are created with `connect_timeout` so an unreachable host fails fast instead of blocking the caller until the OS gives up on the socket. Precedence:
+
+1. A `connect_timeout` in the `DATABASE_URL` query string wins — pf-core injects nothing, because a `connect_args` entry would silently override the URL.
+2. `DB_CONNECT_TIMEOUT_S` (seconds).
+3. Default `10`.
+
+Setting `DB_CONNECT_TIMEOUT_S=0` injects nothing and leaves **the driver's own default** in force — unbounded for libpq (psycopg), but pymysql applies its own 10s connect timeout. It does not mean "unbounded" everywhere.
+
+SQLite (no socket) is unaffected, as are drivers that don't take a `connect_timeout` kwarg — anything other than pymysql, MySQLdb, psycopg, psycopg2.
+
+Only the TCP/handshake phase is bounded. Statement execution and pool checkout have their own (unbounded / `pool_timeout`) limits.
+
+`pf-doctor --db` resolves its probe timeout through the same helper (`pf_core.db.connection.connect_args`), with a `5` second default instead of `10`.
+
 ### MySQL foreign keys
 
 When using MySQL, the engine enables `SET foreign_key_checks = 1` on each connection.

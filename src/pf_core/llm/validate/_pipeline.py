@@ -128,6 +128,8 @@ def parse_and_validate(
     stages: tuple[str, ...] = ("shape", "semantic", "cross_field"),
     expect: str = "any",
     missing_pipeline: Literal["raise", "fallback"] = "raise",
+    truncated: bool | None = None,
+    on_truncation: Literal["warn", "fail"] = "warn",
 ) -> ValidationResult:
     """Parse a raw LLM response and run the registered validation pipeline.
 
@@ -155,6 +157,15 @@ def parse_and_validate(
             ``"fallback"`` emits a WARNING log and returns
             ``ValidationResult(ok=False,
             signals=[no_pipeline_registered])``.
+        truncated: Authoritative truncation flag from the client's
+            ``usage`` dict (see
+            :func:`~pf_core.llm.parse.truncated_from_usage`). Forwarded to
+            :func:`parse_llm_json`, where it logs a WARNING.
+        on_truncation: What a ``truncated=True`` response means. ``"warn"``
+            (default) runs the pipeline anyway, so an
+            incomplete-but-parseable payload still reaches the validators.
+            ``"fail"`` short-circuits with a single ``<agent>_truncated``
+            error signal and ``value=None``.
 
     Returns:
         A :class:`ValidationResult` describing parse + validation outcome.
@@ -188,8 +199,29 @@ def parse_and_validate(
         )
         return ValidationResult(ok=False, value=None, signals=[sig])
 
+    if truncated and on_truncation == "fail":
+        sig = ValidationSignal(
+            validator=f"{agent_type}_truncated",
+            severity="error",
+            passed=False,
+            details={"reason": "provider reported the response hit the token limit"},
+        )
+        if run_id is not None:
+            _write_signals_to_db(
+                run_id=run_id,
+                schema_version=pipeline.schema_version,
+                agent_type=agent_type,
+                signals=[sig],
+            )
+        return ValidationResult(
+            ok=False,
+            value=None,
+            signals=[sig],
+            schema_version=pipeline.schema_version,
+        )
+
     # --- Parse ---
-    parsed = parse_llm_json(raw_response, expect=expect, strict=False)
+    parsed = parse_llm_json(raw_response, expect=expect, strict=False, truncated=truncated)
     signals: list[ValidationSignal] = []
 
     if parsed is None:

@@ -25,16 +25,25 @@ MESSAGES = [
 
 
 class FakeChat:
-    def __init__(self, content: str = '{"a": 1}', *, raise_exc: Exception | None = None):
+    def __init__(
+        self,
+        content: str = '{"a": 1}',
+        *,
+        raise_exc: Exception | None = None,
+        finish_reason: str | None = None,
+    ):
         self.content = content
         self.raise_exc = raise_exc
+        self.finish_reason = finish_reason
         self.calls: list[dict[str, Any]] = []
 
     def chat(self, *, messages, model="", **kwargs):
         self.calls.append({"messages": messages, "model": model, **kwargs})
         if self.raise_exc:
             raise self.raise_exc
+        extra = {"finish_reason": self.finish_reason} if self.finish_reason else {}
         return self.content, {
+            **extra,
             "prompt_tokens": 5,
             "completion_tokens": 3,
             "cost_usd": 0.0001,
@@ -180,6 +189,54 @@ class TestCache:
         assert statuses.count("success") == 1
         assert "cache_hit" in statuses
 
+    def test_multipart_pages_do_not_share_a_cache_entry(
+        self, pf_tables, pf_connection, exact_cache
+    ):
+        """The vision regression: two pages differing only inside multi-part
+        content must each reach the model, not serve page 1's answer."""
+        from pf_core.llm.step import llm_step
+
+        def page(name: str) -> list[dict]:
+            return [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "transcribe"},
+                        {"type": "image_url", "image_url": {"url": f"https://x/{name}"}},
+                    ],
+                }
+            ]
+
+        class PerPageChat(FakeChat):
+            def chat(self, *, messages, model="", **kwargs):
+                url = messages[0]["content"][1]["image_url"]["url"]
+                self.calls.append({"messages": messages, "model": model})
+                return f"text of {url}", {"cost_usd": 0.0, "duration_ms": 1}
+
+        client = PerPageChat()
+        r1 = llm_step(
+            client=client, agent_type="step_raw", messages=page("p1.png"), model="m1", cache=True
+        )
+        r2 = llm_step(
+            client=client, agent_type="step_raw", messages=page("p2.png"), model="m1", cache=True
+        )
+        assert len(client.calls) == 2
+        assert r2.cache_hit is False
+        assert r1.content == "text of https://x/p1.png"
+        assert r2.content == "text of https://x/p2.png"
+
+    def test_uncached_run_is_findable_by_the_cache_key(self, pf_tables, pf_connection):
+        """cache=False still stamps the row: the recorded hash must be the one
+        compute_input_hash returns, or find_by_hash silently misses."""
+        from pf_core.llm.step import llm_step
+        from pf_core.llm.tracking import compute_input_hash
+
+        multipart = [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
+        llm_step(client=FakeChat(), agent_type="step_raw", messages=multipart, model="m1")
+        assert _runs(pf_connection)[0]["input_hash"] == compute_input_hash(
+            model="m1", messages=multipart
+        )
+
     def test_validate_none_hit_returns_raw(self, pf_tables, pf_connection, exact_cache):
         from pf_core.llm.step import llm_step
 
@@ -228,6 +285,138 @@ class TestCache:
         )
         assert r2.cache_hit is False
         assert len(client.calls) == 2
+
+
+class TestTruncation:
+    """A known-truncated response must never enter the cache: a hit replays
+    stored text with no finish reason, so the flag would be lost forever."""
+
+    TRUNCATED = '{"a": 1, "body": "got cut o'
+
+    def _cache_rows(self, conn) -> int:
+        return conn.execute(text("SELECT count(*) FROM llm_cache_entries")).scalar_one()
+
+    def test_truncated_response_is_not_cached(self, pf_tables, pf_connection, exact_cache):
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat(content=self.TRUNCATED, finish_reason="length")
+        res = llm_step(
+            client=client,
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            cache=True,
+            validate="object",
+        )
+        assert res.cache_hit is False
+        assert self._cache_rows(pf_connection) == 0
+
+    def test_truncated_unvalidated_response_is_not_cached(
+        self, pf_tables, pf_connection, exact_cache
+    ):
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat(content=self.TRUNCATED, finish_reason="max_tokens")
+        llm_step(client=client, agent_type="step_raw", messages=MESSAGES, model="m1", cache=True)
+        assert self._cache_rows(pf_connection) == 0
+
+    def test_second_call_is_not_served_a_poisoned_hit(self, pf_tables, pf_connection, exact_cache):
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat(content=self.TRUNCATED, finish_reason="length")
+        llm_step(
+            client=client,
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            cache=True,
+            validate="object",
+        )
+        res = llm_step(
+            client=client,
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            cache=True,
+            validate="object",
+        )
+        assert res.cache_hit is False
+        assert len(client.calls) == 2
+
+    def test_unknown_truncation_still_caches(self, pf_tables, pf_connection, exact_cache):
+        """A client that reports no finish reason — unknown must not become "truncated"."""
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat(content='{"a": 1}')
+        llm_step(
+            client=client,
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            cache=True,
+            validate="object",
+        )
+        assert self._cache_rows(pf_connection) == 1
+
+    def test_default_warns_and_still_returns_the_value(self, pf_tables, pf_connection):
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat(content=self.TRUNCATED, finish_reason="length")
+        res = llm_step(
+            client=client,
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            validate="object",
+        )
+        assert res.validation is not None
+        assert res.validation.ok is True
+        assert res.value.a == 1
+
+    def test_on_truncation_fail_returns_a_failing_validation(self, pf_tables, pf_connection):
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat(content=self.TRUNCATED, finish_reason="length")
+        res = llm_step(
+            client=client,
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            validate="object",
+            on_truncation="fail",
+        )
+        assert res.value is None
+        assert res.validation is not None
+        assert res.validation.ok is False
+        assert [s.validator for s in res.validation.failures] == ["step_probe_truncated"]
+
+    def test_on_truncation_fail_leaves_a_complete_response_alone(self, pf_tables, pf_connection):
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat(content='{"a": 1}', finish_reason="stop")
+        res = llm_step(
+            client=client,
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            validate="object",
+            on_truncation="fail",
+        )
+        assert res.validation is not None
+        assert res.validation.ok is True
+
+    def test_rejects_unknown_on_truncation(self, pf_tables, pf_connection):
+        from pf_core.exceptions import InvalidInputError
+        from pf_core.llm.step import llm_step
+
+        with pytest.raises(InvalidInputError):
+            llm_step(
+                client=FakeChat(),
+                agent_type="step_probe",
+                messages=MESSAGES,
+                model="m1",
+                on_truncation="raise",
+            )
 
 
 class TestBudget:

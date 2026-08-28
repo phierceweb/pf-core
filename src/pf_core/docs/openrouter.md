@@ -56,7 +56,7 @@ content, usage = client.chat(
 
 **content** (`str`): The assistant's response text, exactly as returned by the model — nothing is appended.
 
-**usage** (`dict`): Token counts and cost. Carries the shared key set of [`AnthropicClient.chat`](anthropic.md) and [`ClaudeCodeClient.chat`](claude-code.md), plus `finish_reason`:
+**usage** (`dict`): Token counts and cost. Carries the shared key set of [`AnthropicClient.chat`](anthropic.md) and [`ClaudeCodeClient.chat`](claude-code.md):
 
 ```python
 {
@@ -68,13 +68,13 @@ content, usage = client.chat(
     "cost_usd": 0.0023,  # from OpenRouter's reported `cost` field
     "duration_ms": 3400,
     "system_fingerprint": None,
-    "finish_reason": "stop",  # OpenRouter-only extra key
+    "finish_reason": "stop",  # all three clients report one
 }
 ```
 
 `cost_usd` is OpenRouter's own reported cost for the call (the `usage.cost` field) — not a local estimate.
 
-`finish_reason` is the first choice's finish reason as the route reported it (`None` when absent). **`"length"` means the model hit `max_tokens` and `content` is truncated mid-stream** — a short string that looks complete. Truncated content is still returned (so [`parse_llm_json(recover=True)`](llm-parse.md) can salvage it), and the client logs an `openrouter_truncated` warning; callers that need whole responses must check the key:
+`finish_reason` is the first choice's finish reason as the route reported it (`None` when absent). **`"length"` means the model hit `max_tokens` and `content` is truncated mid-stream** — a short string that looks complete. Truncated content is still returned (so [`parse_llm_json(recover=True)`](llm-parse.md) can salvage it), and the client logs an `openrouter_truncated` warning; callers that need whole responses must check the key (or hand it to [`parse_llm_json(truncated=...)`](llm-parse.md#detecting-truncation-truncated-not-the-text)):
 
 ```python
 content, usage = client.chat(messages, model=model, max_tokens=4096)

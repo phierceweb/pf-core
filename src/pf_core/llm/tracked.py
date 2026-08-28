@@ -21,13 +21,14 @@ import time
 from typing import Any, Protocol
 
 from pf_core.exceptions import AppError, InvalidInputError
-from pf_core.llm.parse import parse_llm_json
+from pf_core.llm.parse import parse_llm_json, truncated_from_usage
 from pf_core.llm.prompts import render_spec
-from pf_core.llm.recording import current_session_metadata, record_call
+from pf_core.llm.recording import call_summary, current_session_metadata, record_call
 
 try:
     from pf_core.llm.tracking import (
         LlmRunRepo,
+        compute_input_hash,
         resolve_agent_type_id,
         resolve_prompt_id,
         split_metadata,
@@ -121,11 +122,16 @@ def tracked_call(
         json_retry: when ``True`` (and ``expect_json``), retry once on a
             parse failure. The retry writes a second ``llm_runs`` row
             linked to the first via ``llm_run_links.relation="retry"``.
+            Skipped when the provider reported truncation — the retry
+            would resend the same prompt under the same cap.
         on_truncation: forwarded to :func:`parse_llm_json`. ``"raise"``
             (default) treats a truncated response as a parse failure —
             retried, then surfaced as :class:`LlmJsonError` — rather than
             returning the salvaged prefix as if it were the whole answer.
-            ``"warn"`` opts back into the prefix.
+            ``"warn"`` opts back into the prefix. Truncation is taken from
+            the client's ``usage["finish_reason"]`` plus the bracket-level
+            recovery step; a client that reports no finish reason leaves
+            only the latter.
         on_record_error: ``"warn"`` makes the tracking sink best-effort —
             a failed ``record()`` logs a warning and yields ``run_id=None``
             instead of masking the call result. A record failure never
@@ -142,8 +148,9 @@ def tracked_call(
 
     Raises:
         LlmJsonError: ``expect_json`` is ``True`` and parsing failed on
-            both the initial call and the retry (or ``json_retry`` is
-            ``False`` and the initial parse failed).
+            both the initial call and the retry (or the retry was skipped
+            because ``json_retry`` is ``False`` or the response was known
+            to be truncated).
         InvalidInputError: unknown ``on_truncation`` or ``on_record_error``
             value.
     """
@@ -170,7 +177,7 @@ def tracked_call(
 
     _repo = repo if repo is not None else LlmRunRepo()
 
-    content, run_id = _invoke_and_record(
+    content, usage, run_id = _invoke_and_record(
         client=client,
         repo=_repo,
         agent_type=agent_type,
@@ -184,8 +191,15 @@ def tracked_call(
     if not expect_json:
         return content, run_id
 
+    truncated = truncated_from_usage(usage)
     try:
-        parsed = parse_llm_json(content, recover=True, strict=True, on_truncation=on_truncation)
+        parsed = parse_llm_json(
+            content,
+            recover=True,
+            strict=True,
+            on_truncation=on_truncation,
+            truncated=truncated,
+        )
         return parsed, run_id
     except InvalidInputError:
         logger.warning(
@@ -193,11 +207,14 @@ def tracked_call(
             agent_type=agent_type,
             model=model,
             preview=(content or "")[:200],
+            truncated=truncated,
         )
-        if not json_retry:
+        # The retry resends the same prompt under the same cap, so a known
+        # token-limit cut just truncates again at the caller's expense.
+        if not json_retry or truncated:
             raise LlmJsonError(content)
 
-    retry_content, retry_run_id = _invoke_and_record(
+    retry_content, retry_usage, retry_run_id = _invoke_and_record(
         client=client,
         repo=_repo,
         agent_type=agent_type,
@@ -210,7 +227,11 @@ def tracked_call(
     )
     try:
         parsed = parse_llm_json(
-            retry_content, recover=True, strict=True, on_truncation=on_truncation
+            retry_content,
+            recover=True,
+            strict=True,
+            on_truncation=on_truncation,
+            truncated=truncated_from_usage(retry_usage),
         )
         return parsed, retry_run_id
     except InvalidInputError as exc:
@@ -228,7 +249,7 @@ def _invoke_and_record(
     system_prompt_id: int | None,
     parent_run: tuple[int, str] | None = None,
     on_record_error: str = "raise",
-) -> tuple[str, int | None]:
+) -> tuple[str, dict, int | None]:
     """One chat invocation + one ``llm_runs`` row.
 
     Records ``status="failed"`` on any client exception (timeout,
@@ -292,7 +313,7 @@ def _invoke_and_record(
         model_fingerprint=usage.get("system_fingerprint"),
         raw_response=content,
     )
-    return content, run_id
+    return content, usage, run_id
 
 
 def tracked_messages_call(
@@ -323,6 +344,10 @@ def tracked_messages_call(
     one ``llm_runs`` row — ``status="failed"`` with the error captured when
     the client raises (then re-raises) — and returns
     ``(content, usage, run_id)``.
+
+    ``input_hash`` defaults to
+    :func:`~pf_core.llm.tracking.compute_input_hash` over *messages* (with
+    model/sampling/configs), so the recorded key matches the exact cache's.
 
     ``sampling`` is forwarded to ``chat()`` AND recorded; ``chat_kwargs`` is
     forwarded only (transport options like ``response_format``/``timeout``
@@ -378,6 +403,12 @@ def tracked_messages_call(
         metrics = {**md_metrics, **(metrics or {})}
 
     rendered_system, rendered_user = _extract_rendered_prompts(messages)
+    # record()'s fallback would miss multi-part and assistant/tool content.
+    resolved_hash = (
+        input_hash
+        if input_hash is not None
+        else compute_input_hash(model=model, messages=messages, sampling=sampling, configs=configs)
+    )
     _repo = repo if repo is not None else LlmRunRepo()
 
     def _record(**kwargs: Any) -> int | None:
@@ -389,7 +420,7 @@ def tracked_messages_call(
                 sampling=sampling or None,
                 system_prompt_id=system_prompt_id,
                 user_prompt_id=user_prompt_id,
-                input_hash=input_hash,
+                input_hash=resolved_hash,
                 configs=configs,
                 tags=tags,
                 metrics=metrics,
@@ -420,7 +451,7 @@ def tracked_messages_call(
             http_status=http_status if isinstance(http_status, int) else None,
         )
         record_call(
-            _call_summary(
+            call_summary(
                 agent_type=agent_type,
                 model=model,
                 provider=provider,
@@ -447,7 +478,7 @@ def tracked_messages_call(
         raw_response=content if isinstance(content, str) else None,
     )
     record_call(
-        _call_summary(
+        call_summary(
             agent_type=agent_type,
             model=model,
             provider=provider,
@@ -458,31 +489,6 @@ def tracked_messages_call(
         )
     )
     return content, usage, run_id
-
-
-def _call_summary(
-    *,
-    agent_type: str,
-    model: str,
-    provider: str | None,
-    spec: dict | None,
-    usage: dict,
-    success: bool,
-    run_id: int | None,
-) -> dict[str, Any]:
-    """Recording-window summary for one call; usage values may be None → 0."""
-    return {
-        "agent_type": agent_type,
-        "model": model,
-        "provider": provider,
-        "prompt_version": int(spec["version"]) if spec else None,
-        "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
-        "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
-        "cost_usd": float(usage.get("cost_usd", 0.0) or 0.0),
-        "duration_ms": int(usage.get("duration_ms", 0) or 0),
-        "success": success,
-        "run_id": run_id,
-    }
 
 
 __all__ = ["ChatClient", "LlmJsonError", "tracked_call", "tracked_messages_call"]

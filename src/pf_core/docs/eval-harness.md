@@ -53,7 +53,7 @@ All replay runs are regular tracked runs — they appear in cost reports, the ad
 
 | Name | Description |
 |---|---|
-| `structured_diff` | Field-by-field comparison with per-field tolerances. Returns mean score across `diff_fields`. |
+| `structured_diff` | Field-by-field comparison with per-field tolerances. Returns mean score across `diff_fields`. A named field missing from the golden output scores 0.0 (an explicit null on both sides still scores 1.0); if *no* name in `diff_fields` exists in the golden output — a typo'd or renamed field — it raises `ConfigurationError` rather than scoring every replay 1.0. |
 | `llm_judge` | Sends golden + replay output to a judge LLM; parses `{"score": 0-1, "rationale": "..."}`. The judge agent is routed via `resolve_agent(judge_agent_type)` and must be declared in `model_router.yaml` — an unconfigured or unresolvable judge agent raises `ConfigurationError` (the eval fails loudly rather than scoring against a default model). The judge call is itself a tracked `llm_runs` row, linked to the replay run via `llm_run_links(relation='critic')`. The judge agent's YAML sampling is honored — `temperature: 0.0` and `max_tokens: 512` apply only as defaults for unset keys. |
 | `custom:<name>` | Project-registered comparator via `@register_comparator("name")`. |
 
@@ -208,7 +208,7 @@ agents:
 | `pass_threshold` | `0.85` | Mean score required for the overall eval to pass. |
 | `parallelism` | `4` | Concurrent replay workers. |
 | `sampling` | `{temperature: 0.0}` | Sampling overrides for replay calls (merged over base agent config). |
-| `diff_fields` | all golden fields | Fields to compare in `structured_diff`. |
+| `diff_fields` | all golden fields | Fields to compare in `structured_diff`. Names must exist in the golden output — see the comparator table for how missing names are scored. |
 | `tolerances` | `{}` | Per-field abs tolerance for numeric fields (int or float; bools always compare exact). |
 | `judge_agent_type` | `null` (falls back to `<agent>_judge`) | Slug of the judge agent type when `compare: llm_judge`. When unset, the runner uses `<agent_type>_judge`. The resolved slug must exist in `model_router.yaml`. |
 | `metrics` | `[]` | Optional metric gates (see below). |
@@ -218,6 +218,7 @@ agents:
 ```yaml
 agents:
   summarizer:
+    compare: custom:summary_compare  # must return the gated metrics
     metrics:
       - name: field_ratio
         min: 0.70
@@ -225,7 +226,9 @@ agents:
         max: 50
 ```
 
-Gates check `llm_run_metrics` on the replay run (if the service wrote them). If the metric is absent, the gate is skipped. If a gate fails, the run scores `0.0`.
+Gates check `llm_run_metrics` on the replay run. The runner writes those rows from the metrics the comparator returned (see [Custom comparators](#custom-comparators)) before reading them back, so the only metrics a gate can see are ones the comparator produced for that replay.
+
+Gates fail closed: a run scores `0.0` when a gate's bound is breached **and** when the named metric is absent — a gate nothing can satisfy is a config error, logged as `eval_metric_gate_unavailable`, not a silent pass. `compare: structured_diff` and `compare: llm_judge` return a bare score, so gating an agent means giving it a comparator that returns metrics.
 
 ### Environment variable
 
@@ -265,6 +268,27 @@ Reference in `eval.yaml`:
 agents:
   extractor:
     compare: custom:amount_compare
+```
+
+### Returning metrics for gates
+
+A comparator may return `(score, {metric_name: value})` instead of a bare float. The metrics are written to `llm_run_metrics` on the replay run — visible in the run admin, comparable across experiment tags, and the only thing [metric gates](#metric-gates) read.
+
+```python
+@register_comparator("amount_compare_gated")
+def amount_compare_gated(golden: dict, replay: dict, *, context: dict):
+    fields = [f for f in golden if replay.get(f) == golden[f]]
+    ratio = len(fields) / len(golden) if golden else 0.0
+    return ratio, {"field_ratio": ratio}
+```
+
+```yaml
+agents:
+  extractor:
+    compare: custom:amount_compare_gated
+    metrics:
+      - name: field_ratio
+        min: 0.70
 ```
 
 ---
@@ -384,9 +408,6 @@ agents:
     compare: llm_judge
     judge_agent_type: summarizer_judge
     pass_threshold: 0.80
-    metrics:
-      - name: field_ratio
-        min: 0.70
 
   classifier:
     compare: structured_diff

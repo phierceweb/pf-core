@@ -16,6 +16,7 @@ from pf_core.jobs._repo_util import (
     _coerce_row_utc,
     _dump_model,
     _step_creation_lock,
+    _touch_job_lease,
 )
 
 if TYPE_CHECKING:
@@ -89,6 +90,7 @@ class StepEventsMixin:
                         inputs=_dump_model(inputs),
                     )
                 )
+                _touch_job_lease(conn, job_id)
                 return int(result.inserted_primary_key[0])  # type: ignore[index]  # set after insert
 
     def finish_step(
@@ -169,6 +171,8 @@ class StepEventsMixin:
                         )
                     )
 
+            _touch_job_lease(conn, row["job_id"])
+
     def add_event(
         self,
         job_id: int,
@@ -187,6 +191,7 @@ class StepEventsMixin:
                     context=context,
                 )
             )
+            _touch_job_lease(conn, job_id)
             return int(result.inserted_primary_key[0])  # type: ignore[index]  # set after insert
 
     def get_events(

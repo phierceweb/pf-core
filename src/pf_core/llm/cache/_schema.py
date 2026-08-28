@@ -69,7 +69,7 @@ llm_cache_entries = Table(
     # Denormalized response — avoids payload join on every hit
     Column("parsed_output", _JSON, nullable=True),
     Column("raw_response", _LARGE_TEXT, nullable=True),
-    # Eviction / analytics
+    # Analytics + TTL — no size-based eviction reads these
     Column("hit_count", _UINT, nullable=False, server_default="0"),
     Column("last_hit_at", _TIMESTAMP_US, nullable=True),
     Column("expires_at", _TIMESTAMP_US, nullable=True),

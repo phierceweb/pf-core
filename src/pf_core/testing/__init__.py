@@ -16,5 +16,5 @@ This package provides two pytest plugins:
     Provides:
         pf_engine     — File-backed SQLite engine (per-test temp file), reset per test.
         pf_connection — Connection with an active transaction, rolled back after each test.
-        pf_tables     — Marker-driven DDL: ``@pytest.mark.pf_tables(...)``.
+        pf_tables     — DDL from a ``pf_schema`` fixture and/or ``@pytest.mark.pf_tables(...)``.
 """

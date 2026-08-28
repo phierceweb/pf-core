@@ -137,7 +137,7 @@ When *no* enabled row matches any of those scopes the call is uncapped, and that
 
 ### Spent calculation
 
-Per budget: snapshot value + live delta from `llm_runs`. Runs with `status IN ('cache_hit', 'budget_blocked')` are excluded.
+Per budget: snapshot value + live delta from `llm_runs`. Runs with `status IN ('cache_hit', 'budget_blocked')` are excluded. `pf_core.budget.current_spent(budget)` is that figure — the guard and every reporting surface (including the admin `/budgets` page) read it rather than the snapshot alone.
 
 The two halves meet at one cutoff. `refresh_snapshots()` reads the DB server clock once, aggregates `created_at < cutoff`, and stores that same value as the snapshot's `last_updated`; the live delta then sums `created_at >= last_updated`. Every run falls in exactly one half — nothing is lost to the window between aggregating and writing.
 

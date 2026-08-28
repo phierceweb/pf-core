@@ -140,8 +140,11 @@ Returns `(content, usage)`. `content` is the concatenation of all text blocks in
     "cost_usd": <float, estimated from the model's pricing prefix>,
     "duration_ms": <int, wall-clock>,
     "system_fingerprint": None,
+    "finish_reason": <str | None, normalised from response.stop_reason>,
 }
 ```
+
+`finish_reason` normalises the SDK's `stop_reason` onto OpenRouter's vocabulary so callers have one truncation check across backends: both `"max_tokens"` and `"model_context_window_exceeded"` become **`"length"`** (the response text was cut mid-stream), and every other reason (`"end_turn"`, `"tool_use"`, `"refusal"`, …) passes through unchanged. A `"length"` response also logs an `anthropic_truncated` warning. Hand the key to [`parse_llm_json(truncated=...)`](llm-parse.md#detecting-truncation-truncated-not-the-text) rather than trying to spot truncation in the text.
 
 `reasoning_tokens` is populated from `response.usage.thinking_tokens` for reasoning models (Opus 4.7+); older SDK responses lack the field and it falls back to `0`. These tokens are billed at the output rate and the SDK already counts them inside `output_tokens`, so the cost estimate does not add them a second time.
 

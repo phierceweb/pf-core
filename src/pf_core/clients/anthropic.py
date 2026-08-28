@@ -337,6 +337,15 @@ class AnthropicClient:
                 text_parts.append(block_text)
         content = "".join(text_parts)
 
+        # Both stop reasons mean the text was cut mid-stream; normalised to
+        # OpenRouter's "length" so callers have one truncation check.
+        stop_reason = getattr(response, "stop_reason", None)
+        finish_reason = (
+            "length"
+            if stop_reason in ("max_tokens", "model_context_window_exceeded")
+            else stop_reason
+        )
+
         usage_attr = getattr(response, "usage", None)
         prompt_tokens = int(getattr(usage_attr, "input_tokens", 0) or 0)
         completion_tokens = int(getattr(usage_attr, "output_tokens", 0) or 0)
@@ -366,7 +375,17 @@ class AnthropicClient:
             ),
             "duration_ms": elapsed_ms,
             "system_fingerprint": None,
+            "finish_reason": finish_reason,
         }
+
+        if finish_reason == "length":
+            _log.warning(
+                "anthropic_truncated",
+                model=resolved_model,
+                stop_reason=stop_reason,
+                completion_tokens=completion_tokens,
+            )
+
         return content, usage
 
     def preflight(self, *, timeout: int = DEFAULT_PREFLIGHT_TIMEOUT_SECONDS) -> None:

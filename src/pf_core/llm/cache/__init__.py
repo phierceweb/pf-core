@@ -118,7 +118,7 @@ def cache_lookup(
 
     Args:
         agent_type: Agent slug used to load policy from ``cache.yaml``.
-        input_hash: SHA256 of model + rendered prompts + sampling + configs.
+        input_hash: SHA256 of model + prompts + sampling + configs.
             Computed by :func:`pf_core.llm.tracking.compute_input_hash`.
         canonical_text: Canonicalized prompt text, reserved for future
             semantic lookup. Currently ignored.

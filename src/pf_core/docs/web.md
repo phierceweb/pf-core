@@ -195,7 +195,9 @@ from pf_core.web.health import require_db
 async def get_data(): ...
 ```
 
-`require_db_sync` is the plain-function twin for guards **called inline** rather than declared as dependencies (`require_db_sync()` as the first statement of a route or helper). Calling the async variant inline would return an un-awaited coroutine and silently skip the check — use the sync twin anywhere you call it yourself. It also works under `Depends()` (FastAPI runs sync dependencies in the threadpool).
+`require_db_sync` is an alias of `require_db`, kept for consumers that call the guard **inline** (`require_db_sync()` as the first statement of a route or helper). Both are plain functions: the DB ping is blocking I/O, so the endpoint and the dependency are declared sync and FastAPI runs them in the threadpool rather than stalling the event loop for every other request in the worker. Do not `await` either one.
+
+Only the connect phase of the ping is bounded, by `DB_CONNECT_TIMEOUT_S` (see [database.md](database.md)): an unreachable host fails fast, but the `SELECT 1` has no statement timeout and pool checkout still waits SQLAlchemy's default `pool_timeout` (30s). A database that accepts connections and then stalls therefore parks each probe on a threadpool worker (anyio's default pool is ~40) for as long as it takes — the event loop keeps serving, but other sync routes queue behind the probes. Under aggressive load-balancer polling, point the balancer at a `health_router(check_db=False)` mount and keep the DB-checking one on a separate prefix.
 
 ## Safe markdown rendering
 

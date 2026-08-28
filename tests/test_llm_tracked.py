@@ -301,6 +301,132 @@ def test_on_truncation_warn_opts_back_into_the_salvaged_prefix(tracking_db):
     assert len(client.calls) == 1
 
 
+# A cut that closes nothing: json_repair seals it into a plausible record,
+# so only the provider's finish_reason distinguishes it from a real answer.
+_SEALED_BY_REPAIR = '{"id": 1, "body": "got cut o'
+
+
+def test_provider_reported_truncation_raises_instead_of_a_sealed_record(tracking_db):
+    client = _FakeClient((_SEALED_BY_REPAIR, {"duration_ms": 1, "finish_reason": "length"}))
+
+    with pytest.raises(LlmJsonError) as excinfo:
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+        )
+
+    assert excinfo.value.raw == _SEALED_BY_REPAIR
+    assert len(client.calls) == 1
+
+
+def test_known_truncation_does_not_spend_a_second_paid_call(tracking_db):
+    """Same prompt, same token cap — the retry truncates identically."""
+    client = _FakeClient((_SEALED_BY_REPAIR, {"duration_ms": 1, "finish_reason": "max_tokens"}))
+
+    with pytest.raises(LlmJsonError):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+            json_retry=True,
+        )
+
+    assert len(client.calls) == 1
+
+
+def test_provider_reported_truncation_rejects_a_cleanly_parsed_payload(tracking_db):
+    """The cap can land on the closing brace — the record is still incomplete."""
+    client = _FakeClient(('{"id": 1}', {"duration_ms": 1, "finish_reason": "length"}))
+
+    with pytest.raises(LlmJsonError):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+        )
+
+    assert len(client.calls) == 1
+
+
+def test_unknown_truncation_still_spends_the_retry(tracking_db):
+    """A client reporting no finish reason keeps the retry budget."""
+    client = _FakeClient(
+        ("not json at all", {"duration_ms": 1}),
+        ('{"id": 1, "body": "all of it"}', {"duration_ms": 2, "finish_reason": "stop"}),
+    )
+
+    parsed, _run_id = tracked_call(
+        client=client,
+        agent_type="classifier",
+        spec=_SPEC,
+        model="haiku",
+        render_kwargs={"role": "x"},
+        expect_json=True,
+    )
+
+    assert parsed == {"id": 1, "body": "all of it"}
+    assert len(client.calls) == 2
+
+
+def test_provider_reported_truncation_under_warn_returns_the_partial(tracking_db):
+    client = _FakeClient((_SEALED_BY_REPAIR, {"duration_ms": 1, "finish_reason": "length"}))
+
+    parsed, _run_id = tracked_call(
+        client=client,
+        agent_type="classifier",
+        spec=_SPEC,
+        model="haiku",
+        render_kwargs={"role": "x"},
+        expect_json=True,
+        on_truncation="warn",
+    )
+
+    assert parsed == {"id": 1, "body": "got cut o"}
+    assert len(client.calls) == 1
+
+
+def test_no_finish_reason_leaves_a_repairable_payload_alone(tracking_db):
+    """A client that reports no finish reason — unknown must change nothing."""
+    client = _FakeClient((_SEALED_BY_REPAIR, {"duration_ms": 1}))
+
+    parsed, _run_id = tracked_call(
+        client=client,
+        agent_type="classifier",
+        spec=_SPEC,
+        model="haiku",
+        render_kwargs={"role": "x"},
+        expect_json=True,
+    )
+
+    assert parsed == {"id": 1, "body": "got cut o"}
+
+
+def test_complete_finish_reason_does_not_block_a_malformed_payload(tracking_db):
+    """An unescaped inner quote is what json_repair exists to rescue."""
+    client = _FakeClient(('{"size": "5" long", "ok": true}', {"finish_reason": "stop"}))
+
+    parsed, _run_id = tracked_call(
+        client=client,
+        agent_type="classifier",
+        spec=_SPEC,
+        model="haiku",
+        render_kwargs={"role": "x"},
+        expect_json=True,
+    )
+
+    assert parsed == {"size": '5" long', "ok": True}
+
+
 def test_invalid_on_truncation_rejected(tracking_db):
     with pytest.raises(InvalidInputError, match="on_truncation"):
         tracked_call(

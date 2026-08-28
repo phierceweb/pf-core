@@ -14,7 +14,7 @@ import pytest
 
 # DB fixtures are opt-in. pf-core's own tests use them, so we explicitly
 # load the DB plugin here. Consumers without the [db] extra don't need this.
-pytest_plugins = ["pf_core.testing.db_fixtures"]
+pytest_plugins = ["pf_core.testing.db_fixtures", "pytester"]
 
 
 @pytest.fixture(autouse=True)

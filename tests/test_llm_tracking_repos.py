@@ -13,6 +13,7 @@ import pytest
 
 from pf_core.llm.tracking import (
     LlmRunLinkRepo,
+    LlmRunMetricRepo,
     LlmRunOutcomeRepo,
     LlmRunRepo,
     LlmRunStatsRepo,
@@ -115,6 +116,125 @@ def test_input_hash_algorithm_is_pinned():
         )
         == "37e1fb656f1b92c993a4de63cf71d9f13410b40e4dc41e0b1b83259929c8c0d1"
     )
+
+
+def test_input_hash_string_messages_keep_pinned_value():
+    """Plain-string message lists must keep their historical digest — every
+    consumer's exact-cache entry is keyed on it."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    assert (
+        compute_input_hash(
+            model="pin-model",
+            messages=[
+                {"role": "system", "content": "sys text"},
+                {"role": "user", "content": "user text"},
+            ],
+            sampling={"temperature": 0.5, "max_tokens": 100},
+            configs={"report_config": 7},
+        )
+        == "37e1fb656f1b92c993a4de63cf71d9f13410b40e4dc41e0b1b83259929c8c0d1"
+    )
+
+
+def test_input_hash_distinguishes_multipart_messages():
+    """Multi-part (vision) content must key the hash: without it every
+    multipart call on a model collapses to one digest, and the exact cache
+    returns page 1's answer for pages 2..N."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    def page(name: str) -> list[dict]:
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "describe"},
+                    {"type": "image_url", "image_url": {"url": f"https://x/{name}"}},
+                ],
+            }
+        ]
+
+    unrelated = [{"role": "user", "content": [{"type": "text", "text": "totally unrelated"}]}]
+    hashes = {
+        compute_input_hash(model="m", messages=page("page1.png")),
+        compute_input_hash(model="m", messages=page("page2.png")),
+        compute_input_hash(model="m", messages=unrelated),
+    }
+    assert len(hashes) == 3
+    assert compute_input_hash(model="m", messages=page("page1.png")) == compute_input_hash(
+        model="m", messages=page("page1.png")
+    )
+
+
+def test_input_hash_distinguishes_assistant_tool_calls():
+    """``tool_calls`` ride on an assistant message with string content, which
+    the rendered prompts drop entirely — two different tool invocations must
+    not share a cache key."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    def call(fn: str) -> list[dict]:
+        return [
+            {"role": "user", "content": "do it"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "1", "function": {"name": fn, "arguments": "{}"}}],
+            },
+        ]
+
+    assert compute_input_hash(model="m", messages=call("get_weather")) != compute_input_hash(
+        model="m", messages=call("wire_money")
+    )
+
+
+def test_input_hash_distinguishes_assistant_and_tool_turns():
+    """Assistant/tool turns are dropped from the rendered prompts, so two
+    conversation branches with identical system+user text must still differ."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    def branch(answer: str) -> list[dict]:
+        return [
+            {"role": "user", "content": "ask"},
+            {"role": "assistant", "content": answer},
+            {"role": "user", "content": "and then?"},
+        ]
+
+    assert compute_input_hash(model="m", messages=branch("yes")) != compute_input_hash(
+        model="m", messages=branch("no")
+    )
+
+
+def test_input_hash_never_raises_on_hostile_message_shapes():
+    """Hashing is total: mixed-type keys, non-JSON values, and a self-
+    referential part must all yield a key rather than a TypeError."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    cyclic: dict = {"type": "text"}
+    cyclic["self"] = cyclic
+    shapes = [
+        [{"role": "user", "content": [{1: "a", "b": 2}]}],
+        [{"role": "user", "content": [{"blob": b"\x00\xff", "set": {1, 2}}]}],
+        [{"role": "user", "content": [cyclic]}],
+    ]
+    for messages in shapes:
+        h = compute_input_hash(model="m", messages=messages)
+        assert len(h) == 64
+        assert h == compute_input_hash(model="m", messages=messages)
+
+
+def test_input_hash_keys_opaque_objects_per_instance():
+    """A part holding a non-JSON object is stringified, not rejected. Objects
+    without a stable repr therefore key per instance — a cache that misses
+    across processes, never a wrong hit."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    class Blob:
+        pass
+
+    first, second = Blob(), Blob()
+    assert compute_input_hash(
+        model="m", messages=[{"role": "user", "content": [first]}]
+    ) != compute_input_hash(model="m", messages=[{"role": "user", "content": [second]}])
 
 
 def test_record_hash_matches_public_compute_with_dirty_sampling(tracking_db):
@@ -434,6 +554,45 @@ def test_record_writes_tags(tracking_db):
     assert set(rows) == {"env:prod", "experiment:opus47-a"}
 
 
+def _run_tags(engine, run_id):
+    from sqlalchemy import select as _select
+
+    with engine.connect() as conn:
+        return set(
+            conn.execute(_select(s.llm_run_tags.c.tag).where(s.llm_run_tags.c.llm_run_id == run_id))
+            .scalars()
+            .all()
+        )
+
+
+def test_record_tags_a_known_truncated_run(tracking_db):
+    """usage carrying a truncation finish_reason marks the run queryably."""
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        usage={"prompt_tokens": 5, "finish_reason": "length"},
+    )
+    assert "truncated" in _run_tags(tracking_db, run_id)
+
+
+def test_record_does_not_tag_complete_or_unknown_runs(tracking_db):
+    repo = LlmRunRepo()
+    complete = repo.record(agent_type="drafter", model="m", usage={"finish_reason": "stop"})
+    unknown = repo.record(agent_type="drafter", model="m", usage={"prompt_tokens": 1})
+    assert "truncated" not in _run_tags(tracking_db, complete)
+    assert "truncated" not in _run_tags(tracking_db, unknown)
+
+
+def test_truncated_tag_composes_with_caller_tags(tracking_db):
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="m",
+        usage={"finish_reason": "max_tokens"},
+        tags=["env:prod"],
+    )
+    assert _run_tags(tracking_db, run_id) >= {"env:prod", "truncated"}
+
+
 def test_record_writes_parent_run_link(tracking_db):
     parent = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
     child = LlmRunRepo().record(
@@ -542,6 +701,30 @@ def test_outcome_record_keeps_distinct_kinds(tracking_db):
     outcomes = LlmRunOutcomeRepo().list_for_run(run_id)
     kinds = {o["outcome_kind"] for o in outcomes}
     assert kinds == {"draft_accepted", "draft_edited"}
+
+
+# ---------------------------------------------------------------------------
+# LlmRunMetricRepo
+# ---------------------------------------------------------------------------
+
+
+def test_metric_record_roundtrip(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    LlmRunMetricRepo().record(run_id, metrics={"field_ratio": 0.82, "n_items": 12})
+    assert LlmRunMetricRepo().list_for_run(run_id) == {"field_ratio": 0.82, "n_items": 12.0}
+
+
+def test_metric_record_overwrites_same_name(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    LlmRunMetricRepo().record(run_id, metrics={"field_ratio": 0.10})
+    LlmRunMetricRepo().record(run_id, metrics={"field_ratio": 0.90})
+    assert LlmRunMetricRepo().list_for_run(run_id) == {"field_ratio": 0.90}
+
+
+def test_metric_record_empty_is_a_noop(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    LlmRunMetricRepo().record(run_id, metrics={})
+    assert LlmRunMetricRepo().list_for_run(run_id) == {}
 
 
 # ---------------------------------------------------------------------------

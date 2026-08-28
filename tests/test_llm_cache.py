@@ -6,6 +6,7 @@ All tests use in-memory SQLite via the ``pf_engine`` fixture.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 
 import pytest
 from sqlalchemy import select
@@ -136,6 +137,103 @@ agents:
     assert searcher_cfg.ttl_seconds == 1800
     assert searcher_cfg.semantic is True
     assert searcher_cfg.semantic_threshold == 0.95
+
+
+def test_agent_cache_config_has_no_max_entries_field():
+    cfg = get_agent_cache_config("classifier")
+    assert not hasattr(cfg, "max_entries_per_agent")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'defaults:\n  exact: true\nagents: "searcher"\n',
+        "defaults:\n  exact: true\nagents:\n  - a\n  - b\n",
+        'defaults: "nope"\n',
+        'defaults:\n  exact: true\nagents:\n  searcher: "nope"\n',
+    ],
+    ids=["agents-str", "agents-list", "defaults-str", "agent-section-str"],
+)
+def test_config_section_of_wrong_type_falls_back_to_defaults(tmp_path, monkeypatch, body):
+    """The loader is fail-empty: a mistyped section must not raise out of the getter."""
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text(body)
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+    assert get_agent_cache_config("searcher").exact is True
+
+
+def _count_events(caplog, event: str) -> int:
+    return sum(1 for r in caplog.records if event in r.getMessage())
+
+
+def _write_legacy_config(cfg_file, *, ttl: int = 3600) -> None:
+    cfg_file.write_text(
+        f"defaults:\n"
+        f"  exact: true\n"
+        f"  ttl_seconds: {ttl}\n"
+        f"  max_entries_per_agent: 10000\n"
+        "agents:\n"
+        "  searcher:\n"
+        "    max_entries_per_agent: 500\n"
+    )
+
+
+def _use_legacy_config(tmp_path, monkeypatch, *, ttl: int = 3600):
+    cfg_file = tmp_path / "cache.yaml"
+    _write_legacy_config(cfg_file, ttl=ttl)
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+    return cfg_file
+
+
+def test_agent_cache_config_tolerates_legacy_max_entries_key(tmp_path, monkeypatch, caplog):
+    _use_legacy_config(tmp_path, monkeypatch)
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        cfg = get_agent_cache_config("searcher")
+
+    assert cfg.ttl_seconds == 3600
+    assert cfg.exact is True
+    assert _count_events(caplog, "cache_config_ignored_key") == 1
+
+
+def test_legacy_key_warns_once_across_config_reloads(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("CACHE_CONFIG_RELOAD_SECONDS", "0")  # reload on every lookup
+    cfg_file = _use_legacy_config(tmp_path, monkeypatch, ttl=3600)
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        assert get_agent_cache_config("drafter").ttl_seconds == 3600
+        _write_legacy_config(cfg_file, ttl=7200)
+        # a changed ttl proves the loader re-ran; the warning must not repeat
+        assert get_agent_cache_config("drafter").ttl_seconds == 7200
+
+    assert _count_events(caplog, "cache_config_ignored_key") == 1
+
+
+def test_clear_config_cache_rearms_legacy_key_warning(tmp_path, monkeypatch, caplog):
+    _use_legacy_config(tmp_path, monkeypatch)
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        get_agent_cache_config("drafter")
+        clear_config_cache()
+        get_agent_cache_config("drafter")
+
+    assert _count_events(caplog, "cache_config_ignored_key") == 2
+
+
+def test_non_mapping_config_falls_back_to_defaults(tmp_path, monkeypatch, caplog):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text("- exact: false\n- ttl_seconds: 1\n")
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        cfg = get_agent_cache_config("searcher")
+
+    assert cfg.exact is True
+    assert cfg.ttl_seconds == 86400
+    assert _count_events(caplog, "cache_config_not_a_mapping") == 1
 
 
 def test_agent_cache_config_missing_file_uses_defaults(monkeypatch):

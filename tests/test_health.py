@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
+import time
 from unittest.mock import patch
 
 import pytest
@@ -150,3 +153,54 @@ class TestRequireDbSync:
             resp = client.get("/data")
         assert resp.status_code == 503
         assert "unavailable" in resp.json()["detail"].lower()
+
+
+class TestEventLoopSafety:
+    """An ``async`` endpoint runs the blocking ping on the loop, stalling the worker."""
+
+    def _health_endpoint(self):
+        routes = [r for r in health_router().routes if getattr(r, "path", "") == "/health"]
+        assert len(routes) == 1
+        return routes[0].endpoint
+
+    def test_health_endpoint_is_not_a_coroutine_function(self):
+        assert not inspect.iscoroutinefunction(self._health_endpoint())
+
+    def test_require_db_is_not_a_coroutine_function(self):
+        assert not inspect.iscoroutinefunction(require_db)
+        assert not inspect.iscoroutinefunction(require_db_sync)
+
+    def test_slow_db_check_does_not_stall_the_event_loop(self):
+        import httpx
+
+        app = FastAPI()
+        app.include_router(health_router(check_db=True))
+
+        def slow_check() -> str:
+            time.sleep(0.3)
+            return "ok"
+
+        async def scenario() -> float:
+            gaps: list[float] = []
+
+            async def ticker() -> None:
+                last = time.perf_counter()
+                while True:
+                    await asyncio.sleep(0.01)
+                    now = time.perf_counter()
+                    gaps.append(now - last)
+                    last = now
+
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                tick = asyncio.create_task(ticker())
+                await asyncio.sleep(0.05)
+                resp = await client.get("/health")
+                await asyncio.sleep(0.02)  # let the ticker record the gap it just sat through
+                tick.cancel()
+            assert resp.status_code == 200
+            return max(gaps)
+
+        with patch("pf_core.web.health._check_db", slow_check):
+            max_gap = asyncio.run(scenario())
+        assert max_gap < 0.2, f"event loop blocked for {max_gap:.2f}s by the blocking db check"

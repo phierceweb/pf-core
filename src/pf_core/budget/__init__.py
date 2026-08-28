@@ -6,7 +6,7 @@ budget guard itself and YAML config loading:
 
     from pf_core.budget import (
         check_budget, project_cost, CostBudgetExceeded,
-        compute_period_start, compute_period_end,
+        compute_period_start, compute_period_end, current_spent,
         load_yaml, clear_config_cache,
     )
 
@@ -40,6 +40,7 @@ from pf_core.budget.check import (  # noqa: F401
     check_budget,
     compute_period_end,
     compute_period_start,
+    current_spent,
     project_cost,
 )
 from pf_core.budget.config import (  # noqa: F401
@@ -123,6 +124,7 @@ __all__ = [
     "CostBudgetExceeded",
     "compute_period_start",
     "compute_period_end",
+    "current_spent",
     # Config — kernel-safe (eager)
     "load_yaml",
     "clear_config_cache",

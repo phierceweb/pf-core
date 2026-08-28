@@ -28,15 +28,50 @@ from pf_core.jobs import Job, JobRepo
 from pf_core.llm.parse import parse_llm_json
 from pf_core.llm.router import get_agent_config, resolve_agent
 from pf_core.llm.tracking.repo import LlmRunRepo
-from pf_core.llm.tracking.subrepos import LlmRunOutcomeRepo
+from pf_core.llm.tracking.subrepos import LlmRunMetricRepo, LlmRunOutcomeRepo
 from pf_core.log import get_logger
 
-from pf_core.eval._compare import get_comparator
-from pf_core.eval._config import AgentEvalConfig, load_eval_config
+from pf_core.eval._compare import get_comparator, split_comparator_result
+from pf_core.eval._config import AgentEvalConfig, MetricGate, load_eval_config
 from pf_core.eval._golden import GoldenSetRepo
 from pf_core.eval._report import EvalReport, EvalResult
 
 logger = get_logger(__name__)
+
+
+def _apply_metric_gates(
+    score: float,
+    gates: list[MetricGate],
+    metrics: dict[str, float],
+    *,
+    run_id: int,
+) -> float:
+    """Return ``score``, or 0.0 if any gate fails or has no metric to read.
+
+    Fails closed on an absent metric: a gate nobody can satisfy must not read
+    as a pass.
+    """
+    for gate in gates:
+        val = metrics.get(gate.name)
+        if val is None:
+            logger.warning(
+                "eval_metric_gate_unavailable",
+                run_id=run_id,
+                metric=gate.name,
+                available=sorted(metrics),
+            )
+            return 0.0
+        if (gate.min is not None and val < gate.min) or (gate.max is not None and val > gate.max):
+            logger.warning(
+                "eval_metric_gate_failed",
+                run_id=run_id,
+                metric=gate.name,
+                value=val,
+                min=gate.min,
+                max=gate.max,
+            )
+            return 0.0
+    return score
 
 
 class EvalRunner:
@@ -378,6 +413,7 @@ class EvalRunner:
             )
 
         # Score
+        scored_metrics: dict[str, float] = {}
         if agent_cfg.compare == "llm_judge":
             score = run_judge(
                 agent_type=agent_type,
@@ -392,24 +428,24 @@ class EvalRunner:
                 "diff_fields": agent_cfg.diff_fields,
                 "tolerances": agent_cfg.tolerances,
             }
-            score = comparator(
-                golden_parsed,
-                parsed_replay or {},
-                context=context,
+            score, scored_metrics = split_comparator_result(
+                comparator(
+                    golden_parsed,
+                    parsed_replay or {},
+                    context=context,
+                )
             )
 
-        # Metric gate check (against metrics stored on the replay run, if any)
+        metric_repo = LlmRunMetricRepo()
+        metric_repo.record(replay_run_id, metrics=scored_metrics)
+
         if agent_cfg.metrics:
-            replay_metrics = golden_repo.get_ground_truth(replay_run_id)
-            for gate in agent_cfg.metrics:
-                val = replay_metrics.get(gate.name)
-                if val is not None:
-                    if gate.min is not None and val < gate.min:
-                        score = 0.0
-                        break
-                    if gate.max is not None and val > gate.max:
-                        score = 0.0
-                        break
+            score = _apply_metric_gates(
+                score,
+                agent_cfg.metrics,
+                metric_repo.list_for_run(replay_run_id),
+                run_id=replay_run_id,
+            )
 
         LlmRunOutcomeRepo().record(
             replay_run_id,

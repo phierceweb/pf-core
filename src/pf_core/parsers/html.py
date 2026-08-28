@@ -86,23 +86,24 @@ class BodyExtractor(HTMLParser):
         # Stack-based state so nested <a> (uncommon but possible) works.
         self._link_stack: list[dict] = []
         self._skip_depth = 0
+        # Maintained incrementally — re-summing text_parts per <a> is quadratic.
+        self._buffer_offset = 0
 
-    # Offset in the eventual joined string at which the next chunk will land.
-    @property
-    def _buffer_offset(self) -> int:
-        return sum(len(p) for p in self.text_parts)
+    def _emit(self, chunk: str) -> None:
+        self.text_parts.append(chunk)
+        self._buffer_offset += len(chunk)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in SKIP_TAGS:
             self._skip_depth += 1
             return
         if tag == "br":
-            self.text_parts.append("\n")
+            self._emit("\n")
             return
         if tag in BLOCK_TAGS:
             # Paragraph break at the START of a block — cheap way to
             # ensure adjacent blocks don't concatenate their text.
-            self.text_parts.append("\n\n")
+            self._emit("\n\n")
         if tag == "a":
             href = ""
             for k, v in attrs:
@@ -122,7 +123,7 @@ class BodyExtractor(HTMLParser):
             self._skip_depth -= 1
             return
         if tag in BLOCK_TAGS:
-            self.text_parts.append("\n\n")
+            self._emit("\n\n")
         if tag == "a" and self._link_stack:
             rec = self._link_stack.pop()
             anchor = "".join(rec["anchor_parts"]).strip()
@@ -135,7 +136,7 @@ class BodyExtractor(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._skip_depth > 0:
             return
-        self.text_parts.append(data)
+        self._emit(data)
         if self._link_stack:
             # Feed anchor-text to the most recent open <a>.
             self._link_stack[-1]["anchor_parts"].append(data)

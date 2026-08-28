@@ -49,6 +49,31 @@ def current_session_metadata() -> dict[str, Any]:
     return dict(_session_md.get() or {})
 
 
+def call_summary(
+    *,
+    agent_type: str,
+    model: str,
+    provider: str | None,
+    spec: dict | None,
+    usage: dict,
+    success: bool,
+    run_id: int | None,
+) -> dict[str, Any]:
+    """Recording-window summary for one call; usage values may be None → 0."""
+    return {
+        "agent_type": agent_type,
+        "model": model,
+        "provider": provider,
+        "prompt_version": int(spec["version"]) if spec else None,
+        "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+        "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+        "cost_usd": float(usage.get("cost_usd", 0.0) or 0.0),
+        "duration_ms": int(usage.get("duration_ms", 0) or 0),
+        "success": success,
+        "run_id": run_id,
+    }
+
+
 __all__ = [
     "begin_call_recording",
     "current_session_metadata",

@@ -43,7 +43,7 @@ import time
 import warnings
 from typing import Any, Callable
 
-from pf_core.llm.tracking.repo import LlmRunRepo
+from pf_core.llm.tracking.repo import LlmRunRepo, compute_input_hash
 
 
 _SAMPLING_KWARGS = ("temperature", "top_p", "max_tokens", "seed", "stop_sequences")
@@ -98,6 +98,10 @@ def track_run(
             sampling = {k: kwargs[k] for k in _SAMPLING_KWARGS if k in kwargs}
             messages = kwargs.get("messages") or []
             rendered_system, rendered_user = _extract_rendered_prompts(messages)
+            # record()'s fallback would miss multi-part and assistant/tool content.
+            input_hash = compute_input_hash(
+                model=model, messages=messages, sampling=sampling or None
+            )
 
             _repo = repo if repo is not None else LlmRunRepo()
 
@@ -119,6 +123,7 @@ def track_run(
                     error_class=type(exc).__name__,
                     http_status=http_status if isinstance(http_status, int) else None,
                     rendered_prompts=(rendered_system, rendered_user),
+                    input_hash=input_hash,
                 )
                 raise
 
@@ -138,6 +143,7 @@ def track_run(
                 usage=record_usage,
                 rendered_prompts=(rendered_system, rendered_user),
                 raw_response=content if isinstance(content, str) else None,
+                input_hash=input_hash,
             )
             usage["_llm_run_id"] = run_id
             return result

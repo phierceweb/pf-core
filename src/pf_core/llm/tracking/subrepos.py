@@ -6,10 +6,12 @@ These repos record signals that arrive *after* the original LLM call:
 - :class:`LlmRunOutcomeRepo` — backfilled reviewer outcomes (draft accepted,
   result matched the reviewer, etc).
 - :class:`LlmRunValidationRepo` — async or post-hoc quality checks.
+- :class:`LlmRunMetricRepo` — numeric signals computed after the call (eval
+  comparator metrics, scoring ratios).
 - :class:`LlmRunLinkRepo` — run-to-run relations (retry, critic, refine,
   fallback, subroutine, meta_analysis).
 
-All three use pf-core's portable ``insert_ignore`` / ``upsert`` helpers so a
+All of them use pf-core's portable ``insert_ignore`` / ``upsert`` helpers so a
 re-record (same composite key) is idempotent across SQLite, MySQL, and
 PostgreSQL — without the secondary-index gap locks a delete-then-insert would
 take, which deadlock under concurrent writers on MySQL/InnoDB.
@@ -182,6 +184,40 @@ class LlmRunValidationRepo(Repository):
                 .fetchall()
             )
         return [dict(r) for r in rows]
+
+
+class LlmRunMetricRepo(Repository):
+    """Records numeric per-run metrics (one row per metric_name per run)."""
+
+    def record(self, run_id: int, *, metrics: dict[str, float]) -> None:
+        """Insert or overwrite the metric rows for ``run_id``."""
+        if not metrics:
+            return
+        with self._tx() as conn:
+            for name, value in metrics.items():
+                upsert(
+                    conn,
+                    s.llm_run_metrics,
+                    {
+                        "llm_run_id": run_id,
+                        "metric_name": name,
+                        "metric_value": float(value),
+                    },
+                    conflict=("llm_run_id", "metric_name"),
+                    update=("metric_value",),
+                )
+
+    def list_for_run(self, run_id: int) -> dict[str, float]:
+        """All metrics attached to ``run_id`` as ``metric_name → value``."""
+        with self._tx() as conn:
+            rows = (
+                conn.execute(
+                    s.llm_run_metrics.select().where(s.llm_run_metrics.c.llm_run_id == run_id)
+                )
+                .mappings()
+                .fetchall()
+            )
+        return {r["metric_name"]: float(r["metric_value"]) for r in rows}
 
 
 class LlmRunLinkRepo(Repository):

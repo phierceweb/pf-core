@@ -1,12 +1,19 @@
 """Shared helpers for the job repository modules — UTC coercion, model
-serialization, lease defaults, and the step-index creation lock."""
+serialization, lease defaults, lease renewal, and the step-index creation lock."""
 
 from __future__ import annotations
 
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import and_, func
+
+from pf_core.jobs import _schema as s
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 _step_creation_lock = threading.Lock()
 
@@ -27,6 +34,19 @@ def _default_lease_seconds() -> int:
         return int(os.environ.get("JOB_LEASE_SECONDS", "300"))
     except (ValueError, TypeError):
         return 300
+
+
+def _touch_job_lease(conn: Connection, job_id: int) -> None:
+    """Renew the worker lease on ``job_id`` — a no-op on unclaimed rows.
+
+    Called from every write that proves the claiming worker is alive, so
+    ``reclaim_stale`` doesn't hand a long-running job to a second worker.
+    """
+    conn.execute(
+        s.jobs.update()
+        .where(and_(s.jobs.c.id == job_id, s.jobs.c.claimed_by.is_not(None)))
+        .values(claimed_at=func.now(), updated_at=func.now())
+    )
 
 
 def _dump_model(value: Any) -> Any:

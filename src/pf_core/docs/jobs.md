@@ -273,6 +273,16 @@ n_reclaimed = JobRepo().reclaim_stale(lease_seconds=300)
 
 Finds jobs still marked `running` whose `claimed_at` is older than the lease and resets them to `pending`. Run via `pf-jobs reclaim` or as a cron every minute.
 
+**Lease renewal:** `claimed_at` is the liveness signal, not just the claim time. Every write that proves the claiming worker is alive — `transition`, `set_progress`, `start_step` / `finish_step`, `add_event`, and so everything a `Job` / `Step` block does — restamps it on rows that have a `claimed_by`. A job that keeps reporting is therefore never reclaimed however long it runs; only one silent for a whole lease window is.
+
+For work that makes no writes at all for longer than the lease, renew explicitly:
+
+```python
+JobRepo().renew_lease(job_id)  # False once the claim is gone — reclaimed, or finished
+```
+
+It stamps `claimed_at` only, leaving `updated_at` meaning "last real activity". `run_subprocess_job` calls it on a timer while the child runs, so framework-run subprocess jobs need no tuning; a hand-written worker loop calls it (or `job.progress(...)`) itself.
+
 **Default lease** comes from the `JOB_LEASE_SECONDS` env var (default 300). Override per-call with `lease_seconds=...`.
 
 **Single-process orchestration** (CLI, cron) can ignore claims entirely and call `Job(job_id)` directly.

@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pf_core.clients._claude_code_wire import flatten_messages
 from pf_core.clients.claude_code import (
     ClaudeCodeClient,
     ClaudeCodeError,
     DEFAULT_TIMEOUT_SECONDS,
-    _flatten_messages,
     get_client,
     new_client,
     reset_client,
@@ -27,16 +28,16 @@ def _reset():
 
 
 # ---------------------------------------------------------------------------
-# _flatten_messages
+# flatten_messages
 # ---------------------------------------------------------------------------
 
 
 class TestFlattenMessages:
     def test_user_only(self):
-        assert _flatten_messages([{"role": "user", "content": "hi"}]) == "hi"
+        assert flatten_messages([{"role": "user", "content": "hi"}]) == "hi"
 
     def test_system_then_user(self):
-        out = _flatten_messages(
+        out = flatten_messages(
             [
                 {"role": "system", "content": "You are a bot."},
                 {"role": "user", "content": "Hello."},
@@ -45,7 +46,7 @@ class TestFlattenMessages:
         assert out == "You are a bot.\n\n---\n\nHello."
 
     def test_multiple_user_messages_joined(self):
-        out = _flatten_messages(
+        out = flatten_messages(
             [
                 {"role": "user", "content": "first"},
                 {"role": "user", "content": "second"},
@@ -54,7 +55,7 @@ class TestFlattenMessages:
         assert out == "first\n\nsecond"
 
     def test_multiple_system_messages_joined(self):
-        out = _flatten_messages(
+        out = flatten_messages(
             [
                 {"role": "system", "content": "rule one"},
                 {"role": "system", "content": "rule two"},
@@ -64,7 +65,7 @@ class TestFlattenMessages:
         assert out == "rule one\n\nrule two\n\n---\n\ndo thing"
 
     def test_assistant_message_treated_as_body(self):
-        out = _flatten_messages(
+        out = flatten_messages(
             [
                 {"role": "user", "content": "Q?"},
                 {"role": "assistant", "content": "A."},
@@ -74,13 +75,13 @@ class TestFlattenMessages:
         assert "Q?" in out and "A." in out and "Q2?" in out
 
     def test_empty_messages_list(self):
-        assert _flatten_messages([]) == ""
+        assert flatten_messages([]) == ""
 
     def test_none_messages(self):
-        assert _flatten_messages(None) == ""  # type: ignore[arg-type]
+        assert flatten_messages(None) == ""  # type: ignore[arg-type]
 
     def test_skips_empty_content(self):
-        out = _flatten_messages(
+        out = flatten_messages(
             [
                 {"role": "system", "content": ""},
                 {"role": "user", "content": "real content"},
@@ -89,7 +90,7 @@ class TestFlattenMessages:
         assert out == "real content"
 
     def test_case_insensitive_role(self):
-        out = _flatten_messages(
+        out = flatten_messages(
             [
                 {"role": "SYSTEM", "content": "S"},
                 {"role": "User", "content": "U"},
@@ -103,13 +104,183 @@ class TestFlattenMessages:
 # ---------------------------------------------------------------------------
 
 
-def _ok_run(stdout: str = "ok response") -> MagicMock:
-    """A fake completed subprocess result with stdout + zero returncode."""
+def _text_run(stdout: str) -> MagicMock:
+    """A fake completed subprocess result with raw stdout + zero returncode."""
     m = MagicMock()
     m.returncode = 0
     m.stdout = stdout
     m.stderr = ""
     return m
+
+
+def _envelope_run(**fields) -> MagicMock:
+    """A fake `--output-format json` envelope on stdout."""
+    envelope = {"result": "the answer", "is_error": False, "stop_reason": "end_turn"}
+    envelope.update(fields)
+    return _text_run(json.dumps(envelope))
+
+
+def _ok_run(stdout: str = "ok response") -> MagicMock:
+    """A successful run in envelope mode — ``stdout`` becomes the envelope's result."""
+    return _envelope_run(result=stdout)
+
+
+class TestJsonEnvelope:
+    """`--output-format json` is what makes truncation reportable at all: the
+    envelope's top-level stop_reason is the model's, the text-mode stdout has
+    no equivalent."""
+
+    def _chat(self, mock_which, mock_run, run, **client_kwargs):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = run
+        client = ClaudeCodeClient(**client_kwargs)
+        return client.chat(messages=[{"role": "user", "content": "hi"}])
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_requests_json_output_before_print(self, mock_which, mock_run):
+        self._chat(mock_which, mock_run, _envelope_run())
+        cmd = mock_run.call_args.args[0]
+        assert cmd.count("--output-format") == 1
+        assert cmd[cmd.index("--output-format") + 1] == "json"
+        assert cmd[-1] == "--print"
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_content_comes_from_the_result_field(self, mock_which, mock_run):
+        content, usage = self._chat(mock_which, mock_run, _envelope_run(result="  the answer\n"))
+        assert content == "the answer"
+        assert usage["finish_reason"] == "end_turn"
+
+    @pytest.mark.parametrize("stop_reason", ["max_tokens", "model_context_window_exceeded"])
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_truncation_reasons_normalise_to_length(self, mock_which, mock_run, stop_reason):
+        content, usage = self._chat(
+            mock_which, mock_run, _envelope_run(result="half an ans", stop_reason=stop_reason)
+        )
+        assert content == "half an ans"
+        assert usage["finish_reason"] == "length"
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_unknown_stop_reason_passes_through(self, mock_which, mock_run):
+        """The CLI types stop_reason as a free string, not an enum."""
+        _content, usage = self._chat(mock_which, mock_run, _envelope_run(stop_reason="whatever"))
+        assert usage["finish_reason"] == "whatever"
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_null_stop_reason_reports_nothing(self, mock_which, mock_run):
+        content, usage = self._chat(mock_which, mock_run, _envelope_run(stop_reason=None))
+        assert content == "the answer"
+        assert "finish_reason" not in usage
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_error_envelope_is_not_trusted_for_stop_reason(self, mock_which, mock_run):
+        with pytest.raises(ClaudeCodeError, match="something went wrong"):
+            self._chat(
+                mock_which,
+                mock_run,
+                _envelope_run(result="something went wrong", is_error=True, stop_reason="end_turn"),
+            )
+
+    @pytest.mark.parametrize(
+        "stdout",
+        ["just some prose\n", '{"stop_reason": "max_tokens"}', '"plain string"'],
+        ids=["non-json", "envelope-without-result", "json-scalar"],
+    )
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_unreadable_envelope_raises_not_corrupts(self, mock_which, mock_run, stdout):
+        """The client asked for JSON; raw stdout is machine output, never content."""
+        with pytest.raises(ClaudeCodeError, match="output-format"):
+            self._chat(mock_which, mock_run, _text_run(stdout))
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_error_envelope_with_zero_rc_raises_not_content(self, mock_which, mock_run):
+        """An is_error result is a failure report, never the answer."""
+        with pytest.raises(ClaudeCodeError, match="Failed to authenticate"):
+            self._chat(
+                mock_which,
+                mock_run,
+                _envelope_run(
+                    result="Failed to authenticate: OAuth session expired", is_error=True
+                ),
+            )
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_nonzero_rc_error_quotes_the_envelope_not_empty_stderr(self, mock_which, mock_run):
+        """JSON mode reports errors on stdout; the raise must carry that detail."""
+        run = _envelope_run(result="Failed to authenticate: OAuth session expired", is_error=True)
+        run.returncode = 1
+        with pytest.raises(ClaudeCodeError, match="OAuth session expired"):
+            self._chat(mock_which, mock_run, run)
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_verbose_suppresses_envelope_mode(self, mock_which, mock_run):
+        """--verbose changes stdout's shape, so the client stays in text mode."""
+        content, usage = self._chat(
+            mock_which, mock_run, _text_run("the answer\n"), extra_args=["--verbose"]
+        )
+        cmd = mock_run.call_args.args[0]
+        assert "--output-format" not in cmd
+        assert content == "the answer"
+        assert "finish_reason" not in usage
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_transcript_array_unwraps_via_final_result_entry(self, mock_which, mock_run):
+        stdout = json.dumps(
+            [
+                {"type": "system", "subtype": "init"},
+                {"type": "assistant", "message": {}},
+                {"type": "result", "result": "the answer", "stop_reason": "max_tokens"},
+            ]
+        )
+        content, usage = self._chat(mock_which, mock_run, _text_run(stdout))
+        assert content == "the answer"
+        assert usage["finish_reason"] == "length"
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_consumer_supplied_output_format_wins(self, mock_which, mock_run):
+        content, usage = self._chat(
+            mock_which,
+            mock_run,
+            _text_run("stream text\n"),
+            extra_args=["--allowedTools", "Bash", "--output-format", "text"],
+        )
+        cmd = mock_run.call_args.args[0]
+        assert cmd.count("--output-format") == 1
+        assert cmd[cmd.index("--output-format") + 1] == "text"
+        assert content == "stream text"
+        assert "finish_reason" not in usage
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_consumer_supplied_output_format_equals_form_wins(self, mock_which, mock_run):
+        self._chat(
+            mock_which, mock_run, _text_run("stream text"), extra_args=["--output-format=text"]
+        )
+        cmd = mock_run.call_args.args[0]
+        assert [a for a in cmd if a.startswith("--output-format")] == ["--output-format=text"]
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_collision_guard_does_not_parse_a_json_envelope(self, mock_which, mock_run):
+        """Their format, their stdout: honour it verbatim rather than guessing."""
+        content, _usage = self._chat(
+            mock_which,
+            mock_run,
+            _envelope_run(result="the answer"),
+            extra_args=["--output-format", "json"],
+        )
+        assert json.loads(content)["result"] == "the answer"
 
 
 class TestChatHappyPath:
@@ -141,6 +312,7 @@ class TestChatHappyPath:
         assert usage["completion_tokens"] == 0
         assert usage["cost_usd"] == 0.0
         assert usage["duration_ms"] >= 0
+        assert usage["finish_reason"] == "end_turn"
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -185,7 +357,14 @@ class TestChatHappyPath:
         client.chat(messages=[{"role": "user", "content": "x"}])
         cmd = mock_run.call_args.args[0]
         # --safe-mode leads (isolate defaults True); extra_args follow, before --print.
-        assert cmd[1:5] == ["--safe-mode", "--allowedTools", "Bash", "--print"]
+        assert cmd[1:7] == [
+            "--safe-mode",
+            "--allowedTools",
+            "Bash",
+            "--output-format",
+            "json",
+            "--print",
+        ]
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -331,8 +510,8 @@ class TestSafeModeIsolation:
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
     def test_safe_mode_coexists_with_extra_args_and_model(self, mock_which, mock_run, monkeypatch):
-        """Canonical argv with everything set:
-        ``[binary, --safe-mode, *extra_args, --model X, --print]``. ``--safe-mode``
+        """Canonical argv with everything set: ``[binary, --safe-mode,
+        *extra_args, --model X, --output-format json, --print]``. ``--safe-mode``
         strips ambient customizations but explicit flags (--allowedTools,
         --model) still apply, so they coexist."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
@@ -341,12 +520,14 @@ class TestSafeModeIsolation:
         client = ClaudeCodeClient(extra_args=["--allowedTools", "Bash"], model="haiku")
         client.chat(messages=[{"role": "user", "content": "x"}])
         cmd = mock_run.call_args.args[0]
-        assert cmd[1:7] == [
+        assert cmd[1:9] == [
             "--safe-mode",
             "--allowedTools",
             "Bash",
             "--model",
             "haiku",
+            "--output-format",
+            "json",
             "--print",
         ]
 
@@ -902,23 +1083,24 @@ class TestModelOverride:
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
     def test_model_lands_after_extra_args(self, mock_which, mock_run, monkeypatch):
-        """Order: [binary, --safe-mode, *extra_args, --model X, --print, prompt].
-        Putting --model in extra_args manually still works (caller's choice),
-        but the per-instance/per-call model uses this canonical position so
-        callers don't accidentally double up."""
+        """Order: [binary, --safe-mode, *extra_args, --model X, --output-format
+        json, --print]. Putting --model in extra_args manually still works
+        (caller's choice), but the per-instance/per-call model uses this
+        canonical position so callers don't accidentally double up."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
         client = ClaudeCodeClient(extra_args=["--allowedTools", "Bash"], model="haiku")
         client.chat(messages=[{"role": "user", "content": "x"}])
         cmd = mock_run.call_args.args[0]
-        # Expected: [binary, --safe-mode, --allowedTools, Bash, --model, haiku, --print, prompt]
-        assert cmd[1:7] == [
+        assert cmd[1:9] == [
             "--safe-mode",
             "--allowedTools",
             "Bash",
             "--model",
             "haiku",
+            "--output-format",
+            "json",
             "--print",
         ]
 

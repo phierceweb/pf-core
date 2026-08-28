@@ -466,3 +466,96 @@ def test_eval_runner_raises_on_empty_golden_set(pf_engine):
             )
     finally:
         metadata.drop_all(pf_engine)
+
+
+def _run_gated(tracking_db, monkeypatch, *, slug: str, comparator: str, gates: list[dict]):
+    """Replay one golden through a comparator + metric gates; return the report."""
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+
+    gid = _seed_golden(tracking_db, slug=slug, parsed_output={"answer": 1})
+    GoldenSetRepo().add(gid, version=f"{slug}_v1")
+
+    class _FakeClient:
+        def chat(self, *, messages, model="", **kwargs):
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    monkeypatch.setattr("pf_core.clients.openrouter.get_client", lambda *a, **k: _FakeClient())
+
+    cfg = EvalConfig({"agents": {slug: {"compare": comparator, "metrics": gates}}})
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = cfg
+    return runner.run(version=f"{slug}_v1", agent_type=slug, target={"model": "candidate"})
+
+
+def test_metric_gate_fails_a_replay_when_the_metric_is_out_of_range(tracking_db, monkeypatch):
+    """A configured gate must actually gate: a comparator-reported metric below
+    ``min`` drives the replay to 0.0 even though the comparison itself scored 1.0."""
+    from sqlalchemy import select
+
+    from pf_core.eval._compare import register_comparator
+    from pf_core.llm.tracking import llm_run_metrics
+
+    @register_comparator("gate_test_low")
+    def _low(golden, replay, *, context):
+        return 1.0, {"field_ratio": 0.40}
+
+    report = _run_gated(
+        tracking_db,
+        monkeypatch,
+        slug="gate_low_agent",
+        comparator="gate_test_low",
+        gates=[{"name": "field_ratio", "min": 0.70}],
+    )
+    result = report.results[0]
+    assert result.error is None
+    assert result.score == 0.0
+    assert result.passed is False
+    assert report.passed is False
+
+    with tracking_db.connect() as conn:
+        stored = dict(
+            conn.execute(
+                select(llm_run_metrics.c.metric_name, llm_run_metrics.c.metric_value).where(
+                    llm_run_metrics.c.llm_run_id == result.run_id
+                )
+            ).fetchall()
+        )
+    assert stored == {"field_ratio": 0.40}
+
+
+def test_metric_gate_passes_a_replay_when_the_metric_is_in_range(tracking_db, monkeypatch):
+    """The same gate leaves the comparator's score alone when the metric holds."""
+    from pf_core.eval._compare import register_comparator
+
+    @register_comparator("gate_test_high")
+    def _high(golden, replay, *, context):
+        return 1.0, {"field_ratio": 0.95}
+
+    report = _run_gated(
+        tracking_db,
+        monkeypatch,
+        slug="gate_high_agent",
+        comparator="gate_test_high",
+        gates=[{"name": "field_ratio", "min": 0.70, "max": 1.0}],
+    )
+    result = report.results[0]
+    assert result.error is None
+    assert result.score == 1.0
+    assert result.passed is True
+    assert report.passed is True
+
+
+def test_metric_gate_with_no_source_fails_closed(tracking_db, monkeypatch):
+    """A gate on a metric nothing produces must fail the replay, not be skipped —
+    a gate that always passes is worse than no gate."""
+    report = _run_gated(
+        tracking_db,
+        monkeypatch,
+        slug="gate_orphan_agent",
+        comparator="structured_diff",
+        gates=[{"name": "never_written", "min": 0.70}],
+    )
+    result = report.results[0]
+    assert result.score == 0.0
+    assert result.passed is False

@@ -207,25 +207,16 @@ def test_claim_next_skips_claimed_jobs(jobs_db, simple_kind):
     assert second is None
 
 
-def test_reclaim_stale_resets_expired_running_jobs(jobs_db, simple_kind):
+def test_reclaim_stale_resets_expired_running_jobs(jobs_db, simple_kind, backdate_job_activity):
     """A running job whose lease expired is reset to pending so another
     worker can pick it up."""
-    from datetime import datetime
-
-    from sqlalchemy import update
-
-    from pf_core.db import transaction
-    from pf_core.jobs import _schema as s
-
     repo = JobRepo()
     job_id = repo.create(kind="simple_pass")
     repo.claim_next(worker_id="w1")
     repo.transition(job_id, "running")
 
-    # Simulate a stale claim by back-dating claimed_at far beyond the lease.
-    past = datetime(2000, 1, 1, 0, 0, 0)
-    with transaction() as conn:
-        conn.execute(update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_at=past))
+    # Simulate a worker that died: no lease renewal, no activity.
+    backdate_job_activity(job_id)
 
     reclaimed = repo.reclaim_stale(lease_seconds=10)
     assert reclaimed == 1
@@ -237,6 +228,91 @@ def test_reclaim_stale_resets_expired_running_jobs(jobs_db, simple_kind):
     # New worker can claim it.
     claimed = repo.claim_next(worker_id="w2")
     assert claimed["id"] == job_id
+
+
+def test_reclaim_stale_spares_job_still_reporting_progress(
+    jobs_db, simple_kind, backdate_job_activity
+):
+    """A worker that reports progress renews its lease, so a reclaim sweep
+    must not re-queue a job that is still running."""
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    repo.claim_next(worker_id="w1")
+    repo.transition(job_id, "running")
+    backdate_job_activity(job_id)
+
+    repo.set_progress(job_id, current=1)
+
+    assert repo.reclaim_stale(lease_seconds=10) == 0
+    row = repo.get(job_id)
+    assert row["status"] == "running"
+    assert row["claimed_by"] == "w1"
+
+
+def test_transition_renews_worker_lease(jobs_db, simple_kind, backdate_job_activity):
+    """A status write proves the worker is alive."""
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    repo.claim_next(worker_id="w1")
+    backdate_job_activity(job_id)
+
+    repo.transition(job_id, "running")
+
+    assert repo.reclaim_stale(lease_seconds=10) == 0
+
+
+def test_terminal_transition_leaves_no_lease(jobs_db, simple_kind):
+    """Renewal must not revive the claim a terminal transition cleared."""
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    repo.claim_next(worker_id="w1")
+    repo.transition(job_id, "running")
+
+    repo.transition(job_id, "succeeded")
+
+    row = repo.get(job_id)
+    assert row["claimed_at"] is None
+    assert row["claimed_by"] is None
+
+
+def test_renew_lease_refreshes_the_claim_without_faking_activity(
+    jobs_db, simple_kind, backdate_job_activity
+):
+    """A heartbeat proves the worker is alive without making a silent job
+    look like it reported progress."""
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    repo.claim_next(worker_id="w1")
+    repo.transition(job_id, "running")
+    backdate_job_activity(job_id)
+    stale_updated_at = repo.get(job_id)["updated_at"]
+
+    assert repo.renew_lease(job_id) is True
+
+    assert repo.get(job_id)["updated_at"] == stale_updated_at
+    assert repo.reclaim_stale(lease_seconds=10) == 0
+
+
+def test_renew_lease_reports_a_lost_claim(jobs_db, simple_kind, backdate_job_activity):
+    """A worker whose job was already reclaimed learns its lease is gone."""
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    repo.claim_next(worker_id="w1")
+    repo.transition(job_id, "running")
+    backdate_job_activity(job_id)
+    assert repo.reclaim_stale(lease_seconds=10) == 1
+
+    assert repo.renew_lease(job_id) is False
+
+
+def test_progress_does_not_lease_an_unclaimed_job(jobs_db, simple_kind):
+    """Lease renewal only touches rows a worker actually holds."""
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    repo.transition(job_id, "running")
+    repo.set_progress(job_id, current=1)
+
+    assert repo.get(job_id)["claimed_at"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -555,24 +631,17 @@ def test_claim_next_returns_aware_utc_row(jobs_db, simple_kind):
     assert claimed["claimed_at"].tzinfo is not None
 
 
-def test_reclaim_stale_uses_server_side_cutoff(jobs_db, simple_kind):
+def test_reclaim_stale_uses_server_side_cutoff(jobs_db, simple_kind, backdate_job_activity):
     """A short positive lease exercises the server-side
     ``CURRENT_TIMESTAMP - INTERVAL N SECOND`` path; a claim older than
     the lease gets reset."""
-    from sqlalchemy import update
-
-    from pf_core.db import transaction
-    from pf_core.jobs import _schema as s
-
     repo = JobRepo()
     job_id = repo.create(kind="simple_pass")
     repo.claim_next(worker_id="w1")
     repo.transition(job_id, "running")
 
-    # Back-date claimed_at ~1 hour to make it clearly past a 1-second lease.
-    past = datetime(2000, 1, 1, 0, 0, 0)
-    with transaction() as conn:
-        conn.execute(update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_at=past))
+    # Back-date to 2000 to make it clearly past a 1-second lease.
+    backdate_job_activity(job_id)
 
     assert repo.reclaim_stale(lease_seconds=1) == 1
 

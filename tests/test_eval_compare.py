@@ -176,3 +176,32 @@ def test_structured_diff_via_get_comparator():
     fn = get_comparator("structured_diff")
     score = fn({"x": 1}, {"x": 1}, context={})
     assert score == 1.0
+
+
+def test_structured_diff_field_absent_from_both_scores_zero():
+    """A typo in diff_fields must not certify a wrong replay as perfect."""
+    golden = {"title": "A", "score": 10}
+    replay = {"title": "X", "score": -999}
+    score = structured_diff(
+        golden, replay, context={"diff_fields": ["title", "titel"], "tolerances": {}}
+    )
+    assert score == pytest.approx(0.0)
+
+
+def test_structured_diff_explicit_null_on_both_sides_matches():
+    golden = {"note": None, "title": "A"}
+    replay = {"note": None, "title": "A"}
+    score = structured_diff(golden, replay, context={"diff_fields": ["note", "title"]})
+    assert score == 1.0
+
+
+def test_structured_diff_field_absent_from_golden_present_in_replay():
+    golden = {"title": "A"}
+    replay = {"title": "A", "extra": "surprise"}
+    score = structured_diff(golden, replay, context={"diff_fields": ["title", "extra"]})
+    assert score == pytest.approx(0.5)
+
+
+def test_structured_diff_all_diff_fields_missing_from_golden():
+    with pytest.raises(ConfigurationError, match="diff_fields"):
+        structured_diff({"title": "A"}, {"title": "X"}, context={"diff_fields": ["titel", "scoer"]})

@@ -27,6 +27,9 @@ from pf_core._doctor_types import CheckResult, redact_value
 
 _MIN_PY = (3, 12)
 
+# doctor's --db connect is a one-shot probe, so it gives up sooner than an app.
+_PROBE_CONNECT_TIMEOUT_S = 5
+
 # Env vars pf-core features read, reported by the `env` check.
 _ENV_VARS = (
     "DATABASE_URL",
@@ -225,6 +228,7 @@ def db_checks() -> list[CheckResult]:
     from sqlalchemy import create_engine, text
 
     from pf_core.db import db_url
+    from pf_core.db.connection import connect_args
 
     try:
         url = db_url()
@@ -245,7 +249,9 @@ def db_checks() -> list[CheckResult]:
 
     current_rev: str | None = None
     try:
-        engine = create_engine(url, connect_args=_connect_args(url))
+        engine = create_engine(
+            url, connect_args=connect_args(url, default_timeout_s=_PROBE_CONNECT_TIMEOUT_S)
+        )
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
             current_rev = _alembic_current(conn)
@@ -258,12 +264,6 @@ def db_checks() -> list[CheckResult]:
 
     results.append(_migration_result(current_rev))
     return results
-
-
-def _connect_args(url: str) -> dict:
-    if url.startswith("sqlite"):
-        return {}
-    return {"connect_timeout": 5}
 
 
 def _alembic_current(conn) -> str | None:

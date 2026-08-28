@@ -242,6 +242,81 @@ def test_decorator_records_custom_provider(tracking_db):
 
 
 # ---------------------------------------------------------------------------
+# input_hash agreement with compute_input_hash
+# ---------------------------------------------------------------------------
+
+
+MULTIPART_MESSAGES = [
+    {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "describe"},
+            {"type": "image_url", "image_url": {"url": "https://x/page2.png"}},
+        ],
+    }
+]
+
+
+def test_decorator_input_hash_matches_public_compute_for_multipart(tracking_db):
+    """The decorator never receives input_hash, so it must key off messages
+    itself: record()'s rendered-prompt fallback cannot see multipart content,
+    and a row hashed that way is invisible to find_by_hash / the exact cache."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    fake = _FakeOpenRouterClient(content="x", usage={})
+
+    @track_run(agent_type="drafter", provider="openrouter")
+    def tracked_chat(*, model, messages, **sampling):
+        return fake.chat(model=model, messages=messages, **sampling)
+
+    _, usage = tracked_chat(model="claude-opus-4-7", messages=MULTIPART_MESSAGES, temperature=0.2)
+    expected = compute_input_hash(
+        model="claude-opus-4-7", messages=MULTIPART_MESSAGES, sampling={"temperature": 0.2}
+    )
+    row = LlmRunRepo().get(usage["_llm_run_id"])
+    assert row["input_hash"] == expected
+    assert [r["id"] for r in LlmRunRepo().find_by_hash(expected)] == [usage["_llm_run_id"]]
+
+
+def test_decorator_input_hash_unchanged_for_string_messages(tracking_db):
+    """Golden-value pin through the decorator path: plain string messages must
+    keep writing the historical key, or every consumer's cache is orphaned."""
+    fake = _FakeOpenRouterClient(content="x", usage={})
+
+    @track_run(agent_type="drafter", provider="openrouter")
+    def tracked_chat(*, model, messages, **sampling):
+        return fake.chat(model=model, messages=messages, **sampling)
+
+    _, usage = tracked_chat(
+        model="pin-model",
+        messages=[
+            {"role": "system", "content": "sys text"},
+            {"role": "user", "content": "user text"},
+        ],
+        temperature=0.5,
+        max_tokens=100,
+    )
+    row = LlmRunRepo().get(usage["_llm_run_id"])
+    assert row["input_hash"] == "4d5e129f1246aeb320129cfcd4be40a200640d14acbc4964734795b175355312"
+
+
+def test_decorator_failed_run_carries_the_same_input_hash(tracking_db):
+    """A failed multipart run must be findable by the same key as a success —
+    it is the forensic record of that exact input."""
+    from pf_core.llm.tracking import compute_input_hash
+
+    @track_run(agent_type="drafter", provider="openrouter")
+    def tracked_chat(*, model, messages):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        tracked_chat(model="claude-opus-4-7", messages=MULTIPART_MESSAGES)
+
+    expected = compute_input_hash(model="claude-opus-4-7", messages=MULTIPART_MESSAGES)
+    assert len(LlmRunRepo().find_by_hash(expected)) == 1
+
+
+# ---------------------------------------------------------------------------
 # Failure path
 # ---------------------------------------------------------------------------
 

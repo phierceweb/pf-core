@@ -40,7 +40,7 @@ stop_workers(handle)  # stops claiming; live subprocesses keep running
 
 - `start_workers` sweeps `reclaim_stale()` first (disable with `reclaim_on_start=False`) so jobs stranded `running` by a killed worker re-enter the queue. Poll cadence: `poll_seconds=` or the `JOB_POLL_SECONDS` env var (default 1).
 - The claim loop never dies on an error — claim and run failures log (`worker_claim_failed` / `worker_run_failed`) and the loop continues.
-- `run_subprocess_job` runs the child in its own session, merges stderr into the spec's log file (with a `$ argv` header), exports the job id as `spec.job_id_env` — so tracked LLM calls inside the child attribute their runs — and maps exit 0 → `succeeded` (with `spec.outputs`), nonzero → `failed` naming the code and log path.
+- `run_subprocess_job` runs the child in its own session, merges stderr into the spec's log file (with a `$ argv` header), exports the job id as `spec.job_id_env` — so tracked LLM calls inside the child attribute their runs — and maps exit 0 → `succeeded` (with `spec.outputs`), nonzero → `failed` naming the code and log path. While the child runs it renews the job's lease on a timer (a fraction of `JOB_LEASE_SECONDS`), so a long job is never reclaimed and run a second time.
 
 ## Cancellation
 

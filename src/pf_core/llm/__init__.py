@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 _LAZY: dict[str, tuple[str, str]] = {
     # parse — [validate] (json-repair)
     "parse_llm_json": ("pf_core.llm.parse", "parse_llm_json"),
+    "truncated_from_usage": ("pf_core.llm.parse", "truncated_from_usage"),
     # prompts — base (pyyaml)
     "load_prompt_spec": ("pf_core.llm.prompts", "load_prompt_spec"),
     "load_prompts": ("pf_core.llm.prompts", "load_prompts"),
@@ -71,7 +72,7 @@ def __dir__() -> list[str]:
 
 
 if TYPE_CHECKING:  # keep static analysers / IDEs aware of the lazy re-exports
-    from pf_core.llm.parse import parse_llm_json  # noqa: F401
+    from pf_core.llm.parse import parse_llm_json, truncated_from_usage  # noqa: F401
     from pf_core.llm.prompts import (  # noqa: F401
         load_prompt_spec,
         load_prompts,

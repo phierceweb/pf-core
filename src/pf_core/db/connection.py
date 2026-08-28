@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import create_engine, event, pool, text
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import Connection, Engine, make_url
 
 from pf_core.exceptions import ConfigurationError
 from pf_core.log import get_logger
@@ -111,6 +111,27 @@ def _install_mysqldb_shim(url: str) -> None:
     pymysql.install_as_MySQLdb()
 
 
+DEFAULT_CONNECT_TIMEOUT_S = 10
+
+_CONNECT_TIMEOUT_BACKENDS = frozenset({"mysql", "mariadb", "postgresql", "postgres"})
+_CONNECT_TIMEOUT_DRIVERS = frozenset({"", "pymysql", "mysqldb", "psycopg", "psycopg2"})
+
+
+def connect_args(url: str, *, default_timeout_s: int = DEFAULT_CONNECT_TIMEOUT_S) -> dict[str, int]:
+    """``connect_args`` bounding the TCP connect, from ``DB_CONNECT_TIMEOUT_S``.
+
+    Empty when the URL already sets ``connect_timeout`` — a ``connect_args``
+    entry would silently override it.
+    """
+    backend, _, driver = url.split("://", 1)[0].lower().partition("+")
+    if backend not in _CONNECT_TIMEOUT_BACKENDS or driver not in _CONNECT_TIMEOUT_DRIVERS:
+        return {}
+    if "connect_timeout" in make_url(url).query:
+        return {}
+    timeout = resolve_int(None, "DB_CONNECT_TIMEOUT_S", default=default_timeout_s)
+    return {"connect_timeout": timeout} if timeout > 0 else {}
+
+
 def get_engine(url: str | None = None) -> Engine:
     """Return (and cache) the SQLAlchemy engine.
 
@@ -150,7 +171,7 @@ def get_engine(url: str | None = None) -> Engine:
 
         elif dialect == "mysql":
             _install_mysqldb_shim(resolved_url)
-            engine = create_engine(resolved_url)
+            engine = create_engine(resolved_url, connect_args=connect_args(resolved_url))
 
             @event.listens_for(engine, "connect")
             def _mysql_session_setup(dbapi_conn, _record):
@@ -163,7 +184,7 @@ def get_engine(url: str | None = None) -> Engine:
                 cur.close()
 
         else:  # postgresql
-            engine = create_engine(resolved_url)
+            engine = create_engine(resolved_url, connect_args=connect_args(resolved_url))
 
         _engine = engine
         return _engine

@@ -27,6 +27,7 @@ from pf_core.jobs._repo_util import (  # noqa: F401 — lock re-exported; consum
     _dump_model,
     _normalize_input_dt,
     _step_creation_lock,
+    _touch_job_lease,
 )
 from pf_core.jobs._repo_worker import WorkerOpsMixin
 from pf_core.jobs.registry import TERMINAL_STATES, get_kind
@@ -278,6 +279,9 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
                     values["outputs"] = _dump_model(outputs)
 
             conn.execute(s.jobs.update().where(s.jobs.c.id == job_id).values(**values))
+            # A terminal transition nulls claimed_by in the same UPDATE, so
+            # this cannot revive a finished job's lease.
+            _touch_job_lease(conn, job_id)
 
     def set_progress(
         self,
@@ -288,7 +292,7 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
         step: str | None = None,
     ) -> None:
         """Update one or more progress fields without changing status."""
-        values: dict[str, Any] = {"updated_at": func.now()}
+        values: dict[str, Any] = {}
         if current is not None:
             if current < 0:
                 raise InvalidInputError(f"progress_current must be >= 0, got {current}")
@@ -299,10 +303,12 @@ class JobRepo(WorkerOpsMixin, StepEventsMixin, Repository):
             values["progress_total"] = total
         if step is not None:
             values["current_step"] = step
-        if len(values) == 1:  # only updated_at
+        if not values:
             return
+        values["updated_at"] = func.now()
         with self._tx() as conn:
             conn.execute(s.jobs.update().where(s.jobs.c.id == job_id).values(**values))
+            _touch_job_lease(conn, job_id)
 
     # ------------------------------------------------------------------
     # Cancel / retry

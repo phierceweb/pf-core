@@ -4,7 +4,7 @@
 
 Two layers (exact cache is shipped; semantic is planned):
 
-1. **Exact cache** — keyed by `input_hash` (SHA256 of model + rendered prompts + sampling + configs). Reuses identical calls without a round-trip.
+1. **Exact cache** — keyed by `input_hash` (SHA256 of model + prompts + sampling + configs). Reuses identical calls without a round-trip.
 2. **Semantic cache** — keyed by embedding similarity. For queries that differ only in whitespace, phrasing, or order-irrelevant details. Opt-in per agent type. *(planned — not yet shipped; the schema ships today, the lookup doesn't)*
 
 **Not** to be confused with `pf_core.cache.redis` (Redis KV cache for API response memoization). This module caches LLM call responses in the database.
@@ -58,6 +58,8 @@ Per-agent policy. Place in `config/cache.yaml` (or set `CACHE_CONFIG` env var).
 
 To disable caching entirely with no config file, set `CACHE_CONFIG` to `off` (also accepted: `disabled`, `none`, `0`) — exact and semantic caching turn off for every agent. This is what test suites should use (`hermetic_test_env()` sets it — see [testing.md](testing.md)); a missing file, by contrast, means framework defaults, which have `exact: true`.
 
+The loader never raises on a bad config: a file that fails to parse, or whose top level is not a mapping, logs a warning (`cache_config_load_failed` / `cache_config_not_a_mapping`) and falls back to framework defaults.
+
 ```yaml
 # config/cache.yaml
 
@@ -65,7 +67,6 @@ defaults:
   exact: true
   semantic: false
   ttl_seconds: 86400        # 24 hours; 0 = never expire
-  max_entries_per_agent: 10000
   on_miss: proceed           # 'proceed' | 'warn_log'
 
 agents:
@@ -97,8 +98,9 @@ agents:
 | `semantic_threshold` | `0.93` | Cosine similarity threshold for a semantic hit |
 | `semantic_embedding_model` | `""` | Model used for embeddings (planned) |
 | `canonicalize.*` | all `false` | Pre-embedding normalizations (planned) |
-| `max_entries_per_agent` | `10000` | LRU eviction trigger |
 | `on_miss` | `proceed` | `warn_log` emits a WARNING on miss (useful during rollout) |
+
+There is no size-based eviction: the cache is bounded by `ttl_seconds` plus the explicit invalidation helpers below. Older releases accepted a `max_entries_per_agent` key; it is now ignored (a config still carrying it loads, and logs `cache_config_ignored_key` once).
 
 ## compute_input_hash()
 
@@ -114,9 +116,15 @@ h = compute_input_hash(
 # → 64-char hex string
 ```
 
-Same hash that `LlmRunRepo.record()` writes to `llm_runs.input_hash`. Use it as the primary key for both the exact cache lookup and the tracking row.
+The value written to `llm_runs.input_hash`. Use it as the primary key for both the exact cache lookup and the tracking row.
 
 **Accepts** either `messages` list or pre-rendered `rendered_system` / `rendered_user` strings. Non-sampling keys in the `sampling` dict (e.g. `model`, `agent_type`) are automatically stripped before hashing.
+
+**Beyond the rendered prompts.** Rendering keeps only plain-string `system`/`user` content, so a `messages` list carrying anything else — multi-part (vision) content, assistant/tool turns, `tool_calls`, a `name` field — additionally keys the hash by a digest of the whole list. Without it, every vision call on one model collapses to a single key and the cache returns page 1's answer for pages 2..N. A list of plain `{role, content}` system/user string messages hashes exactly as it did before the digest existed, so those cache entries stay valid; lists of any other shape get new keys and repopulate on next use.
+
+A part that isn't JSON data (an open file handle, a client object) is stringified rather than rejected. Objects without a stable `repr` therefore produce a per-process key that never hits across processes — a lost cache, not a wrong answer.
+
+**Agreement with `record()`.** `LlmRunRepo.record()` autocomputes an omitted `input_hash` from the `rendered_prompts` it is given, and cannot see the rest of the list. `llm_step`, `tracked_messages_call`, and `@track_run` all key off `messages` for you; a call site that invokes `record()` directly must pass `input_hash=compute_input_hash(messages=...)` or its rows will not be findable by the cache key.
 
 ## cache_lookup()
 
@@ -160,7 +168,7 @@ cache_store(
 )
 ```
 
-No-op when exact caching is disabled for the agent. A store over an existing `input_hash` — a concurrent identical request, or a re-store after the entry expired — refreshes that row in place through the portable [`upsert`](db-upsert.md) helper: same id, same `created_at`, same `hit_count`/`last_hit_at`, new response and expiry. Since `input_hash` covers model, rendered prompts, sampling, and configs, a conflicting row is the same logical request.
+No-op when exact caching is disabled for the agent. A store over an existing `input_hash` — a concurrent identical request, or a re-store after the entry expired — refreshes that row in place through the portable [`upsert`](db-upsert.md) helper: same id, same `created_at`, same `hit_count`/`last_hit_at`, new response and expiry. Since `input_hash` covers model, prompts, sampling, and configs, a conflicting row is the same logical request.
 
 ## record_cache_hit()
 
@@ -214,8 +222,8 @@ Registered on the shared `pf_core.llm.tracking.schema.metadata`. Created by the 
 | `source_run_id` | BIGINT FK | → `llm_runs.id` ON DELETE CASCADE |
 | `parsed_output` | JSON | Denormalized for fast hit reads |
 | `raw_response` | MEDIUMTEXT | Denormalized for fast hit reads |
-| `hit_count` | INT | LRU eviction input |
-| `last_hit_at` | TIMESTAMP | |
+| `hit_count` | INT | Hit counter — analytics only, nothing evicts on it |
+| `last_hit_at` | TIMESTAMP | Analytics only |
 | `expires_at` | TIMESTAMP NULL | NULL = never |
 | `created_at` | TIMESTAMP | |
 

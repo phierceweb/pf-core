@@ -6,10 +6,13 @@ import datetime as dt
 
 from sqlalchemy import and_, case, desc, func, select
 
-from pf_core.budget._schema import (
-    llm_budget_snapshots,
-    llm_budgets,
+from pf_core.budget._schema import llm_budgets
+from pf_core.budget.check import (
+    compute_period_end,
+    compute_period_start,
+    current_spent,
 )
+from pf_core.budget.repo import aggregate_spent
 from pf_core.db.connection import transaction
 from pf_core.llm.cache._schema import llm_cache_entries
 from pf_core.llm.tracking.schema import (
@@ -103,10 +106,11 @@ def top_cache_entries(*, limit: int = 50) -> list[dict]:
 
 
 def list_budgets_with_spend() -> list[dict]:
-    """Return every enabled budget with current-period spent + pct-of-limit."""
-    today = dt.date.today()
-    month_start = today.replace(day=1)
+    """Return every enabled budget with current-period spent + pct-of-limit.
 
+    Spend is the guard's own figure (``current_spent``) over the guard's own
+    UTC period, so the page cannot read $0 while calls are being blocked.
+    """
     with transaction() as conn:
         budgets = (
             conn.execute(select(llm_budgets).where(llm_budgets.c.enabled.is_(True)))
@@ -114,31 +118,19 @@ def list_budgets_with_spend() -> list[dict]:
             .fetchall()
         )
 
-        out = []
-        for b in budgets:
-            period_start = today if b["period"] == "daily" else month_start
-            snap = (
-                conn.execute(
-                    select(llm_budget_snapshots).where(
-                        and_(
-                            llm_budget_snapshots.c.budget_id == b["id"],
-                            llm_budget_snapshots.c.period_start == period_start,
-                        )
-                    )
-                )
-                .mappings()
-                .fetchone()
-            )
-            spent = float(snap["spent_usd"]) if snap else 0.0
-            run_count = int(snap["run_count"]) if snap else 0
-            limit = float(b["limit_usd"])
-            pct = (spent / limit) if limit > 0 else 0.0
-            row = _normalize(b)
-            row["spent_usd"] = spent
-            row["run_count"] = run_count
-            row["pct_of_limit"] = pct
-            row["period_start"] = period_start
-            out.append(row)
+    out = []
+    for b in budgets:
+        row = _normalize(b)
+        period_start = compute_period_start(row["period"])
+        period_end = compute_period_end(row["period"], period_start)
+        spent = current_spent(row)
+        _, run_count = aggregate_spent(budget=row, period_start=period_start, period_end=period_end)
+        limit = float(row["limit_usd"])
+        row["spent_usd"] = spent
+        row["run_count"] = run_count
+        row["pct_of_limit"] = (spent / limit) if limit > 0 else 0.0
+        row["period_start"] = period_start
+        out.append(row)
 
     out.sort(key=lambda r: r["pct_of_limit"], reverse=True)
     return out

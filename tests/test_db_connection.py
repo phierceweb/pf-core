@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from sqlalchemy import text
 from pf_core.db.connection import (
     DatabaseUnavailableError,
     _install_mysqldb_shim,
+    connect_args,
     db_url,
     get_engine,
     is_sqlite,
@@ -326,3 +328,117 @@ class TestPing:
         finally:
             event.remove(pf_engine, "before_cursor_execute", _spy)
         assert any("SELECT 1" in s for s in seen)
+
+
+def _engine_kwargs(monkeypatch, url: str) -> dict:
+    """Kwargs ``get_engine`` hands to ``create_engine`` for ``url``."""
+    import pf_core.db.connection as conn_mod
+
+    real_create = conn_mod.create_engine
+    captured: dict = {}
+
+    def spy(url_arg, **kwargs):
+        captured.update(kwargs)
+        return real_create(url_arg, **kwargs)
+
+    monkeypatch.setattr(conn_mod, "create_engine", spy)
+    reset_engine()
+    try:
+        get_engine(url)
+    finally:
+        reset_engine()
+    return captured
+
+
+class TestConnectTimeout:
+    """An unbounded connect leaves the caller hanging until the OS gives up."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_env(self, monkeypatch):
+        monkeypatch.delenv("DB_CONNECT_TIMEOUT_S", raising=False)
+
+    def test_sqlite_has_no_socket_to_bound(self):
+        assert connect_args("sqlite:///data.db") == {}
+
+    def test_postgres_bounded_by_default(self):
+        assert connect_args("postgresql+psycopg://h/db") == {"connect_timeout": 10}
+
+    def test_mysql_default_driver_bounded(self):
+        assert connect_args("mysql://h/db") == {"connect_timeout": 10}
+        assert connect_args("MariaDB+PyMySQL://h/db?charset=utf8") == {"connect_timeout": 10}
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("DB_CONNECT_TIMEOUT_S", "3")
+        assert connect_args("mysql+pymysql://h/db") == {"connect_timeout": 3}
+
+    def test_non_positive_leaves_the_driver_default(self, monkeypatch):
+        monkeypatch.setenv("DB_CONNECT_TIMEOUT_S", "0")
+        assert connect_args("mysql+pymysql://h/db") == {}
+
+    def test_caller_default_applies_when_env_unset(self):
+        assert connect_args("mysql+pymysql://h/db", default_timeout_s=5) == {"connect_timeout": 5}
+
+    def test_env_beats_caller_default(self, monkeypatch):
+        monkeypatch.setenv("DB_CONNECT_TIMEOUT_S", "20")
+        assert connect_args("mysql+pymysql://h/db", default_timeout_s=5) == {"connect_timeout": 20}
+
+    def test_driver_that_rejects_the_kwarg_is_left_alone(self):
+        assert connect_args("mysql+mysqlconnector://h/db") == {}
+
+    def test_unsupported_backend_is_left_alone(self):
+        assert connect_args("mssql+pyodbc://h/db") == {}
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "mysql+pymysql://u:p@h:3306/db?connect_timeout=45",
+            "postgresql+psycopg://u:p@h/db?sslmode=require&connect_timeout=60",
+        ],
+    )
+    def test_url_connect_timeout_is_never_overridden(self, url, monkeypatch):
+        monkeypatch.setenv("DB_CONNECT_TIMEOUT_S", "3")
+        assert connect_args(url) == {}
+
+    def test_get_engine_bounds_network_connects(self, monkeypatch):
+        pytest.importorskip("psycopg")
+        captured = _engine_kwargs(monkeypatch, "postgresql+psycopg://demo:demo@127.0.0.1:5432/nope")
+        assert captured["connect_args"] == {"connect_timeout": 10}
+
+    def test_get_engine_defers_to_a_url_that_sets_it(self, monkeypatch):
+        pytest.importorskip("pymysql")
+        captured = _engine_kwargs(
+            monkeypatch, "mysql+pymysql://demo:demo@127.0.0.1:3306/nope?connect_timeout=45"
+        )
+        assert captured["connect_args"] == {}
+
+    def test_sqlalchemy_connect_args_would_override_the_url(self):
+        """Why a URL-set timeout must not be injected over: connect_args wins."""
+        pytest.importorskip("pymysql")
+        from sqlalchemy import create_engine, event
+
+        url = "mysql+pymysql://u:p@127.0.0.1:3306/db?connect_timeout=45"
+        seen: list[dict] = []
+
+        class _Stop(Exception):
+            pass
+
+        def params(**kwargs) -> int | None:
+            engine = create_engine(url, **kwargs)
+
+            @event.listens_for(engine, "do_connect")
+            def _capture(_dialect, _rec, _cargs, cparams):
+                seen.append(dict(cparams))
+                raise _Stop
+
+            with pytest.raises(_Stop):
+                engine.connect()
+            return seen[-1].get("connect_timeout")
+
+        assert params() == 45
+        assert params(connect_args={"connect_timeout": 10}) == 10
+
+    def test_pymysql_applies_its_own_default_when_unset(self):
+        """Backs the docs: DB_CONNECT_TIMEOUT_S=0 is not 'unbounded' on pymysql."""
+        pymysql = pytest.importorskip("pymysql")
+        sig = inspect.signature(pymysql.connections.Connection.__init__)
+        assert sig.parameters["connect_timeout"].default == 10

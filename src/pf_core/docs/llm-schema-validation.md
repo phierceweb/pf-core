@@ -257,6 +257,8 @@ parse_and_validate(
     stages: tuple[str, ...] = ("shape", "semantic", "cross_field"),
     expect: str = "any",
     missing_pipeline: Literal["raise", "fallback"] = "raise",
+    truncated: bool | None = None,
+    on_truncation: Literal["warn", "fail"] = "warn",
 ) -> ValidationResult
 ```
 
@@ -269,6 +271,8 @@ parse_and_validate(
 | `stages` | Stages to run. Pass `("shape",)` to skip semantic and cross-field during migration. |
 | `expect` | Forwarded to `parse_llm_json`: `"any"`, `"array"`, or `"object"`. |
 | `missing_pipeline` | `"raise"` (default) raises `PipelineNotRegisteredError` naming the missing slug and currently-registered agents. `"fallback"` emits a WARNING log and returns `ok=False` with one `no_pipeline_registered` error signal. Use `"fallback"` only for generic replay tooling that legitimately expects unregistered agents. |
+| `truncated` | Authoritative truncation flag from the client's `usage` dict — see [`truncated_from_usage`](llm-parse.md#detecting-truncation-truncated-not-the-text). Forwarded to `parse_llm_json`, where it logs a WARNING. `llm_step` passes it for you. |
+| `on_truncation` | What `truncated=True` means. `"warn"` (default) runs the pipeline anyway. `"fail"` short-circuits before parsing with one `{agent}_truncated` error signal and `value=None`. |
 
 ### `ValidationResult`
 
@@ -283,13 +287,14 @@ parse_and_validate(
 
 ### `ValidationSignal`
 
-Fields: `validator: str` (named `{agent}_shape` for the shape stage, `{agent}_parse` when JSON extraction itself fails, bare slug otherwise), `severity: str` (`"info" | "warn" | "error"`), `passed: bool`, `details: dict | None` (failure context — Pydantic `errors()`, JSON-Schema paths, threshold values).
+Fields: `validator: str` (named `{agent}_shape` for the shape stage, `{agent}_parse` when JSON extraction itself fails, `{agent}_truncated` under `on_truncation="fail"`, bare slug otherwise), `severity: str` (`"info" | "warn" | "error"`), `passed: bool`, `details: dict | None` (failure context — Pydantic `errors()`, JSON-Schema paths, threshold values).
 
 ### What `parse_and_validate` does not do
 
 - It does not raise on shape or content failure — it returns `ok=False`. The caller chooses the policy.
 - It does not retry against a different model. Re-prompting is a service-level decision (no router integration).
 - It does not require an `llm_run_id`. Pass `run_id=None` to skip the DB write.
+- It does not fail a truncated response **by default**. `truncated=True` logs a WARNING; an incomplete-but-parseable payload still reaches the validators, where a `field_non_empty` or `min_items` rule is the thing that catches it. Pass `on_truncation="fail"` to reject it outright instead.
 
 ### Pre-flight registration checks
 

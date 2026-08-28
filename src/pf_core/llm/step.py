@@ -15,7 +15,7 @@ primitive's contract.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from pf_core.budget import (
     CostBudgetExceeded,
@@ -23,9 +23,11 @@ from pf_core.budget import (
     project_cost,
     record_blocked_run,
 )
+from pf_core.exceptions import InvalidInputError
 
 try:
     from pf_core.llm.cache import cache_lookup, cache_store, record_cache_hit
+    from pf_core.llm.parse import truncated_from_usage
     from pf_core.llm.tracked import tracked_messages_call
     from pf_core.llm.tracking import compute_input_hash
     from pf_core.llm.validate import ValidationResult, parse_and_validate
@@ -87,6 +89,7 @@ def llm_step(
     budget: BudgetEstimate | None = None,
     validate: str | None = None,
     validation_context: dict[str, Any] | None = None,
+    on_truncation: Literal["warn", "fail"] = "warn",
 ) -> StepResult:
     """Run one cache/budget/track/validate-composed LLM call.
 
@@ -107,10 +110,22 @@ def llm_step(
             hits re-validate the stored raw response, so a validator change
             re-judges old cache entries instead of trusting stored output.
         validation_context: Forwarded to :func:`parse_and_validate`.
+        on_truncation: What a provider-reported truncation means for the
+            validated value — ``"warn"`` (default) keeps whatever parsed,
+            ``"fail"`` returns ``validation.ok`` False with a
+            ``<agent>_truncated`` error signal (needs ``validate`` set —
+            with ``validate=None`` nothing inspects the response). Under either value a
+            known-truncated response is never written to the cache.
 
     Returns:
         A :class:`StepResult`. Persistence of ``value`` is the caller's job.
+
+    Raises:
+        InvalidInputError: unknown ``on_truncation`` value.
     """
+    if on_truncation not in ("warn", "fail"):
+        raise InvalidInputError(f"on_truncation must be 'warn' or 'fail', got {on_truncation!r}")
+
     resolved_hash = input_hash
     if cache:
         if resolved_hash is None:
@@ -159,7 +174,7 @@ def llm_step(
             record_blocked_run(agent_type=agent_type, model=model, exc=exc, job_id=budget.job_id)
             raise
 
-    content, _usage, run_id = tracked_messages_call(
+    content, usage, run_id = tracked_messages_call(
         client=client,
         agent_type=agent_type,
         messages=messages,
@@ -179,6 +194,8 @@ def llm_step(
         on_record_error=on_record_error,
     )
 
+    truncated = truncated_from_usage(usage)
+
     if validate is not None:
         validation = parse_and_validate(
             content,
@@ -186,6 +203,8 @@ def llm_step(
             run_id=run_id,
             validation_context=validation_context,
             expect=validate,
+            truncated=truncated,
+            on_truncation=on_truncation,
         )
         if not validation.ok:
             return StepResult(
@@ -200,7 +219,9 @@ def llm_step(
         validation = None
         value = content
 
-    if cache and resolved_hash is not None and run_id is not None:
+    # A cache hit replays stored text with no finish reason, so storing a
+    # known-truncated response would strip the flag off every later read.
+    if cache and not truncated and resolved_hash is not None and run_id is not None:
         parsed_for_cache = value if isinstance(value, (dict, list)) else None
         cache_store(
             agent_type=agent_type,

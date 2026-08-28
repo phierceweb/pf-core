@@ -6,6 +6,8 @@ rate-limited or refreshing session got hammered inside the same window.
 
 from __future__ import annotations
 
+import json
+
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -30,7 +32,8 @@ def _no_sleep():
 def _ok_run(stdout: str = "ok") -> MagicMock:
     m = MagicMock()
     m.returncode = 0
-    m.stdout = stdout
+    # Envelope mode: the CLI emits a JSON envelope, not bare text.
+    m.stdout = json.dumps({"result": stdout, "is_error": False, "stop_reason": "end_turn"})
     m.stderr = ""
     return m
 

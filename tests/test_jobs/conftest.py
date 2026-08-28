@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from pydantic import BaseModel
+from sqlalchemy import update
 
+from pf_core.db import transaction
+from pf_core.jobs import _schema as s
 from pf_core.jobs import clear_registry, register_kind
 from pf_core.llm.tracking import clear_resolver_caches, metadata
 
@@ -58,3 +63,17 @@ def strict_kind():
             "failed": ["pending"],
         },
     )
+
+
+@pytest.fixture()
+def backdate_job_activity():
+    """Age a job's lease and activity stamps far past any lease window."""
+
+    def _backdate(job_id: int) -> None:
+        past = datetime(2000, 1, 1)
+        with transaction() as conn:
+            conn.execute(
+                update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_at=past, updated_at=past)
+            )
+
+    return _backdate

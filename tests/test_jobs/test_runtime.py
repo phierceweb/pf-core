@@ -226,6 +226,26 @@ def test_step_handle_error_marks_failed_without_exception(jobs_db, simple_kind):
     assert s["error"] == "domain rejected"
 
 
+def test_step_activity_renews_worker_lease(jobs_db, simple_kind, backdate_job_activity):
+    """Step writes prove the worker is alive: a reclaim sweep mid-run must not
+    hand the job to a second worker."""
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    repo.claim_next(worker_id="w1")
+
+    with Job(job_id, repo=repo) as job:
+        job.transition("running")
+        backdate_job_activity(job_id)
+        with job.step("slow_work"):
+            pass
+
+        assert repo.reclaim_stale(lease_seconds=10) == 0
+
+    row = repo.get(job_id)
+    assert row["status"] == "running"
+    assert row["claimed_by"] == "w1"
+
+
 # ---------------------------------------------------------------------------
 # llm_runs.job_id attribution via contextvar
 # ---------------------------------------------------------------------------

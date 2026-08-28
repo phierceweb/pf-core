@@ -22,12 +22,15 @@ Notes:
   accepted but **ignored** — the active Claude Code session controls
   sampling. They're in the signature so callers can use the same kwargs
   they'd use for OpenRouter without code changes.
-- Token counts in the returned ``usage`` dict are always 0 (the CLI does
-  not expose them). ``duration_ms`` is wall-clock from invocation.
+- Token counts in the returned ``usage`` dict are always 0.
+  ``duration_ms`` is wall-clock from invocation.
+- ``usage["finish_reason"]`` carries the model's stop reason, read off the
+  ``--output-format json`` envelope and normalised onto OpenRouter's
+  vocabulary. See :func:`~pf_core.clients._claude_code_wire.unwrap_envelope`.
 - ``cost_usd`` is always 0.0 — Claude Max sessions don't bill per-call.
 - All ``system`` messages are joined (in encountered order) and separated
   from the joined non-system messages with ``\\n\\n---\\n\\n``, then sent
-  as a single prompt. See :func:`_flatten_messages`.
+  as a single prompt. See :func:`~pf_core.clients._claude_code_wire.flatten_messages`.
 
 Usage::
 
@@ -51,6 +54,12 @@ import subprocess
 import time
 from typing import Any
 
+from pf_core.clients._claude_code_wire import (
+    envelope_error,
+    flatten_messages,
+    translate_model,
+    unwrap_envelope,
+)
 from pf_core.exceptions import AppError
 from pf_core.log import get_logger
 
@@ -73,6 +82,14 @@ DEFAULT_PREFLIGHT_TIMEOUT_SECONDS = 30
 # CLAUDE.md, skills, hooks, plugins). On by default via isolate=True; the
 # why lives in ClaudeCodeClient's `isolate` docstring.
 _SAFE_MODE_FLAG = "--safe-mode"
+
+# The JSON envelope carries the model's stop_reason; text-mode stdout has no
+# equivalent, so truncation would be unreportable without it.
+_OUTPUT_FORMAT_FLAG = "--output-format"
+
+# extra_args that change stdout's shape suppress envelope mode — the consumer
+# owns the output and the client reads it as text, exactly as pre-envelope.
+_SHAPE_FLAGS = (_OUTPUT_FORMAT_FLAG, "--verbose")
 
 # Backoff before retry N (0-based): _RETRY_BACKOFF_BASE * (N + 1) seconds.
 _RETRY_BACKOFF_BASE = 0.5
@@ -97,6 +114,9 @@ class ClaudeCodeClient:
         extra_args: Additional CLI flags inserted after ``--safe-mode``
             (when ``isolate=True``) and before ``--model`` / ``--print``
             (e.g. ``["--allowedTools", "Bash"]``). Empty by default.
+            Supplying ``--output-format`` or ``--verbose`` here suppresses the
+            client's own envelope — stdout is read as text and no
+            ``finish_reason`` is reported.
         model: Default model passed as ``--model X`` on every call. Falls
             back to ``$PF_CORE_CLAUDE_CODE_MODEL`` if not provided. Set
             to ``None`` (the default) to omit the flag entirely and let
@@ -171,14 +191,14 @@ class ClaudeCodeClient:
                 context={"binary": self.binary},
             )
 
-        prompt = _flatten_messages(messages)
+        prompt = flatten_messages(messages)
         if not prompt:
             raise ClaudeCodeError(
                 "messages list contained no usable user content",
                 context={"messages_count": len(messages)},
             )
 
-        resolved_model = _translate_model(model or self.model)
+        resolved_model = translate_model(model or self.model)
         model_flag = ["--model", resolved_model] if resolved_model else []
         # isolate=True prepends --safe-mode (leads the argv). See _SAFE_MODE_FLAG.
         isolation_args = [_SAFE_MODE_FLAG] if self.isolate else []
@@ -187,7 +207,18 @@ class ClaudeCodeClient:
         # past it and raises E2BIG: "Argument list too long". stdin has
         # no such limit. `claude --print` reads stdin when no positional
         # prompt is supplied.
-        cmd = [binary_path, *isolation_args, *self.extra_args, *model_flag, "--print"]
+        envelope_mode = not any(
+            a.startswith(flag) for a in self.extra_args for flag in _SHAPE_FLAGS
+        )
+        format_args = [_OUTPUT_FORMAT_FLAG, "json"] if envelope_mode else []
+        cmd = [
+            binary_path,
+            *isolation_args,
+            *self.extra_args,
+            *model_flag,
+            *format_args,
+            "--print",
+        ]
         wall_timeout = timeout if timeout is not None else self.timeout
 
         # This transport authenticates via the active Claude Max session, NOT
@@ -237,22 +268,25 @@ class ClaudeCodeClient:
                 )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             if result.returncode != 0:
+                # In envelope mode the CLI reports errors in the JSON result on
+                # stdout, not stderr — quote whichever carries the diagnosis.
+                detail = result.stderr.strip() or envelope_error(result.stdout) or ""
                 if attempt < self.retry:
                     _log.warning(
                         "claude_code_retry_nonzero",
                         attempt=attempt + 1,
                         of=self.retry + 1,
                         returncode=result.returncode,
-                        stderr_head=result.stderr[:200],
+                        error_head=detail[:200],
                     )
                     time.sleep(_RETRY_BACKOFF_BASE * (attempt + 1))
                     continue
                 raise ClaudeCodeError(
                     f"`{self.binary} --print` exited {result.returncode} "
-                    f"(after {attempt + 1} attempt(s)): {result.stderr[:500]}",
+                    f"(after {attempt + 1} attempt(s)): {detail[:500]}",
                     context={
                         "returncode": result.returncode,
-                        "stderr_head": result.stderr[:200],
+                        "error_head": detail[:200],
                         "attempts": attempt + 1,
                     },
                 )
@@ -263,11 +297,29 @@ class ClaudeCodeClient:
         assert result is not None  # noqa: S101
 
         content = result.stdout.strip()
+        finish_reason: str | None = None
+        if envelope_mode:
+            unwrapped = unwrap_envelope(result.stdout)
+            if unwrapped is None:
+                # The client asked for JSON, so raw stdout is machine output,
+                # not an answer — returning it as content would be corruption.
+                raise ClaudeCodeError(
+                    "claude --output-format json produced an unreadable envelope. "
+                    "Upgrade the CLI, or pass extra_args=['--output-format', 'text'] "
+                    "to restore text-mode output (truncation then unreportable).",
+                    context={"model": resolved_model, "stdout_head": content[:200]},
+                )
+            content, finish_reason = unwrapped
+            if envelope_error(result.stdout) is not None:
+                raise ClaudeCodeError(
+                    f"`{self.binary} --print` reported an error: {content[:500]}",
+                    context={"model": resolved_model},
+                )
 
         # Match the OpenRouterClient.chat usage-dict shape so the two
         # clients are drop-in interchangeable. Fields that don't apply
         # to the CLI return 0 / 0.0 / None.
-        usage = {
+        usage: dict[str, Any] = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "cache_read_tokens": 0,
@@ -277,6 +329,14 @@ class ClaudeCodeClient:
             "duration_ms": elapsed_ms,
             "system_fingerprint": None,
         }
+        if finish_reason is not None:
+            usage["finish_reason"] = finish_reason
+        if finish_reason == "length":
+            _log.warning(
+                "claude_code_truncated",
+                model=resolved_model,
+                content_len=len(content),
+            )
         return content, usage
 
     def preflight(self, *, timeout: int = DEFAULT_PREFLIGHT_TIMEOUT_SECONDS) -> None:
@@ -323,59 +383,6 @@ class ClaudeCodeClient:
             model=self.model,
             content_head=content[:80],
         )
-
-
-def _translate_model(model: str | None) -> str:
-    """Strip an OpenRouter-style ``provider/`` prefix from a model id.
-
-    ``pf_core.clients.routing.get_routed_client`` claims backend
-    transparency: a single ``model`` string in a consumer's config has
-    to work whether the call lands on OpenRouter (which expects
-    ``provider/model`` like ``anthropic/claude-3.7-sonnet``) or on
-    Claude Code (whose ``--model`` flag wants the bare id like
-    ``claude-3.7-sonnet``). We translate at cmd-build time so consumers
-    never have to maintain two model strings per agent.
-
-    Strings without a slash pass through unchanged. A string that
-    translates to the empty string (e.g. ``"anthropic/"``) is treated
-    as "no model override" — the caller gets the active session model
-    rather than ``--model`` with an empty value.
-    """
-    if not model:
-        return ""
-    if "/" not in model:
-        return model
-    return model.rsplit("/", 1)[-1]
-
-
-def _flatten_messages(messages: list[dict]) -> str:
-    """Collapse a chat-message list into a single ``claude --print`` prompt.
-
-    System messages (in encountered order) are joined and then separated
-    from user content with ``\\n\\n---\\n\\n``. Multiple user / assistant
-    messages are joined with blank lines. Returns the empty string when
-    the messages list yields no content.
-    """
-    system_parts: list[str] = []
-    body_parts: list[str] = []
-    for msg in messages or []:
-        role = (msg.get("role") or "").lower()
-        content = msg.get("content") or ""
-        if not content:
-            continue
-        if role == "system":
-            system_parts.append(content)
-        else:
-            body_parts.append(content)
-
-    body = "\n\n".join(body_parts).strip()
-    if not body:
-        return ""
-
-    if not system_parts:
-        return body
-    system_block = "\n\n".join(system_parts).strip()
-    return f"{system_block}\n\n---\n\n{body}"
 
 
 # ---------------------------------------------------------------------------

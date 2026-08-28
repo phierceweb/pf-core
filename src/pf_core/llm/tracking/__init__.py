@@ -25,7 +25,7 @@ Public surface::
 
         # Repos
         LlmRunRepo,
-        LlmRunOutcomeRepo, LlmRunValidationRepo, LlmRunLinkRepo,
+        LlmRunOutcomeRepo, LlmRunValidationRepo, LlmRunLinkRepo, LlmRunMetricRepo,
         LlmRunStatsRepo,
 
         # Decorator
@@ -79,6 +79,7 @@ from pf_core.llm.tracking.repo import LlmRunRepo, compute_input_hash  # noqa: F4
 from pf_core.llm.tracking.stats import LlmRunStatsRepo  # noqa: F401
 from pf_core.llm.tracking.subrepos import (  # noqa: F401
     LlmRunLinkRepo,
+    LlmRunMetricRepo,
     LlmRunOutcomeRepo,
     LlmRunValidationRepo,
 )
@@ -109,6 +110,7 @@ __all__ = [
     "split_metadata",
     # Repos
     "LlmRunLinkRepo",
+    "LlmRunMetricRepo",
     "LlmRunOutcomeRepo",
     "LlmRunRepo",
     "LlmRunStatsRepo",

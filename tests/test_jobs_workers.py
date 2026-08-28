@@ -109,6 +109,108 @@ class TestTerminate:
         assert JobRepo().get(job_id)["status"] == "canceled"
 
 
+class TestLeaseRenewal:
+    def test_subprocess_job_outliving_its_lease_is_not_reclaimed(self, tmp_path, monkeypatch):
+        import threading
+
+        from pf_core.jobs import workers as workers_mod
+
+        monkeypatch.setenv("JOB_LEASE_SECONDS", "2")
+        repo = JobRepo()
+        job_id = repo.create(kind=KIND, created_by="test")
+        assert repo.claim_next(worker_id="w1")["id"] == job_id
+        row = repo.get(job_id)
+
+        spec = _spec(tmp_path, _py("import time; time.sleep(30)"))
+        t = threading.Thread(target=run_subprocess_job, args=(row, spec), daemon=True)
+        t.start()
+
+        deadline = time.monotonic() + 5
+        started = False
+        while time.monotonic() < deadline:
+            with workers_mod._RUNNING_LOCK:
+                started = job_id in workers_mod._RUNNING
+            if started:
+                break
+            time.sleep(0.05)
+        assert started, "runner never registered the subprocess"
+
+        try:
+            deadline = time.monotonic() + 4.5  # > 2x the lease
+            while time.monotonic() < deadline:
+                assert repo.reclaim_stale() == 0
+                time.sleep(0.25)
+            after = repo.get(job_id)
+            assert after["status"] == "running"
+            assert after["claimed_by"] == "w1"
+        finally:
+            repo.cancel(job_id, reason="test")
+            terminate_job(job_id)
+            t.join(timeout=10)
+        assert not t.is_alive()
+
+    def test_losing_the_claim_midrun_warns(self, tmp_path, monkeypatch, caplog):
+        import logging
+        import threading
+
+        from sqlalchemy import update
+
+        from pf_core.db import transaction
+        from pf_core.jobs import _schema as s
+
+        monkeypatch.setenv("JOB_LEASE_SECONDS", "1")
+        repo = JobRepo()
+        job_id = repo.create(kind=KIND, created_by="test")
+        repo.claim_next(worker_id="w1")
+        row = repo.get(job_id)
+
+        spec = _spec(tmp_path, _py("import time; time.sleep(30)"))
+        with caplog.at_level(logging.WARNING, logger="pf_core.jobs.workers"):
+            t = threading.Thread(target=run_subprocess_job, args=(row, spec), daemon=True)
+            t.start()
+            time.sleep(0.6)  # at least one successful renewal
+            with transaction() as conn:
+                conn.execute(update(s.jobs).where(s.jobs.c.id == job_id).values(claimed_by=None))
+            time.sleep(0.8)
+            try:
+                assert any("job_lease_lost" in r.getMessage() for r in caplog.records)
+            finally:
+                repo.cancel(job_id, reason="test")
+                terminate_job(job_id)
+                t.join(timeout=10)
+
+    def test_unclaimed_job_does_not_warn_about_a_lease(self, tmp_path, monkeypatch, caplog):
+        """Single-process callers run unclaimed jobs — never a lost lease."""
+        import logging
+
+        monkeypatch.setenv("JOB_LEASE_SECONDS", "1")
+        job_id = JobRepo().create(kind=KIND, created_by="test")
+        row = JobRepo().get(job_id)
+
+        with caplog.at_level(logging.WARNING, logger="pf_core.jobs.workers"):
+            run_subprocess_job(row, _spec(tmp_path, _py("import time; time.sleep(1)")))
+
+        assert JobRepo().get(job_id)["status"] == "succeeded"
+        assert not any("job_lease_lost" in r.getMessage() for r in caplog.records)
+
+    def test_dead_worker_job_is_still_reclaimed(self, monkeypatch):
+        # Same writes run_subprocess_job makes before it blocks; then the
+        # worker dies, so nothing renews the lease.
+        monkeypatch.setenv("JOB_LEASE_SECONDS", "1")
+        repo = JobRepo()
+        job_id = repo.create(kind=KIND, created_by="test")
+        repo.claim_next(worker_id="w1")
+        repo.transition(job_id, "running")
+        repo.add_event(job_id, event_type="started", message="probe")
+
+        time.sleep(2.5)
+
+        assert repo.reclaim_stale() == 1
+        after = repo.get(job_id)
+        assert after["status"] == "pending"
+        assert after["claimed_by"] is None
+
+
 class TestWorkerPool:
     def test_processes_pending_job_then_stops(self):
         done: list[int] = []
