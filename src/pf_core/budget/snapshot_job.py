@@ -14,7 +14,7 @@ from pf_core.budget.check import compute_period_end, compute_period_start
 from pf_core.budget.repo import (
     BudgetRepo,
     BudgetSnapshotRepo,
-    aggregate_spent,
+    aggregate_usage,
     db_now,
 )
 from pf_core.exceptions import InvalidInputError
@@ -46,7 +46,7 @@ def refresh_snapshots(*, period: str | None = None) -> int:
         period_start = compute_period_start(budget["period"], now)
         period_end = compute_period_end(budget["period"], period_start)
         try:
-            spent, count = aggregate_spent(
+            usage = aggregate_usage(
                 budget=budget,
                 period_start=period_start,
                 period_end=period_end,
@@ -63,8 +63,9 @@ def refresh_snapshots(*, period: str | None = None) -> int:
         snap_repo.upsert(
             budget_id=budget["id"],
             period_start=period_start,
-            spent_usd=spent,
-            run_count=count,
+            spent_usd=float(usage["usd"]),
+            spent_tokens=int(usage["tokens"]),
+            run_count=int(usage["calls"]),
             last_updated=cutoff,
         )
         n += 1

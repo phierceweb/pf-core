@@ -14,20 +14,32 @@ from pf_core.llm.validate import (
     register_tier1_domains,
     register_url_hallucination_rules,
 )
+from pf_core.llm.validate import _cross_field, _registry, _semantic
 
 
 @pytest.fixture(autouse=True)
 def _reset_validate_state():
-    """Reset all module-level state between tests."""
+    """Give each test a clean registry, then restore the pre-test state.
+
+    The registries are process-global; other test modules (test_llm_step)
+    register pipelines at import time, so teardown must restore rather than
+    clear or their registrations vanish for the rest of the session.
+    """
+    saved_pipelines = dict(_registry._REGISTRY)
+    saved_cross_field = dict(_cross_field._CROSS_FIELD_VALIDATORS)
+    saved_tier1 = _semantic._TIER1_HOOK
+    saved_url_rules = _semantic._URL_RULES_HOOK
     clear_registry()
     clear_cross_field_validators()
     register_tier1_domains(lambda: set())
     register_url_hallucination_rules(lambda: [])
     yield
-    clear_registry()
-    clear_cross_field_validators()
-    register_tier1_domains(lambda: set())
-    register_url_hallucination_rules(lambda: [])
+    _registry._REGISTRY.clear()
+    _registry._REGISTRY.update(saved_pipelines)
+    _cross_field._CROSS_FIELD_VALIDATORS.clear()
+    _cross_field._CROSS_FIELD_VALIDATORS.update(saved_cross_field)
+    register_tier1_domains(saved_tier1)
+    register_url_hallucination_rules(saved_url_rules)
 
 
 @pytest.fixture()

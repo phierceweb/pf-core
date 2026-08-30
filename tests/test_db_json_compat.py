@@ -49,7 +49,7 @@ def test_json_extract_dotted_path():
 
 
 def test_now_expr_per_dialect():
-    assert now_expr("mysql") == "CURRENT_TIMESTAMP"
+    assert now_expr("mysql") == "CURRENT_TIMESTAMP(6)"
     assert now_expr("postgresql") == "CURRENT_TIMESTAMP"
     assert "strftime" in now_expr("sqlite")
 
@@ -169,3 +169,21 @@ def test_supported_dialects_constant():
 def test_unsupported_dialect_in_extract():
     with pytest.raises(ValueError):
         json_extract_sql("oracle", "col", "path")
+
+
+def test_ddl_fsp_matches_across_the_three_helpers():
+    """MySQL rejects a DEFAULT or ON UPDATE whose fsp differs from the column's
+    (ERROR 1067 / 1294), so the three must be pairable at both precisions."""
+    for fractional, suffix in ((True, "(6)"), (False, "")):
+        assert timestamp_type("mysql", fractional=fractional) == f"TIMESTAMP{suffix}"
+        assert now_expr("mysql", fractional=fractional) == f"CURRENT_TIMESTAMP{suffix}"
+        assert (
+            on_update_now_clause("mysql", fractional=fractional)
+            == f"ON UPDATE CURRENT_TIMESTAMP{suffix}"
+        )
+
+
+def test_fractional_is_a_mysql_only_distinction():
+    for dialect in ("postgresql", "sqlite"):
+        assert now_expr(dialect, fractional=False) == now_expr(dialect)
+        assert on_update_now_clause(dialect, fractional=False) == on_update_now_clause(dialect)

@@ -63,10 +63,14 @@ def make_admin_router(
 | `/cost-by-agent` | Cost + run count per agent type |
 | `/jobs` | Paginated list of `jobs` with filters for status + kind |
 | `/job/{id}` | Job header, steps, events, LLM-run summary |
-| `/cache` | Hit rate by agent + top cache entries by hit count |
-| `/budgets` | Every active budget with current-period spent, %-of-limit, action |
+| `/cache` | Hit rate by agent (windowed), per-agent effectiveness from `cache_stats()` (all time), and top entries by hit count |
+| `/budgets` | Every active budget with current-period usage per configured dimension, worst %-of-limit, action |
 
-`/budgets` reports the same number the guard enforces on: `pf_core.budget.current_spent()` (snapshot + live delta) over the UTC period from `compute_period_start()` — see [cost-budget.md](cost-budget.md#spent-calculation). It is therefore correct even where `refresh_snapshots()` was never wired up.
+`/budgets` reports the same numbers the guard enforces on: `pf_core.budget.current_usage()` (snapshot + live delta, `{"usd", "tokens", "calls"}`) over the UTC period from `compute_period_start()` — see [cost-budget.md](cost-budget.md#spent-calculation). It is therefore correct even where `refresh_snapshots()` was never wired up.
+
+USD spend and limit have their own columns; tokens and calls render as `spent / limit`, or `—` when that dimension sets no cap. The **Worst %** column is the highest ratio across the configured dimensions and is labelled with the dimension it came from, so a token cap at 95% is never read as dollars. A limit of `0` admits nothing, so any usage against it reads as 100%.
+
+For the key-volatility tell on `/cache`, see [llm-cache.md](llm-cache.md).
 
 Each HTML page has a matching `/api/*.json` endpoint returning `{data, meta}`. Drives shell scripts, Grafana (JSON datasource), external dashboards.
 

@@ -79,6 +79,8 @@ raise DataError(
 )
 ```
 
+Every shipped backend client error — `OpenRouterError`, `AnthropicError`, `ClaudeCodeError` — subclasses `ClientError`, so `except ClientError` catches a transport failure from any backend.
+
 **Logging**: `ERROR` level with full traceback and merged context chain.
 
 **HTTP**: `500 Internal Server Error`. The actual error message is logged but not shown to the user.

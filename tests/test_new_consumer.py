@@ -93,6 +93,34 @@ def test_custom_extras(tmp_path):
     assert any("pf-core[llm,redis]" in d for d in meta["project"]["dependencies"])
 
 
+def _fake_template_root(tmp_path: Path) -> Path:
+    """A minimal PF_ROOT whose template carries tool-cache junk."""
+    root = tmp_path / "fakeroot"
+    tpl = root / "templates" / "consumer-lib"
+    (tpl / "src" / "__PKG__").mkdir(parents=True)
+    (tpl / "src" / "__PKG__" / "cli.py").write_text("PKG = '__PKG__'\n")
+    (tpl / "pyproject.toml").write_text('name = "__NAME__"\n')
+    for cache in (".ruff_cache", ".pytest_cache", ".mypy_cache", "__pycache__"):
+        d = tpl / "src" / "__PKG__" / cache
+        d.mkdir()
+        # Non-UTF-8: a stamp that tries to read it raises rather than mangling.
+        d.joinpath("blob.bin").write_bytes(b"\xff\xfe\x00binary")
+    (root / ".ai" / "rules").mkdir(parents=True)
+    return root
+
+
+def test_tool_cache_dirs_are_not_stamped(tmp_path, monkeypatch):
+    """Tool caches in the template must not reach the scaffold — their binary
+    contents break the UTF-8 stamp."""
+    gen = _load_generator()
+    monkeypatch.setattr(gen, "PF_ROOT", _fake_template_root(tmp_path))
+    assert gen.main(["demo-proj", "--layout", "lib", "--dest", str(tmp_path / "out")]) == 0
+    proj = tmp_path / "out" / "demo-proj"
+    caches = {".ruff_cache", ".pytest_cache", ".mypy_cache", "__pycache__"}
+    leaked = [str(p.relative_to(proj)) for p in proj.rglob("*") if caches & set(p.parts)]
+    assert leaked == [], f"tool cache files copied into the scaffold: {leaked}"
+
+
 def test_scaffolded_lib_cli_actually_runs(tmp_path):
     """The day-1 slice executes: generate, import the package, run its CLI."""
     gen = _load_generator()

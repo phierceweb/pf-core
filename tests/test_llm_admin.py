@@ -229,6 +229,18 @@ def test_cache_page_renders(admin_db):
     assert "classifier" in r.text
 
 
+def test_cache_page_renders_effectiveness_stats(admin_db):
+    _seed()
+    client = _make_client(admin_db)
+    r = client.get("/admin/llm/cache")
+    assert r.status_code == 200
+    assert "Cache effectiveness by agent" in r.text
+    assert "Distinct hashes" in r.text
+    # Seeded: drafter has success runs, classifier has the cache entry.
+    assert "drafter" in r.text
+    assert "classifier" in r.text
+
+
 def test_budgets_page_renders(admin_db):
     _seed()
     client = _make_client(admin_db)
@@ -288,7 +300,13 @@ def test_budgets_json(admin_db):
 # ---------------------------------------------------------------------------
 
 
-def _insert_budget(*, limit_usd: float, period: str = "daily") -> int:
+def _insert_budget(
+    *,
+    limit_usd: float | None = None,
+    limit_tokens: int | None = None,
+    limit_calls: int | None = None,
+    period: str = "daily",
+) -> int:
     with transaction() as conn:
         res = conn.execute(
             llm_budgets.insert().values(
@@ -296,6 +314,8 @@ def _insert_budget(*, limit_usd: float, period: str = "daily") -> int:
                 scope_value="drafter",
                 period=period,
                 limit_usd=limit_usd,
+                limit_tokens=limit_tokens,
+                limit_calls=limit_calls,
                 action="block",
                 enabled=True,
             )
@@ -346,6 +366,44 @@ def test_budget_period_start_is_utc_not_host_local(admin_db, monkeypatch):
     finally:
         monkeypatch.undo()
         time.tzset()
+
+
+def test_budget_spend_exposes_all_dimensions(admin_db):
+    from pf_core.web.llm_admin.queries import list_budgets_with_spend
+
+    _insert_budget(limit_usd=10.0, limit_tokens=1000)
+    LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        usage={"cost_usd": 1.0, "prompt_tokens": 600, "completion_tokens": 300},
+        status="success",
+    )
+
+    row = list_budgets_with_spend()[0]
+    assert row["spent_usd"] == pytest.approx(1.0)
+    assert row["spent_tokens"] == 900
+    assert row["run_count"] == 1
+    assert row["pct_usd"] == pytest.approx(0.1)
+    assert row["pct_tokens"] == pytest.approx(0.9)
+    assert row["pct_calls"] is None  # calls limit unconfigured
+    # Sort key is the max across configured dimensions — tokens here.
+    assert row["pct_of_limit"] == pytest.approx(0.9)
+
+
+def test_budgets_page_renders_token_limited_budget(admin_db):
+    _insert_budget(limit_tokens=2_000_000, limit_calls=500)
+    LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        usage={"cost_usd": 0.0, "prompt_tokens": 100, "completion_tokens": 50},
+        status="success",
+    )
+    client = _make_client(admin_db)
+    r = client.get("/admin/llm/budgets")
+    assert r.status_code == 200
+    assert "2,000,000" in r.text  # token limit rendered
+    assert "1 / 500" in r.text  # calls spent/limit
+    assert "&mdash;" in r.text or "—" in r.text  # unconfigured USD limit
 
 
 def test_run_detail_json(admin_db):
@@ -559,3 +617,30 @@ def test_runs_filter_by_status(admin_db):
     assert r.status_code == 200
     data = r.json()["data"]
     assert all(row["status"] == "error" for row in data)
+
+
+def test_cache_json_carries_the_same_stats_as_the_html_page(admin_db):
+    """Every HTML page has a matching /api/*.json returning the same data."""
+    _seed()
+    client = _make_client(admin_db)
+    r = client.get("/admin/llm/api/cache.json")
+    assert r.status_code == 200
+    assert "stats" in r.json()["data"]
+
+
+def test_zero_limit_budget_does_not_render_as_unused(admin_db):
+    """A zero limit admits nothing, so any usage against it is fully consumed —
+    rendering 0% would show an exhausted budget as healthy."""
+    from pf_core.web.llm_admin._queries_spend import list_budgets_with_spend
+
+    _insert_budget(limit_usd=0.0)
+    LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        usage={"cost_usd": 0.25, "prompt_tokens": 10, "completion_tokens": 5},
+        status="success",
+    )
+    row = next(r for r in list_budgets_with_spend() if r["scope_value"] == "drafter")
+    assert row["pct_usd"] == 1.0
+    assert row["pct_of_limit"] == 1.0
+    assert row["pct_dimension"] == "usd"

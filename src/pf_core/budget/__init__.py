@@ -6,7 +6,7 @@ budget guard itself and YAML config loading:
 
     from pf_core.budget import (
         check_budget, project_cost, CostBudgetExceeded,
-        compute_period_start, compute_period_end, current_spent,
+        compute_period_start, compute_period_end, current_spent, current_usage,
         load_yaml, clear_config_cache,
     )
 
@@ -15,7 +15,7 @@ import only triggers SQLAlchemy when an attribute is first accessed:
 
     from pf_core.budget import (
         BudgetRepo, BudgetSnapshotRepo, CostRateRepo, aggregate_spent,
-        sync_budgets_from_yaml,
+        aggregate_usage, sync_budgets_from_yaml,
         refresh_snapshots, start_budget_refresh_loop,
         record_blocked_run, record_override,
         ALL_BUDGET_TABLES, llm_budgets, llm_budget_snapshots, llm_cost_rates,
@@ -41,6 +41,7 @@ from pf_core.budget.check import (  # noqa: F401
     compute_period_end,
     compute_period_start,
     current_spent,
+    current_usage,
     project_cost,
 )
 from pf_core.budget.config import (  # noqa: F401
@@ -58,7 +59,8 @@ _LAZY: dict[str, str] = {
     "BudgetRepo": "pf_core.budget.repo",
     "BudgetSnapshotRepo": "pf_core.budget.repo",
     "CostRateRepo": "pf_core.budget.repo",
-    "aggregate_spent": "pf_core.budget.repo",
+    "aggregate_spent": "pf_core.budget._aggregate",
+    "aggregate_usage": "pf_core.budget._aggregate",
     # Audit logging (DB-required)
     "record_blocked_run": "pf_core.budget.audit",
     "record_override": "pf_core.budget.audit",
@@ -112,6 +114,7 @@ if TYPE_CHECKING:
         BudgetSnapshotRepo,
         CostRateRepo,
         aggregate_spent,
+        aggregate_usage,
     )
     from pf_core.budget.scheduler import start_budget_refresh_loop  # noqa: F401
     from pf_core.budget.snapshot_job import refresh_snapshots  # noqa: F401
@@ -125,6 +128,7 @@ __all__ = [
     "compute_period_start",
     "compute_period_end",
     "current_spent",
+    "current_usage",
     # Config — kernel-safe (eager)
     "load_yaml",
     "clear_config_cache",
@@ -135,6 +139,7 @@ __all__ = [
     "BudgetSnapshotRepo",
     "CostRateRepo",
     "aggregate_spent",
+    "aggregate_usage",
     # Snapshot / scheduler jobs (lazy)
     "refresh_snapshots",
     "start_budget_refresh_loop",

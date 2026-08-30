@@ -90,6 +90,7 @@ SQLAlchemy-based data layer that works identically across SQLite, MySQL/MariaDB,
 | Module | Concern |
 |---|---|
 | [Database](database.md) | Engine setup, transaction context manager, dialect detection, connection helpers, and a `Repository` base class for organizing query functions. |
+| [Runtime dialect fragments](db-dialect.md) | `now_sql` / `insert_ignore_prefix` / `row_lock_suffix` / `utc_cutoff` — the SQL fragments hand-written queries need, resolved from a live `conn` rather than a dialect string, so a query written against MySQL still runs on the SQLite test fixture. Documents when a cutoff belongs server-side instead. |
 | [Dialect-agnostic upserts](db-upsert.md) | `insert_ignore` / `upsert` — build the live dialect's insert-on-conflict (`ON CONFLICT` on SQLite/Postgres, `ON DUPLICATE KEY UPDATE` on MySQL/MariaDB) from `Table` metadata, so consumers never write SQLite-only `INSERT OR IGNORE`/`REPLACE`. |
 | [Soft delete](soft-delete.md) | `deleted_at` timestamp pattern with helpers for soft-delete, restore, and not-deleted filtering. |
 | [Versioned config](versioned-config.md) | `get_latest` / `append_version` / `get_latest_with_fallback` — the append-only, latest-version-wins config-table pattern (insert a new row at `version+1`; readers take the max per scope), with optional carry-forward of unspecified columns and default-scope fallback. |

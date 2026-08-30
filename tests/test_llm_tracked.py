@@ -10,6 +10,8 @@ primitives:
 - JSON parse failure → one tracked retry; retry row linked via
   ``llm_run_links.relation="retry"``; parsed value + retry run_id returned.
 - Both attempts unparseable → :class:`LlmJsonError` with ``.raw`` set.
+- Parse exhaustion marks the rejected run's row ``failed`` via
+  ``mark_failed`` (retry row when a retry ran; original stays success).
 - ``json_retry=False`` → raises immediately, only one row.
 - ``style="brace"`` renders without upper-casing kwarg keys.
 """
@@ -254,6 +256,131 @@ def test_json_retry_disabled_raises_without_second_call(tracking_db):
     with tracking_db.connect() as conn:
         rows = conn.execute(select(s.llm_runs)).mappings().fetchall()
     assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# Parse failure marks the run row failed
+# ---------------------------------------------------------------------------
+
+
+def test_parse_failure_without_retry_marks_the_run_failed(tracking_db):
+    client = _FakeClient(("garbage", {"duration_ms": 1}))
+
+    with pytest.raises(LlmJsonError):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+            json_retry=False,
+        )
+
+    with tracking_db.connect() as conn:
+        rows = conn.execute(select(s.llm_runs)).mappings().fetchall()
+    assert len(rows) == 1
+    assert rows[0]["status"] == "failed"
+    assert rows[0]["error_class"] == "LlmJsonError"
+    # A short description, never the raw response.
+    assert "garbage" not in rows[0]["error"]
+
+
+def test_retry_exhausted_marks_retry_row_failed_and_original_stays_success(tracking_db):
+    client = _FakeClient(
+        ("garbage one", {"duration_ms": 1}),
+        ("garbage two", {"duration_ms": 2}),
+    )
+
+    with pytest.raises(LlmJsonError):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+        )
+
+    with tracking_db.connect() as conn:
+        links = conn.execute(select(s.llm_run_links)).mappings().fetchall()
+    assert len(links) == 1
+    original = LlmRunRepo().get(links[0]["parent_run_id"])
+    retry = LlmRunRepo().get(links[0]["child_run_id"])
+    assert original["status"] == "success"
+    assert retry["status"] == "failed"
+    assert retry["error_class"] == "LlmJsonError"
+
+
+def test_retry_success_leaves_both_rows_success(tracking_db):
+    client = _FakeClient(
+        ("not json at all", {"duration_ms": 1}),
+        ('{"recovered": 1}', {"duration_ms": 2}),
+    )
+
+    tracked_call(
+        client=client,
+        agent_type="classifier",
+        spec=_SPEC,
+        model="haiku",
+        render_kwargs={"role": "x"},
+        expect_json=True,
+    )
+
+    with tracking_db.connect() as conn:
+        rows = conn.execute(select(s.llm_runs)).mappings().fetchall()
+    assert [r["status"] for r in rows] == ["success", "success"]
+
+
+def test_mark_failed_db_error_does_not_mask_llmjsonerror(tracking_db):
+    class _ExplodingMarkRepo(LlmRunRepo):
+        def mark_failed(self, run_id, *, error, error_class=None):
+            raise RuntimeError("update failed")
+
+    client = _FakeClient(("garbage", {"duration_ms": 1}))
+
+    with pytest.raises(LlmJsonError):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+            json_retry=False,
+            repo=_ExplodingMarkRepo(),
+        )
+
+
+def test_parse_failure_with_no_run_id_skips_the_mark(tracking_db):
+    """on_record_error='warn' + broken record → run_id None; mark is a no-op.
+
+    Assert on the mark, not the raise: ``_mark_parse_failure`` swallows every
+    exception, so ``pytest.raises`` alone passes with the guard deleted.
+    """
+    marks: list = []
+
+    class _RecordingRepo(_ExplodingRepo):
+        def mark_failed(self, run_id, *, error, error_class=None):
+            marks.append(run_id)
+
+    repo = _RecordingRepo()
+    client = _FakeClient(("garbage", {"duration_ms": 1}))
+
+    with pytest.raises(LlmJsonError):
+        tracked_call(
+            client=client,
+            agent_type="classifier",
+            spec=_SPEC,
+            model="haiku",
+            render_kwargs={"role": "x"},
+            expect_json=True,
+            json_retry=False,
+            repo=repo,
+            on_record_error="warn",
+        )
+
+    assert marks == [], "mark_failed must not be called with a None run_id"
 
 
 # ---------------------------------------------------------------------------

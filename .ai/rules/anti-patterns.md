@@ -71,8 +71,8 @@ Use `pf_core.clients.openrouter` (or the model router) — it handles timeouts, 
 Use SQLAlchemy expression constructs for database independence. Never write dialect-detection code or raw SQL that only works on one database.
 
 ```python
-# WRONG — dialect detection, raw SQL timestamp
-def _now_expr(conn):
+# WRONG — hand-rolled dialect branch, raw SQL timestamp
+def _timestamp_sql(conn):
     if conn.dialect.name == "mysql":
         return text("NOW(6)")
     return text("strftime('%Y-%m-%dT%H:%M:%SZ','now')")
@@ -86,6 +86,13 @@ from sqlalchemy import func, table, column
 t = table("entries", column("id"), column("deleted_at"))
 stmt = t.update().where(t.c.id == id_value).values(deleted_at=func.now())
 ```
+
+The ban is on *hand-rolling* the branch. When a statement genuinely cannot be an
+expression construct, take the fragment from `pf_core.db.dialect`, which owns the
+branch centrally — `now_sql(conn)`, `row_lock_suffix(conn)`, and the
+`insert_ignore_prefix(conn)` / `insert_ignore_suffix(conn)` pair — instead of
+writing your own `if conn.dialect.name == ...`. Expression constructs stay the
+default; see `docs/db-dialect.md` for when raw SQL is the right call.
 
 ---
 

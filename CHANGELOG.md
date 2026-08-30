@@ -2,6 +2,135 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.22.0 — 2026-08-30
+
+### Breaking
+- `EvalRunner.compare_experiments` returns `{"pairs", "baseline_runs", "candidate_runs"}`
+  instead of the bare pair list. It raises `PreconditionError` when either experiment tag
+  matches zero scored replay runs or when the two tags share no golden parent, and
+  `InvalidInputError` when both tags are the same string. Replays whose `eval_score`
+  outcome has a NULL score are excluded. Duplicate replays per golden resolve to the
+  latest.
+- `llm_step` now passes its `tags` to `check_budget`, so existing `tag:` scopes in
+  `budgets.yaml` begin gating `llm_step` calls that were previously uncapped.
+- `CostBudgetExceeded` takes `limit_value` / `spent_value` / `projected_value` (was
+  `limit_usd` / `spent_usd` / `projected_usd`). The `*_usd` attributes remain and now
+  always carry USD, whichever dimension tripped; `*_value` carries the tripping
+  dimension's unit.
+- `OpenRouterClient.chat` reports `prompt_tokens` excluding cached input, matching the
+  other clients and `pf_core.pricing`. Recorded `prompt_tokens` drops by
+  `cache_read_tokens` on cached calls. Rows written by earlier versions hold the inclusive
+  convention, so a table spanning the upgrade carries both: `cost_by_model`'s
+  `billable_input` over-reports them and the `tokens` budget dimension double-counts their
+  cached input. `docs/llm-tracking.md` has the one-line backfill.
+- `now_expr("sqlite")` emits `strftime('%Y-%m-%d %H:%M:%f000', 'now')` — space-separated
+  and six fractional digits (was ISO `T`/`Z` with three), matching how SQLAlchemy renders
+  a bound `DateTime`. A SQLite column holding values stamped by the old form no longer
+  compares against a bound datetime; backfill with
+  `UPDATE t SET c = replace(rtrim(c, 'Z'), 'T', ' ') || '000'`. Mixed old/new rows also
+  sort wrong within a calendar date (`T` sorts above a space) and read back as a mix of
+  aware and naive datetimes.
+- `now_expr("mysql")` emits `CURRENT_TIMESTAMP(6)` (was `CURRENT_TIMESTAMP`). As a DDL
+  default that is valid only against an fsp-6 column, or MySQL rejects the statement with
+  `ERROR 1067`. `now_expr` and `on_update_now_clause` take `fractional=False` to pair with
+  `timestamp_type(dialect, fractional=False)`.
+- The exact cache is keyed on `(input_hash, agent_type_id)`, not `input_hash` alone —
+  `input_hash` never covered the agent, so one agent could be served another's stored
+  response and the hit was filed under the wrong agent. Schema: the
+  `uq_llm_cache_input_hash` unique constraint is replaced by
+  `uq_llm_cache_input_hash_agent`. Existing rows stay valid; the first call from each
+  other agent misses once and stores its own entry.
+- `BudgetSnapshotRepo.upsert` takes `spent_tokens`; `None` leaves an existing row's total
+  unchanged.
+- Schema: `llm_budgets.limit_usd` is now nullable and the table gains `limit_tokens` /
+  `limit_calls`; `llm_budget_snapshots` gains `spent_tokens`. Consumers add these via an
+  alembic revision — the column list is in `docs/cost-budget.md`.
+
+### Added
+- Token and call budget dimensions. A `budgets.yaml` period accepts a mapping —
+  `daily: {usd: 20.0, tokens: 2000000, calls: 500}` — alongside the bare-number USD form;
+  `check_budget` takes `projected_tokens=` / `projected_calls=` (calls default to 1; pass
+  an explicit 0 for a pure read) and enforces every configured dimension; `current_usage()`
+  returns spend in all three; `CostBudgetExceeded.dimension` names what tripped; the admin
+  `/budgets` page shows per-dimension usage. Token counts sum all four token columns. Soft
+  thresholds remain USD-only.
+- The claude_code client reports token counts parsed from the CLI's `--output-format json`
+  envelope. An envelope without usage counts logs `claude_code_envelope_without_usage`;
+  `cost_usd` stays 0.0.
+- `pf_core.llm.validate.validate_value` — run a registered pipeline (shape/semantic/
+  cross-field) on an already-parsed value, persisting signals and the schema tag exactly as
+  `parse_and_validate` does.
+- `llm_step(dry_run=True)` — resolve the input hash and probe the exact cache with no
+  client call, budget check, or DB write — and `cache_stats()`, a per-agent entries/hits/
+  distinct-hash diagnostic (also on the admin `/cache` page and `/api/cache.json`).
+- `LlmRunRepo.mark_failed(run_id, *, error, error_class=None)` — flip an already-recorded
+  run to `failed` instead of inserting a second zero-token row; unknown ids warn without
+  raising.
+- `PERMANENT_FETCH_STATUSES` and `is_permanent(status)` in `pf_core.utils.article_fetch`;
+  unrecognized statuses are retryable.
+- `pf_core.db.dialect` — SQL fragments resolved from a live connection: `now_sql(conn)`,
+  `row_lock_suffix(conn)`, `utc_cutoff(seconds=/minutes=/days=)`, and the
+  `insert_ignore_prefix` / `insert_ignore_suffix` pair. `now_sql` is `now_expr` resolved
+  from a connection, so the two cannot drift. `insert_ignore_prefix` accepts a connection
+  or a dialect string; MariaDB names normalize to the MySQL family; unsupported arguments
+  raise `InvalidInputError`. All five are re-exported from `pf_core.db`.
+- `docs/db-dialect.md`, covering which cutoff style to use and how to bind `utc_cutoff`.
+
+### Fixed
+- `OpenRouterClient` prices its local cost estimate from the same token split it records,
+  passing `cache_read_tokens` / `cache_write_tokens` to `estimate_cost`. It previously fed
+  the cache-inclusive prompt count and no cache columns, so `cost_usd` on a route that
+  reports no `usage.cost` could not be reproduced from the recorded row.
+- `LlmRunStatsRepo.cost_by_model` no longer subtracts `cache_read_tokens` from
+  `prompt_tokens`, which reported a negative `billable_input` for every Anthropic-family
+  run. `prompt_tokens` is the uncached input across all clients.
+- `ClaudeCodeError` subclasses `ClientError` (was `AppError` directly), matching
+  `OpenRouterError` and `AnthropicError`. Existing catches are unaffected.
+- `parse_and_validate` accepts `usage=` and derives truncation itself; under
+  `on_truncation="warn"` a known-truncated response records a `<agent>_truncated` warn
+  signal. `cache_store` accepts `usage=`/`truncated=` and refuses to store a
+  known-truncated response. That signal is a `passed=False` row, so
+  `purge_old_payloads(keep_flagged=True)` — the default — retains a truncated run's
+  payload; pass `keep_flagged=False` to reclaim it.
+- `tracked_call` marks the rejected run's row failed (`error_class="LlmJsonError"`) before
+  raising on JSON-parse exhaustion — the retry row when a retry ran, else the original.
+- `bin/pf-eval compare` reads the new `compare_experiments` return shape.
+- `compare_experiments` skips replays whose `eval_score` outcome has a NULL score; it
+  previously raised `TypeError` on the first one.
+- Experiment tags match exactly on every backend. MySQL's default collation is
+  case-insensitive, so a mistyped `experiment:V5` selected `experiment:v5`'s rows and
+  reported a phantom all-zero-delta comparison instead of raising.
+- `fetch_article` returns an `error` stub for a non-string url instead of raising
+  `AttributeError`.
+- The admin `/budgets` page renders a budget whose limit is `0` as fully consumed rather
+  than as 0%, and labels its percentage with the dimension it came from.
+- `bin/new-consumer` skips tool cache directories (`.ruff_cache`, `.pytest_cache`,
+  `.mypy_cache`) when stamping a template.
+
+### Changed
+- `BUDGET_ENFORCEMENT_DISABLED` and `PF_ARTICLE_WAYBACK_FALLBACK` resolve through
+  `pf_core.utils.env.resolve_bool`, so they accept `on`/`off`/`false`/`no` and tolerate
+  surrounding whitespace. `PF_ARTICLE_WAYBACK_FALLBACK` previously honoured only a literal
+  `0`, leaving every other falsy spelling switched on.
+- `get_engine` pins the Postgres session to UTC (`SET TIME ZONE 'UTC'`), as it already did
+  for MySQL. pf-core's timestamp columns are `timestamptz` there, so an unpinned session
+  read a bound naive-UTC cutoff in the server's zone and skewed every comparison by that
+  offset.
+- `pf_core.db.insert_ignore_prefix` resolves through `pf_core.db.dialect` and raises
+  `InvalidInputError` (was `ValueError`) for an unsupported dialect — a `FlowException`,
+  so a web boundary renders it 4xx rather than 500.
+  `pf_core.db.json_compat.insert_ignore_prefix` still raises `ValueError`.
+- `pf_core.llm.tracking._resolvers` uses the shared `insert_ignore_prefix` /
+  `insert_ignore_suffix` pair.
+- `utc_cutoff` raises `InvalidInputError` when given no delta.
+- `cache_stats` takes `since=`; the admin `/cache` page and `/api/cache.json` pass their
+  window rather than aggregating all history on every request.
+- `sync_budgets_from_yaml` logs `budget_config_soft_thresholds_ignored` for a period that
+  sets `soft_thresholds` without a `usd` limit — thresholds anchor to the USD cap, so on a
+  tokens-only period they never fire.
+- `mypy` and `ruff` cover `bin/`'s extensionless entry points, which directory traversal
+  skips; `tests/test_bin_gates.py` fails when a new one is not listed in both.
+
 ## v0.21.0 — 2026-08-27
 
 Correctness fixes from an adversarial review of the framework. Behaviour changes throughout —

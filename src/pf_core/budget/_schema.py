@@ -18,6 +18,7 @@ See ``docs/cost-budget.md`` for the full reference.
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -51,7 +52,9 @@ llm_budgets = Table(
     Column("scope_kind", String(32), nullable=False),
     Column("scope_value", String(128), nullable=True),
     Column("period", String(16), nullable=False),
-    Column("limit_usd", Numeric(12, 4), nullable=False),
+    Column("limit_usd", Numeric(12, 4), nullable=True),
+    Column("limit_tokens", BigInteger, nullable=True),
+    Column("limit_calls", Integer, nullable=True),
     Column("soft_thresholds", _JSON, nullable=True),
     Column("hard_cap", Boolean, nullable=False, server_default="1"),
     Column("action", String(32), nullable=False, server_default="block"),
@@ -75,6 +78,7 @@ llm_budget_snapshots = Table(
     ),
     Column("period_start", Date, nullable=False),
     Column("spent_usd", Numeric(12, 4), nullable=False, server_default="0"),
+    Column("spent_tokens", BigInteger, nullable=False, server_default="0"),
     Column("run_count", Integer, nullable=False, server_default="0"),
     Column("last_updated", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
     PrimaryKeyConstraint("budget_id", "period_start", name="pk_llm_budget_snapshots"),

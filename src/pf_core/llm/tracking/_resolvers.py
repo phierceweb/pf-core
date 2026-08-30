@@ -15,26 +15,15 @@ from __future__ import annotations
 import threading
 
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
 
 from pf_core.db.connection import transaction
+from pf_core.db.dialect import insert_ignore_prefix as _insert_ignore_prefix
+from pf_core.db.dialect import insert_ignore_suffix as _insert_ignore_suffix
 
 
 _model_cache: dict[str, int] = {}
 _agent_cache: dict[str, int] = {}
 _lock = threading.Lock()
-
-
-def _insert_ignore_prefix(conn: Connection) -> str:
-    if conn.dialect.name == "sqlite":
-        return "INSERT OR IGNORE"
-    if conn.dialect.name == "postgresql":
-        return "INSERT"
-    return "INSERT IGNORE"
-
-
-def _on_conflict_suffix(conn: Connection) -> str:
-    return " ON CONFLICT DO NOTHING" if conn.dialect.name == "postgresql" else ""
 
 
 def resolve_llm_model_id(name: str) -> int:
@@ -53,7 +42,7 @@ def resolve_llm_model_id(name: str) -> int:
             return _model_cache[name]
         with transaction() as conn:
             prefix = _insert_ignore_prefix(conn)
-            suffix = _on_conflict_suffix(conn)
+            suffix = _insert_ignore_suffix(conn)
             conn.execute(
                 text(f"{prefix} INTO llm_models(name) VALUES (:n){suffix}"),
                 {"n": name},
@@ -80,7 +69,7 @@ def resolve_agent_type_id(slug: str) -> int:
             return _agent_cache[slug]
         with transaction() as conn:
             prefix = _insert_ignore_prefix(conn)
-            suffix = _on_conflict_suffix(conn)
+            suffix = _insert_ignore_suffix(conn)
             conn.execute(
                 text(f"{prefix} INTO llm_agent_types(slug) VALUES (:s){suffix}"),
                 {"s": slug},
@@ -148,7 +137,7 @@ def resolve_prompt_id(
 
     with transaction() as conn:
         prefix = _insert_ignore_prefix(conn)
-        suffix = _on_conflict_suffix(conn)
+        suffix = _insert_ignore_suffix(conn)
 
         # Read any existing row before we insert — need to know whether
         # to mutate (update_unused policy) or raise (error policy).

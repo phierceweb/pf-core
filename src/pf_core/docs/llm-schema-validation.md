@@ -1,10 +1,10 @@
 # LLM Schema Validation
 
-Declarative shape, semantic, and cross-field validation for parsed LLM responses, with per-agent pipelines and automatic persistence to `llm_run_validations`.
+Declarative shape, semantic, and cross-field validation for parsed LLM responses, with per-agent pipelines and automatic persistence to `llm_run_validations`. JSON responses go through `parse_and_validate`; anything the caller parses itself goes through `validate_value`.
 
 This module is **not** [`llm-validation.md`](llm-validation.md). That doc covers `pf_core.llm.url_check` — a pluggable dispatcher for URL hallucination rules (no schema, no registry, no DB integration; rules are consumer-owned). This module (`pf_core.llm.validate`) validates one parsed JSON response against a registered Pydantic model or JSON Schema, runs domain-content checks, and writes every signal as a tracked row. The two are complementary; the `url_sanity` semantic validator here delegates to the consumer-registered rule set from there.
 
-> **Install:** the Pydantic path requires the `[validate]` extra (`pip install 'pf-core[validate]'` → `json-repair` + `pydantic`, no httpx/client stack); the JSON Schema path additionally needs `[jsonschema]`. Persisting signals to `llm_run_validations` (the "DB integration" section) needs `[tracking]`. Importing `pf_core.llm.validate` without `[validate]` raises a friendly `ImportError`.
+> **Install:** Pydantic shapes require the `[validate]` extra (`pip install 'pf-core[validate]'` → `json-repair` + `pydantic`, no httpx/client stack). `JsonSchemaValidator` requires `pip install pf-core[jsonschema]` — without it the constructor raises `ConfigurationError` naming the extra. Persisting signals to `llm_run_validations` (the "DB integration" section) needs `[tracking]`. Importing `pf_core.llm.validate` without `[validate]` raises a friendly `ImportError`.
 
 ---
 
@@ -259,6 +259,7 @@ parse_and_validate(
     missing_pipeline: Literal["raise", "fallback"] = "raise",
     truncated: bool | None = None,
     on_truncation: Literal["warn", "fail"] = "warn",
+    usage: dict | None = None,
 ) -> ValidationResult
 ```
 
@@ -271,8 +272,56 @@ parse_and_validate(
 | `stages` | Stages to run. Pass `("shape",)` to skip semantic and cross-field during migration. |
 | `expect` | Forwarded to `parse_llm_json`: `"any"`, `"array"`, or `"object"`. |
 | `missing_pipeline` | `"raise"` (default) raises `PipelineNotRegisteredError` naming the missing slug and currently-registered agents. `"fallback"` emits a WARNING log and returns `ok=False` with one `no_pipeline_registered` error signal. Use `"fallback"` only for generic replay tooling that legitimately expects unregistered agents. |
-| `truncated` | Authoritative truncation flag from the client's `usage` dict — see [`truncated_from_usage`](llm-parse.md#detecting-truncation-truncated-not-the-text). Forwarded to `parse_llm_json`, where it logs a WARNING. `llm_step` passes it for you. |
-| `on_truncation` | What `truncated=True` means. `"warn"` (default) runs the pipeline anyway. `"fail"` short-circuits before parsing with one `{agent}_truncated` error signal and `value=None`. |
+| `truncated` | Authoritative truncation flag from the client's `usage` dict — see [`truncated_from_usage`](llm-parse.md#detecting-truncation-truncated-not-the-text). Forwarded to `parse_llm_json`, where it logs a WARNING. `llm_step` passes it for you. When set (even `False`), it overrides anything derived from `usage`. |
+| `on_truncation` | What `truncated=True` means. `"warn"` (default) runs the pipeline anyway *and* records a non-blocking `{agent}_truncated` warn signal (see below). `"fail"` short-circuits before parsing with one `{agent}_truncated` error signal and `value=None`. |
+| `usage` | The client's `usage` dict. When `truncated` is `None`, truncation is derived internally via `truncated_from_usage(usage)`. **Prefer this form**: pass the dict you already hold and the flag cannot be forgotten. |
+
+### Truncation signals
+
+A known-truncated response always leaves a trace in the result (and in `llm_run_validations` when `run_id` is set):
+
+- `on_truncation="warn"` (default): the pipeline runs anyway, and a `{agent}_truncated` signal with `severity="warn", passed=False` is included. Warn severity never flips `ValidationResult.ok` — the signal is the queryable record that the payload may be incomplete. Because it is a `passed=False` row, `purge_old_payloads(keep_flagged=True)` (the default) keeps a truncated run's payload past the retention cutoff — see [llm-tracking.md](llm-tracking.md#retention).
+- `on_truncation="fail"`: the pipeline short-circuits before parsing with a single `{agent}_truncated` **error** signal and `value=None`; `ok` is `False`.
+
+```python
+content, usage = client.chat(messages=msgs, model=model)
+result = parse_and_validate(content, agent_type="summarizer", run_id=rid, usage=usage)
+```
+
+### `validate_value` — already-parsed values (non-JSON contracts)
+
+```python
+validate_value(
+    value: Any,
+    *,
+    agent_type: str,
+    run_id: int | None = None,
+    validation_context: dict | None = None,
+    stages: tuple[str, ...] = ("shape", "semantic", "cross_field"),
+    missing_pipeline: Literal["raise", "fallback"] = "raise",
+) -> ValidationResult
+```
+
+`parse_and_validate` minus the JSON parse stage. Use it when the agent's contract is **not JSON** — a line protocol, markdown, plain prose. The caller parses the response into a Python value with its own logic; `validate_value` runs the registered pipeline's shape/semantic/cross-field stages on that value and, when `run_id` is set, persists every signal to `llm_run_validations` and tags `schema:<agent>_v<n>` — the identical DB path `parse_and_validate` uses. Missing-pipeline semantics are identical too.
+
+```python
+from pf_core.llm.tracked import tracked_messages_call
+
+content, usage, run_id = tracked_messages_call(
+    client=client, agent_type="normalizer", messages=msgs, model=model
+)
+lines = [ln.split("\t") for ln in content.strip().splitlines()]  # caller-owned parsing
+result = validate_value(
+    {"rows": lines},
+    agent_type="normalizer",
+    run_id=run_id,
+    validation_context={"expected_count": len(targets)},
+)
+```
+
+A bare `client.chat()` returns only `(content, usage)` and never carries a run id — to persist signals, get `run_id` from `tracked_messages_call` (or `tracked_call`), or pass `run_id=None` to validate in-memory only. See [llm-tracked.md](llm-tracked.md).
+
+There is no `expect`/`truncated`/`usage` here — parsing already happened on the caller's side. If truncation matters for a non-JSON contract, check `truncated_from_usage(usage)` before parsing and decide the policy yourself.
 
 ### `ValidationResult`
 
@@ -287,14 +336,14 @@ parse_and_validate(
 
 ### `ValidationSignal`
 
-Fields: `validator: str` (named `{agent}_shape` for the shape stage, `{agent}_parse` when JSON extraction itself fails, `{agent}_truncated` under `on_truncation="fail"`, bare slug otherwise), `severity: str` (`"info" | "warn" | "error"`), `passed: bool`, `details: dict | None` (failure context — Pydantic `errors()`, JSON-Schema paths, threshold values).
+Fields: `validator: str` (named `{agent}_shape` for the shape stage, `{agent}_parse` when JSON extraction itself fails, `{agent}_truncated` for a known-truncated response — warn severity under `on_truncation="warn"`, error under `"fail"` — bare slug otherwise), `severity: str` (`"info" | "warn" | "error"`), `passed: bool`, `details: dict | None` (failure context — Pydantic `errors()`, JSON-Schema paths, threshold values).
 
 ### What `parse_and_validate` does not do
 
 - It does not raise on shape or content failure — it returns `ok=False`. The caller chooses the policy.
 - It does not retry against a different model. Re-prompting is a service-level decision (no router integration).
 - It does not require an `llm_run_id`. Pass `run_id=None` to skip the DB write.
-- It does not fail a truncated response **by default**. `truncated=True` logs a WARNING; an incomplete-but-parseable payload still reaches the validators, where a `field_non_empty` or `min_items` rule is the thing that catches it. Pass `on_truncation="fail"` to reject it outright instead.
+- It does not fail a truncated response **by default**. A known-truncated response logs a WARNING and records a non-blocking `{agent}_truncated` warn signal; the incomplete-but-parseable payload still reaches the validators, where a `field_non_empty` or `min_items` rule is the thing that catches it. Pass `on_truncation="fail"` to reject it outright instead.
 
 ### Pre-flight registration checks
 
@@ -314,6 +363,30 @@ if missing:
 ```
 
 Catches typos and un-staged registrar edits before the first validation call.
+
+### Idempotent registration
+
+The registry is **process-global** and test suites commonly call `clear_registry()` between cases — so a registration that runs only once at import time can silently vanish for the rest of the process. Guard `register()` behind `has_pipeline()` in a function you call at import *and* boot time; re-invoking it is then always safe:
+
+```python
+from pf_core.llm.validate import has_pipeline, register
+
+
+def ensure_registered() -> None:
+    if has_pipeline("summarizer"):
+        return
+    register(
+        agent_type="summarizer",
+        shape=SummaryOutput,
+        semantic=["url_sanity", "field_non_empty:headline,body"],
+        schema_version=1,
+    )
+
+
+ensure_registered()  # import-time; call again from app startup / test fixtures
+```
+
+Call `ensure_registered()` from the service (or a test fixture) before the first `parse_and_validate`/`validate_value` and a cleared registry heals itself instead of raising `PipelineNotRegisteredError` mid-suite.
 
 ### `PipelineNotRegisteredError`
 

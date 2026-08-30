@@ -65,9 +65,9 @@ def client():
             scope_kind="agent",
             scope_value="drafter",
             period="daily",
-            limit_usd=10.0,
-            spent_usd=9.5,
-            projected_usd=1.0,
+            limit_value=10.0,
+            spent_value=9.5,
+            projected_value=1.0,
         )
 
     @app.get("/app-error")

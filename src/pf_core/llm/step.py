@@ -90,6 +90,7 @@ def llm_step(
     validate: str | None = None,
     validation_context: dict[str, Any] | None = None,
     on_truncation: Literal["warn", "fail"] = "warn",
+    dry_run: bool = False,
 ) -> StepResult:
     """Run one cache/budget/track/validate-composed LLM call.
 
@@ -116,6 +117,13 @@ def llm_step(
             ``<agent>_truncated`` error signal (needs ``validate`` set —
             with ``validate=None`` nothing inspects the response). Under either value a
             known-truncated response is never written to the cache.
+        dry_run: Answer "would this call hit the exact cache?" without
+            spending: resolves the input hash (regardless of ``cache``),
+            looks up the exact cache, and returns — no cache-hit run row,
+            no hit-count bump, no budget check, no client call, no DB
+            writes of any kind. On a hit ``value`` is the stored
+            ``parsed_output`` and ``cache_hit`` is True; ``run_id`` is
+            always ``None``.
 
     Returns:
         A :class:`StepResult`. Persistence of ``value`` is the caller's job.
@@ -125,6 +133,19 @@ def llm_step(
     """
     if on_truncation not in ("warn", "fail"):
         raise InvalidInputError(f"on_truncation must be 'warn' or 'fail', got {on_truncation!r}")
+
+    if dry_run:
+        resolved = input_hash or compute_input_hash(
+            model=model, messages=messages, sampling=sampling, configs=configs
+        )
+        hit = cache_lookup(agent_type=agent_type, input_hash=resolved)
+        return StepResult(
+            value=hit.parsed_output if hit is not None else None,
+            content=(hit.raw_response or "") if hit is not None else "",
+            run_id=None,
+            cache_hit=hit is not None,
+            validation=None,
+        )
 
     resolved_hash = input_hash
     if cache:
@@ -167,8 +188,11 @@ def llm_step(
             check_budget(
                 agent_type=agent_type,
                 projected_cost_usd=projected,
+                projected_tokens=budget.prompt_tokens + budget.completion_tokens,
+                projected_calls=1,
                 job_id=budget.job_id,
                 job_kind=budget.job_kind,
+                tags=tags,
             )
         except CostBudgetExceeded as exc:
             record_blocked_run(agent_type=agent_type, model=model, exc=exc, job_id=budget.job_id)
@@ -219,9 +243,7 @@ def llm_step(
         validation = None
         value = content
 
-    # A cache hit replays stored text with no finish reason, so storing a
-    # known-truncated response would strip the flag off every later read.
-    if cache and not truncated and resolved_hash is not None and run_id is not None:
+    if cache and resolved_hash is not None and run_id is not None:
         parsed_for_cache = value if isinstance(value, (dict, list)) else None
         cache_store(
             agent_type=agent_type,
@@ -230,6 +252,7 @@ def llm_step(
             model=model,
             parsed_output=parsed_for_cache,
             raw_response=content,
+            usage=usage,
         )
 
     return StepResult(

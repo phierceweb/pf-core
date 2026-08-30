@@ -7,6 +7,9 @@ The pipeline runs in three stages:
 Each validator produces a :class:`ValidationSignal`. When called with a
 ``run_id``, signals are persisted to ``llm_run_validations`` and the registry's
 ``schema_version`` is tagged onto ``llm_run_tags``.
+
+:func:`validate_value` is the same pipeline minus the parse stage — for
+callers whose LLM contract is not JSON and who parse the response themselves.
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pf_core.exceptions import PipelineNotRegisteredError
-from pf_core.llm.parse import parse_llm_json
+from pf_core.llm.parse import parse_llm_json, truncated_from_usage
 from pf_core.log import get_logger
 
 logger = get_logger(__name__)
@@ -119,6 +122,107 @@ def _write_signals_to_db(
         logger.exception("validation_tag_write_failed", run_id=run_id, tag=tag)
 
 
+def _lookup_pipeline(
+    agent_type: str,
+    missing_pipeline: Literal["raise", "fallback"],
+) -> tuple[Any, ValidationResult | None]:
+    """Resolve the registered pipeline, or the fallback result when absent."""
+    from pf_core.llm.validate._registry import get_pipeline, list_agent_types
+
+    pipeline = get_pipeline(agent_type)
+    if pipeline is not None:
+        return pipeline, None
+    if missing_pipeline == "raise":
+        raise PipelineNotRegisteredError(
+            agent_type=agent_type,
+            known_agents=list_agent_types(),
+        )
+    logger.warning(
+        "no_pipeline_registered",
+        agent_type=agent_type,
+        known_agents=list_agent_types(),
+    )
+    sig = ValidationSignal(
+        validator="no_pipeline_registered",
+        severity="error",
+        passed=False,
+        details={
+            "agent_type": agent_type,
+            "known_agents": list_agent_types(),
+        },
+    )
+    return None, ValidationResult(ok=False, value=None, signals=[sig])
+
+
+def _run_stages(
+    pipeline: Any,
+    parsed: Any,
+    *,
+    agent_type: str,
+    run_id: int | None,
+    validation_context: dict | None,
+    stages: tuple[str, ...],
+    signals: list[ValidationSignal],
+) -> ValidationResult:
+    """Run shape → semantic → cross-field on a parsed value, then persist."""
+    value: Any | None = parsed
+
+    if "shape" in stages and pipeline.shape is not None:
+        coerced, shape_signal = pipeline.shape.validate_shape(
+            parsed,
+            agent_type=agent_type,
+        )
+        signals.append(shape_signal)
+        if shape_signal.passed:
+            value = coerced
+        else:
+            value = None
+
+    if "semantic" in stages and value is not None:
+        for sem in pipeline.semantic:
+            try:
+                out = sem(value, context=validation_context or {})
+            except Exception as e:  # noqa: BLE001
+                out = ValidationSignal(
+                    validator=getattr(sem, "name", "semantic_unknown"),
+                    severity="error",
+                    passed=False,
+                    details={"exception": repr(e)},
+                )
+            signals.extend(_coerce_signals(out))
+
+    if "cross_field" in stages and value is not None:
+        for cf in pipeline.cross_field:
+            try:
+                out = cf(value, context=validation_context or {})
+            except Exception as e:  # noqa: BLE001
+                out = ValidationSignal(
+                    validator=getattr(cf, "name", "cross_field_unknown"),
+                    severity="error",
+                    passed=False,
+                    details={"exception": repr(e)},
+                )
+            signals.extend(_coerce_signals(out))
+
+    ok = not any(not s.passed and s.severity == "error" for s in signals)
+    result = ValidationResult(
+        ok=ok,
+        value=value,
+        signals=signals,
+        schema_version=pipeline.schema_version,
+    )
+
+    if run_id is not None:
+        _write_signals_to_db(
+            run_id=run_id,
+            schema_version=pipeline.schema_version,
+            agent_type=agent_type,
+            signals=signals,
+        )
+
+    return result
+
+
 def parse_and_validate(
     raw_response: str,
     *,
@@ -130,6 +234,7 @@ def parse_and_validate(
     missing_pipeline: Literal["raise", "fallback"] = "raise",
     truncated: bool | None = None,
     on_truncation: Literal["warn", "fail"] = "warn",
+    usage: dict | None = None,
 ) -> ValidationResult:
     """Parse a raw LLM response and run the registered validation pipeline.
 
@@ -160,12 +265,18 @@ def parse_and_validate(
         truncated: Authoritative truncation flag from the client's
             ``usage`` dict (see
             :func:`~pf_core.llm.parse.truncated_from_usage`). Forwarded to
-            :func:`parse_llm_json`, where it logs a WARNING.
+            :func:`parse_llm_json`, where it logs a WARNING. When set (even
+            ``False``), overrides anything derived from ``usage``.
         on_truncation: What a ``truncated=True`` response means. ``"warn"``
-            (default) runs the pipeline anyway, so an
-            incomplete-but-parseable payload still reaches the validators.
-            ``"fail"`` short-circuits with a single ``<agent>_truncated``
-            error signal and ``value=None``.
+            (default) runs the pipeline anyway — so an
+            incomplete-but-parseable payload still reaches the validators —
+            and includes a non-blocking ``<agent>_truncated`` warn signal in
+            the result. ``"fail"`` short-circuits with a single
+            ``<agent>_truncated`` error signal and ``value=None``.
+        usage: The client's ``usage`` dict. When ``truncated`` is ``None``,
+            truncation is derived from it via
+            :func:`~pf_core.llm.parse.truncated_from_usage` — pass the dict
+            you already hold and the flag cannot be forgotten.
 
     Returns:
         A :class:`ValidationResult` describing parse + validation outcome.
@@ -174,30 +285,12 @@ def parse_and_validate(
         PipelineNotRegisteredError: if ``missing_pipeline="raise"`` and
             ``agent_type`` has no registered pipeline.
     """
-    from pf_core.llm.validate._registry import get_pipeline, list_agent_types
+    pipeline, fallback = _lookup_pipeline(agent_type, missing_pipeline)
+    if fallback is not None:
+        return fallback
 
-    pipeline = get_pipeline(agent_type)
-    if pipeline is None:
-        if missing_pipeline == "raise":
-            raise PipelineNotRegisteredError(
-                agent_type=agent_type,
-                known_agents=list_agent_types(),
-            )
-        logger.warning(
-            "no_pipeline_registered",
-            agent_type=agent_type,
-            known_agents=list_agent_types(),
-        )
-        sig = ValidationSignal(
-            validator="no_pipeline_registered",
-            severity="error",
-            passed=False,
-            details={
-                "agent_type": agent_type,
-                "known_agents": list_agent_types(),
-            },
-        )
-        return ValidationResult(ok=False, value=None, signals=[sig])
+    if truncated is None and usage is not None:
+        truncated = truncated_from_usage(usage)
 
     if truncated and on_truncation == "fail":
         sig = ValidationSignal(
@@ -220,9 +313,18 @@ def parse_and_validate(
             schema_version=pipeline.schema_version,
         )
 
-    # --- Parse ---
-    parsed = parse_llm_json(raw_response, expect=expect, strict=False, truncated=truncated)
     signals: list[ValidationSignal] = []
+    if truncated:
+        signals.append(
+            ValidationSignal(
+                validator=f"{agent_type}_truncated",
+                severity="warn",
+                passed=False,
+                details={"reason": "provider reported the response hit the token limit"},
+            )
+        )
+
+    parsed = parse_llm_json(raw_response, expect=expect, strict=False, truncated=truncated)
 
     if parsed is None:
         sig = ValidationSignal(
@@ -247,62 +349,52 @@ def parse_and_validate(
             )
         return result
 
-    value: Any | None = parsed
-
-    # --- Shape ---
-    if "shape" in stages and pipeline.shape is not None:
-        coerced, shape_signal = pipeline.shape.validate_shape(
-            parsed,
-            agent_type=agent_type,
-        )
-        signals.append(shape_signal)
-        if shape_signal.passed:
-            value = coerced
-        else:
-            value = None
-
-    # --- Semantic ---
-    if "semantic" in stages and value is not None:
-        for sem in pipeline.semantic:
-            try:
-                out = sem(value, context=validation_context or {})
-            except Exception as e:  # noqa: BLE001
-                out = ValidationSignal(
-                    validator=getattr(sem, "name", "semantic_unknown"),
-                    severity="error",
-                    passed=False,
-                    details={"exception": repr(e)},
-                )
-            signals.extend(_coerce_signals(out))
-
-    # --- Cross-field ---
-    if "cross_field" in stages and value is not None:
-        for cf in pipeline.cross_field:
-            try:
-                out = cf(value, context=validation_context or {})
-            except Exception as e:  # noqa: BLE001
-                out = ValidationSignal(
-                    validator=getattr(cf, "name", "cross_field_unknown"),
-                    severity="error",
-                    passed=False,
-                    details={"exception": repr(e)},
-                )
-            signals.extend(_coerce_signals(out))
-
-    ok = not any(not s.passed and s.severity == "error" for s in signals)
-    result = ValidationResult(
-        ok=ok,
-        value=value if ok else (value if value is not None else None),
+    return _run_stages(
+        pipeline,
+        parsed,
+        agent_type=agent_type,
+        run_id=run_id,
+        validation_context=validation_context,
+        stages=stages,
         signals=signals,
-        schema_version=pipeline.schema_version,
     )
 
-    if run_id is not None:
-        _write_signals_to_db(
-            run_id=run_id,
-            schema_version=pipeline.schema_version,
-            agent_type=agent_type,
-            signals=signals,
-        )
 
-    return result
+def validate_value(
+    value: Any,
+    *,
+    agent_type: str,
+    run_id: int | None = None,
+    validation_context: dict | None = None,
+    stages: tuple[str, ...] = ("shape", "semantic", "cross_field"),
+    missing_pipeline: Literal["raise", "fallback"] = "raise",
+) -> ValidationResult:
+    """Run the registered validation pipeline on an already-parsed value.
+
+    :func:`parse_and_validate` minus the JSON parse stage — for callers whose
+    LLM contract is not JSON (a line protocol, markdown, prose). The caller
+    parses the response into a Python value; the pipeline runs the
+    shape/semantic/cross-field stages and, when ``run_id`` is set, persists
+    every signal to ``llm_run_validations`` and tags
+    ``schema:<agent>_v<n>`` exactly as :func:`parse_and_validate` does.
+
+    Args mirror :func:`parse_and_validate` (no ``expect``/``truncated`` —
+    parsing already happened on the caller's side).
+
+    Raises:
+        PipelineNotRegisteredError: if ``missing_pipeline="raise"`` and
+            ``agent_type`` has no registered pipeline.
+    """
+    pipeline, fallback = _lookup_pipeline(agent_type, missing_pipeline)
+    if fallback is not None:
+        return fallback
+
+    return _run_stages(
+        pipeline,
+        value,
+        agent_type=agent_type,
+        run_id=run_id,
+        validation_context=validation_context,
+        stages=stages,
+        signals=[],
+    )

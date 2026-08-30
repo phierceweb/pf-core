@@ -10,13 +10,11 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select, update
 
 from pf_core.db.repository import Repository
-from pf_core.db.types import server_now
 from pf_core.budget._schema import (
     llm_budget_snapshots,
     llm_budgets,
     llm_cost_rates,
 )
-from pf_core.exceptions import DataError, InvalidInputError
 from pf_core.llm.tracking._resolvers import resolve_llm_model_id
 from pf_core.log import get_logger
 
@@ -106,12 +104,11 @@ class BudgetRepo(Repository):
         """Upsert each desired row; disable any enabled row not in desired.
 
         A "desired" row is ``{scope_kind, scope_value, period, limit_usd,
-        soft_thresholds, action}``.
+        limit_tokens, limit_calls, soft_thresholds, action}``.
 
         An empty ``desired`` disables nothing and logs
-        ``budget_sync_refused_mass_disable`` — zero scopes is far more often an
-        unreadable or mistyped config than a deliberate removal of every cap.
-        Removing a subset of scopes still disables that subset.
+        ``budget_sync_refused_mass_disable``; removing a subset still disables
+        that subset.
 
         Returns counts: ``{"inserted": N, "updated": N, "disabled": N}``.
         """
@@ -137,7 +134,9 @@ class BudgetRepo(Repository):
                 existing = conn.execute(select(llm_budgets.c.id).where(and_(*where))).fetchone()
 
                 values = {
-                    "limit_usd": row["limit_usd"],
+                    "limit_usd": row.get("limit_usd"),
+                    "limit_tokens": row.get("limit_tokens"),
+                    "limit_calls": row.get("limit_calls"),
                     "soft_thresholds": row.get("soft_thresholds"),
                     "action": row.get("action", "block"),
                     "enabled": True,
@@ -220,6 +219,7 @@ class BudgetSnapshotRepo(Repository):
         period_start: dt.date,
         spent_usd: float,
         run_count: int,
+        spent_tokens: int | None = None,
         last_updated: dt.datetime | None = None,
     ) -> None:
         """Write a snapshot row.
@@ -227,6 +227,8 @@ class BudgetSnapshotRepo(Repository):
         ``last_updated`` must be the cutoff the aggregate was taken at —
         stamping it at write time instead loses every run created in
         between (the live delta starts from this value).
+
+        ``spent_tokens=None`` leaves an existing row's total untouched.
         """
         with self._tx() as conn:
             existing = conn.execute(
@@ -250,6 +252,7 @@ class BudgetSnapshotRepo(Repository):
                         spent_usd=spent_usd,
                         run_count=run_count,
                         last_updated=last_updated if last_updated is not None else func.now(),
+                        **({} if spent_tokens is None else {"spent_tokens": spent_tokens}),
                     )
                 )
             else:
@@ -258,6 +261,7 @@ class BudgetSnapshotRepo(Repository):
                         budget_id=budget_id,
                         period_start=period_start,
                         spent_usd=spent_usd,
+                        spent_tokens=spent_tokens or 0,
                         run_count=run_count,
                         last_updated=last_updated if last_updated is not None else func.now(),
                     )
@@ -349,108 +353,10 @@ class CostRateRepo(Repository):
                 )
 
 
-# ---------------------------------------------------------------------------
-# Spent aggregation
-# ---------------------------------------------------------------------------
-
-
-def apply_scope_filter(q, budget: dict):
-    """Restrict an ``llm_runs`` query to the runs a budget's scope covers.
-
-    The single definition — snapshot aggregate and live delta must not
-    disagree about what a budget counts.
-
-    Raises:
-        InvalidInputError: unrecognised ``scope_kind``. Refusing beats
-            summing every scope (false blocks) or none (an unenforced cap).
-    """
-    from pf_core.llm.tracking.schema import (
-        llm_agent_types,
-        llm_run_tags,
-        llm_runs,
-    )
-
-    scope_kind = budget["scope_kind"]
-    scope_value = budget.get("scope_value")
-
-    if scope_kind == "global":
-        return q
-    if scope_kind == "agent":
-        return q.join(llm_agent_types, llm_runs.c.agent_type_id == llm_agent_types.c.id).where(
-            llm_agent_types.c.slug == scope_value
-        )
-    if scope_kind == "job_kind":
-        from pf_core.jobs._schema import jobs
-
-        return q.join(jobs, llm_runs.c.job_id == jobs.c.id).where(jobs.c.kind == scope_value)
-    if scope_kind == "job_id":
-        if scope_value is None:
-            raise InvalidInputError("budget scope 'job_id' requires a scope_value")
-        return q.where(llm_runs.c.job_id == int(scope_value))
-    if scope_kind == "tag":
-        return q.join(llm_run_tags, llm_runs.c.id == llm_run_tags.c.llm_run_id).where(
-            llm_run_tags.c.tag == scope_value
-        )
-    raise InvalidInputError(f"unknown budget scope_kind: {scope_kind!r}")
-
-
-def db_now(conn=None) -> dt.datetime:
-    """Read the clock ``llm_runs.created_at`` is stamped from.
-
-    Cutoffs compared against server-stamped rows must come from the same
-    clock — a Python-side UTC value skews on MySQL TIMESTAMP columns.
-    """
-    if conn is not None:
-        return _read_now(conn)
-    from pf_core.db.connection import transaction
-
-    with transaction() as c:
-        return _read_now(c)
-
-
-def _read_now(conn: Any) -> dt.datetime:
-    value = conn.execute(select(server_now())).scalar()
-    if value is None:  # pragma: no cover - a scalar clock select always yields a row
-        raise DataError("database clock query returned no row")
-    return value
-
-
-def aggregate_spent(
-    *,
-    budget: dict,
-    period_start: dt.date,
-    period_end: dt.date,
-    cutoff: dt.datetime | None = None,
-    conn=None,
-) -> tuple[float, int]:
-    """Sum ``llm_runs.cost_usd`` for the rows matching a budget's scope in [period_start, period_end).
-
-    Excludes rows with ``status IN ('cache_hit', 'budget_blocked')``.
-    ``cutoff`` bounds the sum to ``created_at < cutoff``; store it as the
-    snapshot's ``last_updated`` so the live delta resumes exactly there.
-    """
-    from pf_core.llm.tracking.schema import llm_runs
-
-    def _run(c):
-        q = select(
-            func.coalesce(func.sum(llm_runs.c.cost_usd), 0),
-            func.count(llm_runs.c.id),
-        ).where(
-            and_(
-                llm_runs.c.created_at >= period_start,
-                llm_runs.c.created_at < period_end,
-                llm_runs.c.status.notin_(["cache_hit", "budget_blocked"]),
-            )
-        )
-        if cutoff is not None:
-            q = q.where(llm_runs.c.created_at < cutoff)
-
-        total, n = c.execute(apply_scope_filter(q, budget)).fetchone()
-        return (float(total or 0), int(n or 0))
-
-    if conn is not None:
-        return _run(conn)
-    from pf_core.db.connection import transaction
-
-    with transaction() as c:
-        return _run(c)
+from pf_core.budget._aggregate import (  # noqa: E402,F401 — re-exported
+    aggregate_spent,
+    aggregate_usage,
+    apply_scope_filter,
+    db_now,
+    usage_columns,
+)

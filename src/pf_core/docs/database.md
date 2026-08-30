@@ -191,6 +191,16 @@ If you're converting code that used raw pymysql cursors, watch for these:
 from pf_core.db import coerce_json_col, dumps_json, now_iso, row_to_dict
 ```
 
+### Writing portable hand-written SQL
+
+A query written against one dialect is a query the test fixture cannot run.
+`pf_core.db.dialect` supplies the fragments that differ — `now_sql(conn)`,
+`insert_ignore_prefix(conn)`, `row_lock_suffix(conn)` — plus `utc_cutoff()` for
+threshold comparisons, all taking the `conn` you already hold. It also documents
+when a cutoff belongs on the server instead (leases and retention deletes, where
+clock skew between hosts can change the outcome). See
+**[db-dialect.md](db-dialect.md)**.
+
 ### coerce_json_col
 
 Safely coerce a database column value to a Python list. Handles `None`, JSON strings, lists, and other iterables. Never raises.

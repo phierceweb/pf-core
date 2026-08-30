@@ -88,6 +88,8 @@ With `expect_json=True` the response is parsed via `parse_llm_json(recover=True,
 
 A client exception (timeout, non-zero exit, transport error) is recorded as a `status="failed"` row — capturing `error` (truncated to 10 000 chars) and `error_class` — and then **re-raised**. `tracked_call` never swallows client failures; the caller decides whether to retry or abort. Only JSON *parse* failures trigger the built-in retry, not client failures.
 
+**A rejected response marks its own row failed.** When the chat succeeds but the final JSON parse does not — retry exhausted, `json_retry=False`, or a known-truncated response — the run whose response is being rejected (the retry row when a retry ran, else the original) is flipped to `status="failed"` with `error_class="LlmJsonError"` via [`LlmRunRepo.mark_failed()`](llm-tracking.md#llmrunrepomark_failed--flip-an-existing-row) before `LlmJsonError` is raised. No phantom second row is written, and the row keeps its real token counts. A DB error during the flip is logged and never masks the `LlmJsonError`. When the retry *succeeds*, the first (failed-parse) row stays `success` — its call did complete; the link relation records the retry.
+
 ---
 
 ## The messages variant — `tracked_messages_call`

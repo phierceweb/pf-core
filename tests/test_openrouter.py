@@ -368,11 +368,8 @@ class TestGetClient:
         assert client.api_key == "explicit-key"
 
     def test_no_api_key_raises(self, monkeypatch):
-        # Hermetic: an ambient OPENROUTER_API_KEY (a real key in the dev's
-        # .env, loaded by config.py's load_dotenv, or a CI secret) would
-        # otherwise let get_client() succeed and this "must raise" assertion
-        # fail under the full suite. Clear it so the no-key path is asserted
-        # regardless of the environment the test runs in.
+        # An ambient key would let get_client() succeed and this assertion
+        # fail under the full suite.
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         with pytest.raises(OpenRouterError):
             get_client()
@@ -848,3 +845,44 @@ class TestRetryAfterClamping:
     def test_oversized_still_caps(self):
         assert _retry_delay(0, "inf") == 30.0
         assert _retry_delay(0, "120") == 30.0
+
+
+class TestPromptTokensExcludesCachedInput:
+    """pf_core.pricing bills cache_read on top of prompt_tokens, so
+    prompt_tokens must be the uncached remainder. OpenAI-shaped responses
+    report it cache-inclusive."""
+
+    def _mock(self, **data):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"choices": [{"message": {"content": "ok"}}], **data}
+        return resp
+
+    @patch("pf_core.clients.openrouter.httpx.post")
+    def test_cached_tokens_are_subtracted_from_prompt_tokens(self, mock_post):
+        mock_post.return_value = self._mock(
+            usage={
+                "prompt_tokens": 1200,
+                "completion_tokens": 340,
+                "prompt_tokens_details": {"cached_tokens": 1000},
+            }
+        )
+        client = OpenRouterClient(api_key="k")
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
+        assert usage["prompt_tokens"] == 200
+        assert usage["cache_read_tokens"] == 1000
+
+    @patch("pf_core.clients.openrouter.httpx.post")
+    def test_billable_input_is_never_negative(self, mock_post):
+        """A provider reporting cached_tokens above prompt_tokens must not
+        produce a negative count."""
+        mock_post.return_value = self._mock(
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "prompt_tokens_details": {"cached_tokens": 5000},
+            }
+        )
+        client = OpenRouterClient(api_key="k")
+        _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
+        assert usage["prompt_tokens"] == 0

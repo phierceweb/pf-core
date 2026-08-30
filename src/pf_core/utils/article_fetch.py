@@ -10,7 +10,9 @@ errored. Never raises — every failure maps to a ``fetch_status``:
 e.g. a PDF — final, no Wayback, since the archive replays the same
 bytes) | ``no_content`` (a 2xx HTML page the extractor could not pull a
 body from — JS-rendered shells, interstitials). :data:`FETCH_STATUSES`
-is the machine-readable set. One URL per call; callers parallelize. The
+is the machine-readable set; :func:`is_permanent` says whether a
+re-fetch could change the verdict (only :data:`PERMANENT_FETCH_STATUSES`
+members are final). One URL per call; callers parallelize. The
 extraction chain lives in ``_article_extract``.
 
 Requires the ``articles`` extra (``pip install 'pf-core[articles]'``);
@@ -29,7 +31,6 @@ Usage::
 from __future__ import annotations
 
 import datetime as _dt
-import os
 
 try:
     from tenacity import (
@@ -44,13 +45,16 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
     raise extra_import_error("articles", "tenacity", feature="pf_core.utils.article_fetch") from e
 
 from pf_core.log import get_logger
+from pf_core.utils.env import resolve_bool
 from pf_core.utils._article_extract import (  # noqa: F401 — helpers re-exported
     FETCH_STATUSES,
     FETCHER_VERSION,
+    PERMANENT_FETCH_STATUSES,
     FetchedArticle,
     _extract_from_html,
     _first_str,
     _parse_iso_date,
+    is_permanent,
     looks_binary,
 )
 from pf_core.utils._article_extract import _HAS_DEPS as _EXTRACT_HAS_DEPS
@@ -67,8 +71,10 @@ logger = get_logger(__name__)
 __all__ = [
     "FETCH_STATUSES",
     "FETCHER_VERSION",
+    "PERMANENT_FETCH_STATUSES",
     "FetchedArticle",
     "fetch_article",
+    "is_permanent",
     "looks_binary",
 ]
 
@@ -144,14 +150,13 @@ def fetch_article(
     _require_deps()
 
     if not isinstance(url, str) or not url.strip():
-        return _empty_result(url or "", fetch_status="error")
+        return _empty_result("", fetch_status="error")
 
     url = url.strip()
     canon = canonical_url(url) or url
     outlet = domain_of(url)
 
-    if wayback_fallback is None:
-        wayback_fallback = os.environ.get("PF_ARTICLE_WAYBACK_FALLBACK", "1").strip() != "0"
+    wayback_fallback = resolve_bool(wayback_fallback, "PF_ARTICLE_WAYBACK_FALLBACK", default=True)
 
     # ── live fetch with retry ──
     fetch_status, body_text = _live_fetch_with_retry(url)
@@ -181,10 +186,7 @@ def fetch_article(
             return article
 
     # ── Wayback fallback for recoverable failures ──
-    # 404/410 genuinely don't exist on the live web and Wayback rarely has
-    # them; unsupported_content_type is replayed byte-for-byte, so a PDF is
-    # still a PDF. Everything else is worth one CDX lookup.
-    if fetch_status in ("not_found", "unsupported_content_type"):
+    if is_permanent(fetch_status):
         wayback_fallback = False
     if wayback_fallback:
         wb_result = _try_wayback(url, event_date=event_date)

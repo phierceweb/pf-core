@@ -22,7 +22,13 @@ Notes:
   accepted but **ignored** — the active Claude Code session controls
   sampling. They're in the signature so callers can use the same kwargs
   they'd use for OpenRouter without code changes.
-- Token counts in the returned ``usage`` dict are always 0.
+- Token counts in the returned ``usage`` dict come from the JSON envelope's
+  ``usage`` block (prompt / completion / cache read / cache write). An envelope
+  that omits them (older CLIs) yields 0 and logs
+  ``claude_code_envelope_without_usage``; text mode — a consumer
+  ``--output-format`` or ``--verbose`` in ``extra_args`` — yields 0 silently.
+  ``prompt_tokens`` is the uncached input, matching the other clients.
+  ``reasoning_tokens`` is always 0 — not parsed from the envelope.
   ``duration_ms`` is wall-clock from invocation.
 - ``usage["finish_reason"]`` carries the model's stop reason, read off the
   ``--output-format json`` envelope and normalised onto OpenRouter's
@@ -60,7 +66,7 @@ from pf_core.clients._claude_code_wire import (
     translate_model,
     unwrap_envelope,
 )
-from pf_core.exceptions import AppError
+from pf_core.exceptions import ClientError
 from pf_core.log import get_logger
 
 _log = get_logger(__name__)
@@ -95,7 +101,7 @@ _SHAPE_FLAGS = (_OUTPUT_FORMAT_FLAG, "--verbose")
 _RETRY_BACKOFF_BASE = 0.5
 
 
-class ClaudeCodeError(AppError):
+class ClaudeCodeError(ClientError):
     """The ``claude --print`` subprocess call failed (binary missing,
     non-zero exit, or wall-clock timeout)."""
 
@@ -181,7 +187,9 @@ class ClaudeCodeClient:
 
         Returns:
             ``(content, usage)`` where ``usage`` carries the same keys as
-            ``OpenRouterClient.chat`` (token counts and cost are 0).
+            ``OpenRouterClient.chat``. Token counts come from the JSON
+            envelope (0 in text mode or when the envelope omits them);
+            ``cost_usd`` is always 0.0.
         """
         binary_path = shutil.which(self.binary)
         if binary_path is None:
@@ -202,15 +210,11 @@ class ClaudeCodeClient:
         model_flag = ["--model", resolved_model] if resolved_model else []
         # isolate=True prepends --safe-mode (leads the argv). See _SAFE_MODE_FLAG.
         isolation_args = [_SAFE_MODE_FLAG] if self.isolate else []
-        # Prompt goes on stdin, not argv. Argv has a hard OS limit
-        # (ARG_MAX, ~256 KB on macOS) — a large rendered prompt blows
-        # past it and raises E2BIG: "Argument list too long". stdin has
-        # no such limit. `claude --print` reads stdin when no positional
-        # prompt is supplied.
         envelope_mode = not any(
             a.startswith(flag) for a in self.extra_args for flag in _SHAPE_FLAGS
         )
         format_args = [_OUTPUT_FORMAT_FLAG, "json"] if envelope_mode else []
+        # No positional prompt: it goes on stdin, which has no ARG_MAX ceiling.
         cmd = [
             binary_path,
             *isolation_args,
@@ -221,23 +225,16 @@ class ClaudeCodeClient:
         ]
         wall_timeout = timeout if timeout is not None else self.timeout
 
-        # This transport authenticates via the active Claude Max session, NOT
-        # an API key (see module docstring: "consumes no API credits"). Strip
-        # ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from the child env so a key
-        # present in the parent environment can't hijack `claude --print` into
-        # (billable, and possibly invalid) external API-key auth — which
-        # silently breaks the documented $0 subscription path.
+        # Strip the API-key vars: a key in the parent env would hijack
+        # `claude --print` into billable API auth instead of the Max session.
         sub_env = {
             k: v
             for k, v in os.environ.items()
             if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
         }
 
-        # Up to (self.retry + 1) attempts, backing off between them. Both
-        # timeout and non-zero exit are treated as transient — both
-        # have legitimate retryable causes (rate-limit windows, momentary
-        # auth refresh, model warm-up). Missing binary / empty messages
-        # already raised above and aren't reached here.
+        # Timeout and non-zero exit are both retryable: rate-limit windows,
+        # auth refresh, model warm-up.
         result = None
         elapsed_ms = 0
         for attempt in range(self.retry + 1):
@@ -298,6 +295,12 @@ class ClaudeCodeClient:
 
         content = result.stdout.strip()
         finish_reason: str | None = None
+        tokens: dict[str, int] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+        }
         if envelope_mode:
             unwrapped = unwrap_envelope(result.stdout)
             if unwrapped is None:
@@ -309,7 +312,13 @@ class ClaudeCodeClient:
                     "to restore text-mode output (truncation then unreportable).",
                     context={"model": resolved_model, "stdout_head": content[:200]},
                 )
-            content, finish_reason = unwrapped
+            content, finish_reason, tokens = unwrapped
+            if not any(tokens.values()):
+                _log.warning(
+                    "claude_code_envelope_without_usage",
+                    model=resolved_model,
+                    message="no usage counts — a tokens budget cannot gate this call",
+                )
             if envelope_error(result.stdout) is not None:
                 raise ClaudeCodeError(
                     f"`{self.binary} --print` reported an error: {content[:500]}",
@@ -320,10 +329,7 @@ class ClaudeCodeClient:
         # clients are drop-in interchangeable. Fields that don't apply
         # to the CLI return 0 / 0.0 / None.
         usage: dict[str, Any] = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
+            **tokens,
             "reasoning_tokens": 0,
             "cost_usd": 0.0,
             "duration_ms": elapsed_ms,
@@ -389,11 +395,7 @@ class ClaudeCodeClient:
 # Module-level singletons (one per model)
 # ---------------------------------------------------------------------------
 #
-# A consumer may legitimately want different models for different tasks in
-# the same process — e.g. a pipeline using ``sonnet`` for text
-# analysis and ``haiku`` for vision. Caching by ``model`` lets each task pin its
-# own client without stepping on the others' configuration. Calls with
-# the same ``model`` value share an instance; the first call with a given
+# Calls with the same ``model`` share an instance; the first call with a given
 # ``model`` wins for the other args (timeout / binary / extra_args).
 
 _clients: dict[str | None, ClaudeCodeClient] = {}

@@ -14,6 +14,6 @@ jobs:
       - name: file-size gate
         run: python -m pf_core.guards
       - name: ruff lint
-        run: ruff check src tests
+        run: ruff check src tests bin
       - name: ruff format
-        run: ruff format --check src tests
+        run: ruff format --check src tests bin

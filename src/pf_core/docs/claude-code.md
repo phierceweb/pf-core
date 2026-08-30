@@ -27,7 +27,7 @@ content, usage = client.chat(
   3. Env var `$PF_CORE_CLAUDE_CODE_MODEL`
   4. No `--model` flag → CLI uses the active interactive session model. For Claude Max users this can silently route batch work onto Sonnet/Opus and chew through quota — pin a model whenever you batch.
 - **Temperature / max_tokens / top_p / response_format** — accepted as kwargs for API parity with `OpenRouterClient` but **ignored**. The active Claude Code session controls sampling. Passing them won't error; they just don't reach the CLI.
-- **Token counts** — always `0`. The client does not surface the CLI's own counts.
+- **Token counts** — read from the `--output-format json` envelope's `usage` block: `prompt_tokens` ← `input_tokens`, `completion_tokens` ← `output_tokens`, `cache_read_tokens` ← `cache_read_input_tokens`, `cache_write_tokens` ← `cache_creation_input_tokens`. All `0` when the envelope omits them (older CLIs) or in text mode (consumer-supplied `--output-format` / `--verbose`). `reasoning_tokens` is always `0` — the envelope doesn't report it. Real token counts are what make a `tokens` budget limit enforceable on this backend (see [cost-budget.md](cost-budget.md)).
 - **Cost** — always `0.0`. Claude Max sessions don't bill per call.
 - **Duration** — wall-clock from invocation, in milliseconds.
 - **`system_fingerprint`** — always `None`.
@@ -101,10 +101,10 @@ Returns `(content, usage)`. The `usage` dict carries the same token/cost keys as
 
 ```python
 {
-    "prompt_tokens": 0,
-    "completion_tokens": 0,
-    "cache_read_tokens": 0,
-    "cache_write_tokens": 0,
+    "prompt_tokens": <int, from the envelope's usage.input_tokens; 0 without an envelope>,
+    "completion_tokens": <int, usage.output_tokens; 0 without an envelope>,
+    "cache_read_tokens": <int, usage.cache_read_input_tokens; 0 without an envelope>,
+    "cache_write_tokens": <int, usage.cache_creation_input_tokens; 0 without an envelope>,
     "reasoning_tokens": 0,
     "cost_usd": 0.0,
     "duration_ms": <int, wall-clock>,
@@ -191,14 +191,14 @@ Each is cached independently; subsequent calls return the same per-model instanc
 
 ## Errors
 
-`ClaudeCodeError` (subclass of `pf_core.exceptions.AppError`) is raised when:
+`ClaudeCodeError` (subclass of `pf_core.exceptions.ClientError`) is raised when:
 
 - The `claude` binary is not on `PATH` (or at the configured `binary` path).
 - The messages list yields no usable user content.
 - `claude --print` returns a non-zero exit code.
 - `claude --print` exceeds the wall-clock timeout.
 
-Catching `pf_core.exceptions.AppError` will catch all of these.
+Catching `pf_core.exceptions.ClientError` (or `AppError`) will catch all of these.
 
 ## Routing
 

@@ -19,6 +19,7 @@ from pf_core.utils.article_fetch import (
     _parse_iso_date,
     _first_str,
     _empty_result,
+    fetch_article,
 )
 
 
@@ -294,11 +295,7 @@ class TestFetchArticleWaybackFlag:
         monkeypatch.setattr(af, "_HAS_DEPS", True)
 
     def test_kwarg_overrides_env(self, monkeypatch):
-        # Even with env disabled, an explicit True kwarg should attempt
-        # wayback. We mock fetch_url_content to fail (paywalled) and
-        # wayback_exists_at to return False, so the call still resolves
-        # to a paywalled stub — the assertion is that wayback_exists_at
-        # was consulted.
+        # An explicit True kwarg must beat the disabling env var.
         monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
         wb_calls = []
 
@@ -485,6 +482,31 @@ class TestFetchStatusVocabulary:
         # consumers must be forced to re-read.
         assert FETCHER_VERSION >= 4
 
+    def test_permanent_statuses_are_subset_of_vocabulary(self):
+        assert af.PERMANENT_FETCH_STATUSES <= af.FETCH_STATUSES
+
+
+class TestPermanence:
+    def test_permanent_set_contents(self):
+        assert af.PERMANENT_FETCH_STATUSES == frozenset({"not_found", "unsupported_content_type"})
+
+    @pytest.mark.parametrize("status", sorted(af.FETCH_STATUSES))
+    def test_every_status_classified(self, status):
+        expected = status in ("not_found", "unsupported_content_type")
+        assert af.is_permanent(status) is expected
+
+    def test_ok_is_not_permanent(self):
+        assert af.is_permanent("ok") is False
+
+    def test_unknown_status_is_retryable(self):
+        # A status added upstream fails open to retry.
+        assert af.is_permanent("some_future_status") is False
+        assert af.is_permanent("") is False
+
+    def test_exports_present_in_all(self):
+        assert "is_permanent" in af.__all__
+        assert "PERMANENT_FETCH_STATUSES" in af.__all__
+
 
 class TestBinaryBodyRejection:
     """A 2xx carrying binary must never reach the extractor."""
@@ -658,3 +680,34 @@ class TestExtractorLoggersQuieted:
         finally:
             monkeypatch.delenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", raising=False)
             _article_extract._quiet_extractor_loggers()
+
+
+@pytest.mark.parametrize("bad", [123, ["http://x"], object(), 0.5])
+def test_fetch_article_never_raises_for_a_non_string_url(bad):
+    """The module contract is that every failure maps to a fetch_status; a
+    truthy non-string used to reach domain_of() and raise AttributeError."""
+    art = fetch_article(bad)
+    assert art.fetch_status == "error"
+    assert art.url == ""
+
+
+def test_wayback_fallback_env_honours_conventional_falsy_spellings(monkeypatch):
+    """Every conventional falsy spelling must switch the fallback off, not
+    just a literal "0"."""
+    from pf_core.utils.env import resolve_bool
+
+    for spelling in ("0", "false", "False", "off", "no", "FALSE"):
+        monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", spelling)
+        assert resolve_bool(None, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is False, spelling
+    for spelling in ("1", "true", "on", "yes", " 1 "):
+        monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", spelling)
+        assert resolve_bool(None, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is True, spelling
+    monkeypatch.delenv("PF_ARTICLE_WAYBACK_FALLBACK")
+    assert resolve_bool(None, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is True
+
+
+def test_wayback_fallback_kwarg_overrides_env(monkeypatch):
+    from pf_core.utils.env import resolve_bool
+
+    monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
+    assert resolve_bool(True, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is True

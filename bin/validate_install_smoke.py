@@ -31,12 +31,14 @@ for mod in ["pf_core.llm.parse", "pf_core.llm.validate"]:
 
 # 2. The client/HTTP stack is NOT present — [validate] is guards-only.
 for pkg in ["httpx", "tenacity"]:
+
     def _absent(p=pkg):
         try:
             importlib.import_module(p)
         except ImportError:
             return
         raise AssertionError(f"{p} unexpectedly importable under [validate]")
+
     check(f"{pkg} NOT installed under [validate]", _absent)
 
 
@@ -52,10 +54,14 @@ def _friendly(mod, needle):
 
 
 # 3. Clients still need [llm]; tracked still needs [tracking] (DB recording).
-check("pf_core.clients.openrouter -> friendly [llm] error",
-      lambda: _friendly("pf_core.clients.openrouter", "pf-core[llm]"))
-check("pf_core.llm.tracked -> friendly [tracking] error",
-      lambda: _friendly("pf_core.llm.tracked", "pf-core[tracking]"))
+check(
+    "pf_core.clients.openrouter -> friendly [llm] error",
+    lambda: _friendly("pf_core.clients.openrouter", "pf-core[llm]"),
+)
+check(
+    "pf_core.llm.tracked -> friendly [tracking] error",
+    lambda: _friendly("pf_core.llm.tracked", "pf-core[tracking]"),
+)
 
 print()
 if failures:

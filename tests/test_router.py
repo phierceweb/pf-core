@@ -86,9 +86,9 @@ def _budget_exc() -> CostBudgetExceeded:
         scope_kind="agent",
         scope_value="routed",
         period="daily",
-        limit_usd=1.0,
-        spent_usd=1.0,
-        projected_usd=0.5,
+        limit_value=1.0,
+        spent_value=1.0,
+        projected_value=0.5,
     )
 
 

@@ -130,13 +130,33 @@ report = runner.run(
 Compare two sets of replay runs against the same golden members:
 
 ```python
-pairs = runner.compare_experiments(
+result = runner.compare_experiments(
     baseline="experiment:current-prod",
     candidate="experiment:opus47-v5",
     agent_type="summarizer",
 )
-# [{"golden_id": 1042, "baseline_score": 0.82, "candidate_score": 0.91, "delta": 0.09}, ...]
+# {
+#     "pairs": [
+#         {"golden_id": 1042, "baseline_score": 0.82, "candidate_score": 0.91, "delta": 0.09},
+#         ...
+#     ],
+#     "baseline_runs": 20,
+#     "candidate_runs": 20,
+# }
 ```
+
+An empty comparison can never read as "no regressions". `PreconditionError` is
+raised when either tag matches zero scored replay runs for the agent type
+(naming the empty tag(s)), and when both tags are populated but share no golden
+parent — two experiments over different golden sets. Passing the same tag as
+both `baseline` and `candidate` raises `InvalidInputError`, since every delta
+would be 0.0. A replay whose `eval_score` outcome has a NULL score is not a
+scored replay and is excluded from both the pairing and the counts. Compare `baseline_runs`/`candidate_runs`
+against `len(result["pairs"])` to spot a shrunken pairing (e.g. only 3 of 20
+goldens replayed under both tags). When a reused tag gives a golden multiple
+scored replays, the latest replay's score wins in the pairing; and because
+`baseline_runs`/`candidate_runs` count scored replay *rows* (not distinct
+goldens), a count above the golden count is how a reused tag shows up.
 
 ---
 
@@ -536,10 +556,14 @@ candidate = runner.run(
     tag_as="experiment:opus47",
 )
 
-# Compare, paired by golden member
-pairs = runner.compare_experiments(
+# Compare, paired by golden member. Raises PreconditionError on an empty or
+# non-overlapping comparison — a typo'd tag must fail the gate, not pass it.
+result = runner.compare_experiments(
     baseline="experiment:baseline", candidate="experiment:opus47", agent_type="summarizer"
 )
+pairs = result["pairs"]
+# result["baseline_runs"] / result["candidate_runs"]: per-tag matched-run
+# counts — assert they equal len(pairs) so a partial replay can't slip through.
 ```
 
 (Wrap this in your project runner script for command-line / CI use — see

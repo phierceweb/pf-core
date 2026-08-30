@@ -46,6 +46,7 @@ _INSTALL: dict[str, str] = {
 # Enforced against the source tree by tests/test_extras_tiers.py.
 _MODULE_EXTRA: dict[str, str] = {
     "pf_core.alembic": "db",
+    "pf_core.budget._aggregate": "tracking",
     "pf_core.budget._schema": "tracking",
     "pf_core.budget.audit": "tracking",
     "pf_core.budget.repo": "tracking",

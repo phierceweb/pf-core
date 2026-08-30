@@ -164,11 +164,8 @@ class OpenRouterClient:
         url = f"{self.base_url}/chat/completions"
         headers = self._headers()
 
-        # Up to (self.retry + 1) attempts. Default retry=0 means one shot.
-        # Retryable: timeout (network blip), 429 (rate limit), 5xx
-        # (server). 4xx-other (400/401/403/...) are caller errors and
-        # are NOT retried — they'd just burn API budget on a deterministic
-        # failure.
+        # Retryable: timeout, 429, 5xx. Other 4xx are caller errors — retrying
+        # one just burns budget on a deterministic failure.
         resp = None
         elapsed_ms = 0
         for attempt in range(self.retry + 1):
@@ -254,28 +251,34 @@ class OpenRouterClient:
         # estimate only when a route doesn't surface one.
         server_cost = usage_raw.get("cost")
 
+        cache_read = int(
+            usage_raw.get("cache_read_tokens") or prompt_details.get("cached_tokens") or 0
+        )
+        cache_write = int(
+            usage_raw.get("cache_write_tokens") or usage_raw.get("cache_creation_input_tokens") or 0
+        )
+        # OpenAI counts cached input here; pf-core's contract is uncached.
+        prompt_tokens = max(0, int(usage_raw.get("prompt_tokens", 0) or 0) - cache_read)
+        completion_tokens = int(usage_raw.get("completion_tokens", 0) or 0)
         usage = {
-            "prompt_tokens": usage_raw.get("prompt_tokens", 0),
-            "completion_tokens": usage_raw.get("completion_tokens", 0),
-            "cache_read_tokens": (
-                usage_raw.get("cache_read_tokens") or prompt_details.get("cached_tokens") or 0
-            ),
-            "cache_write_tokens": (
-                usage_raw.get("cache_write_tokens")
-                or usage_raw.get("cache_creation_input_tokens")
-                or 0
-            ),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "cache_read_tokens": cache_read,
+            "cache_write_tokens": cache_write,
             "reasoning_tokens": (
                 usage_raw.get("reasoning_tokens") or completion_details.get("reasoning_tokens") or 0
             ),
             "cost_usd": (
                 server_cost
                 if server_cost is not None
+                # Price the recorded split, so cost_usd is reproducible from it.
                 else estimate_cost(
                     "openrouter",
                     model,
-                    prompt_tokens=usage_raw.get("prompt_tokens", 0) or 0,
-                    completion_tokens=usage_raw.get("completion_tokens", 0) or 0,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    cache_read_tokens=cache_read,
+                    cache_write_tokens=cache_write,
                 )
             ),
             "duration_ms": elapsed_ms,

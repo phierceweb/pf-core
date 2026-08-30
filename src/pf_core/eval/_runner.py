@@ -222,71 +222,15 @@ class EvalRunner:
         baseline: str,
         candidate: str,
         agent_type: str,
-    ) -> list[dict]:
+    ) -> dict:
         """Pair baseline and candidate replay runs by shared golden parent.
 
-        Returns list of dicts with keys: ``golden_id``, ``baseline_score``,
-        ``candidate_score``, ``delta`` (candidate − baseline).
-
-        Args:
-            baseline: Experiment tag for the baseline runs.
-            candidate: Experiment tag for the candidate runs.
-            agent_type: Slug to filter both sets by.
+        Delegates to :func:`pf_core.eval._experiments.compare_experiments`,
+        which documents the return shape and the failure modes.
         """
-        from sqlalchemy import select, and_
+        from pf_core.eval._experiments import compare_experiments as _compare
 
-        from pf_core.db.repository import Repository
-        from pf_core.llm.tracking import schema as s
-
-        repo = Repository()
-
-        def _scores_for_tag(tag: str) -> dict[int, float]:
-            """Map golden_id → eval_score for all replays with this tag."""
-            stmt = (
-                select(
-                    s.llm_run_links.c.parent_run_id.label("golden_id"),
-                    s.llm_run_outcomes.c.score,
-                )
-                .join(
-                    s.llm_run_tags,
-                    s.llm_run_tags.c.llm_run_id == s.llm_run_links.c.child_run_id,
-                )
-                .join(
-                    s.llm_run_outcomes,
-                    and_(
-                        s.llm_run_outcomes.c.llm_run_id == s.llm_run_links.c.child_run_id,
-                        s.llm_run_outcomes.c.outcome_kind == "eval_score",
-                    ),
-                )
-                .join(
-                    s.llm_runs,
-                    s.llm_runs.c.id == s.llm_run_links.c.child_run_id,
-                )
-                .join(
-                    s.llm_agent_types,
-                    s.llm_agent_types.c.id == s.llm_runs.c.agent_type_id,
-                )
-                .where(s.llm_run_tags.c.tag == tag)
-                .where(s.llm_run_links.c.relation == "replay")
-                .where(s.llm_agent_types.c.slug == agent_type)
-            )
-            with repo._tx() as conn:
-                rows = conn.execute(stmt).mappings().fetchall()
-            return {int(r["golden_id"]): float(r["score"]) for r in rows}
-
-        base_scores = _scores_for_tag(baseline)
-        cand_scores = _scores_for_tag(candidate)
-        shared_golden_ids = sorted(set(base_scores) & set(cand_scores))
-
-        return [
-            {
-                "golden_id": gid,
-                "baseline_score": base_scores[gid],
-                "candidate_score": cand_scores[gid],
-                "delta": cand_scores[gid] - base_scores[gid],
-            }
-            for gid in shared_golden_ids
-        ]
+        return _compare(baseline=baseline, candidate=candidate, agent_type=agent_type)
 
     # ------------------------------------------------------------------
     # Internal: replay one golden run

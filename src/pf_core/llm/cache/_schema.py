@@ -74,11 +74,14 @@ llm_cache_entries = Table(
     Column("last_hit_at", _TIMESTAMP_US, nullable=True),
     Column("expires_at", _TIMESTAMP_US, nullable=True),
     Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
-    UniqueConstraint("input_hash", name="uq_llm_cache_input_hash"),
+    UniqueConstraint("input_hash", "agent_type_id", name="uq_llm_cache_input_hash_agent"),
     Index("idx_llm_cache_agent_expires", "agent_type_id", "expires_at"),
     Index("idx_llm_cache_source_run", "source_run_id"),
 )
-"""Exact-cache index. One row per canonical (input_hash) → response mapping."""
+"""Exact-cache index. One row per (input_hash, agent_type) → response mapping.
+
+``input_hash`` covers the request but not the agent, so it is not unique alone.
+"""
 
 
 llm_embeddings = Table(

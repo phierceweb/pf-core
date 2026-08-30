@@ -13,6 +13,7 @@ This doc is the implementation reference. The column-by-column schema definition
 - [Concepts](#concepts)
 - [Quick start](#quick-start)
 - [`LlmRunRepo.record()` — atomic write](#llmrunreporecord--atomic-write)
+  - [`LlmRunRepo.mark_failed()` — flip an existing row](#llmrunrepomark_failed--flip-an-existing-row)
 - [`@track_run` decorator](#track_run-decorator)
 - [Sidecar writers](#sidecar-writers)
 - [Stats and read helpers](#stats-and-read-helpers)
@@ -114,6 +115,30 @@ run_id = LlmRunRepo().record(
 )
 ```
 
+`prompt_tokens` is the **uncached** input — `cache_read_tokens` and
+`cache_write_tokens` are counted separately, not folded into it. Every shipped
+client normalises to this, and [`pf_core.pricing`](pricing.md) bills the cache
+columns on top of `prompt_tokens`, so folding them in would double-charge. Total
+input the model saw is the sum of the three.
+
+> **Upgrading from ≤ 0.21 with OpenRouter history.** That client reported
+> `prompt_tokens` cache-*inclusive* until v0.22.0, so a table spanning the
+> upgrade holds two conventions. Both readers that assume the new one scan all
+> history: `cost_by_model`'s `billable_input` over-reports old rows by
+> `cache_read_tokens`, and the `tokens` budget dimension counts cached input
+> twice on them — which can block work well before the real cap. Either accept
+> the over-count for one period or backfill once:
+>
+> ```sql
+> UPDATE llm_runs
+>    SET prompt_tokens = GREATEST(prompt_tokens - COALESCE(cache_read_tokens, 0), 0)
+>  WHERE provider = 'openrouter' AND created_at < '<upgrade timestamp>';
+> ```
+>
+> (SQLite has no `GREATEST` — use `MAX(prompt_tokens - COALESCE(cache_read_tokens, 0), 0)`.)
+> Rows from the Anthropic and Claude Code clients were always uncached and need
+> no backfill.
+
 **Behavior notes:**
 
 - Reference-table FKs (`agent_type_id`, `model_id`) are resolved in their own short transactions *before* the write transaction opens — this avoids InnoDB lock cycles when parallel workers log the same agent/model pair simultaneously.
@@ -122,6 +147,16 @@ run_id = LlmRunRepo().record(
 - `configs` is a flat `{kind: id}` dict — composite PK forbids two configs of the same kind on one run.
 - Writing the same `(run_id, kind)` twice raises an integrity error. Use the sub-repos to overwrite.
 - `extra_run_values` merges into the `llm_runs` INSERT after the framework-owned columns (last-write-wins on collision). Use it to persist **project-specific columns** you added to `llm_runs` via migration without subclassing — see [Adding a new project FK column](#adding-a-new-project-fk-column) below. Each key must name a column that exists on the `llm_runs` Table.
+
+### `LlmRunRepo.mark_failed()` — flip an existing row
+
+```python
+LlmRunRepo().mark_failed(
+    run_id, error="schema validation rejected the response", error_class="MyValidationError"
+)
+```
+
+For the service that recorded a successful call and *then* failed to use the response (parse or validation failure): mark **that** row `status="failed"` instead of inserting a phantom second zero-token row for the same physical call — duplicate rows inflate per-agent counts and corrupt cost-per-run math. One UPDATE of `status`/`error` (capped at `_MAX_ERROR_LEN`)/`error_class`; every other column, tokens included, is left as recorded. An unknown `run_id` logs a warning and returns — it runs inside error paths, so it never raises for a missing row. `tracked_call` uses it internally on JSON-parse exhaustion (see [llm-tracked.md](llm-tracked.md#failure-handling)).
 
 ---
 
@@ -264,6 +299,13 @@ Drops `llm_run_payloads` rows only — analytics columns on `llm_runs` are prese
 - Any run whose `status != 'success'`, OR
 - Any run with at least one validation row where `passed = false`.
 
+Severity is not consulted, so a `{agent}_truncated` **warn** signal counts: runs
+that hit the provider's token limit under `on_truncation="warn"` keep their
+payloads even when the run succeeded and validated cleanly. On a workload that
+truncates routinely this is the main reason a purge reclaims less than expected
+— pass `keep_flagged=False` to reclaim them, or count the indexed `truncated`
+tag first to size the set.
+
 **Do not** call this on a schedule from inside framework code. Wire it up as an admin command or weekly cron in the consumer project.
 
 ---
@@ -301,7 +343,7 @@ ORDER BY halluc_rate DESC;
 
 -- Cached vs uncached input spend by model, last 7 days
 SELECT m.name,
-       SUM(r.prompt_tokens - COALESCE(r.cache_read_tokens, 0)) AS billable_input,
+       SUM(COALESCE(r.prompt_tokens, 0))                        AS billable_input,
        SUM(COALESCE(r.cache_read_tokens, 0))                    AS cached_input,
        SUM(r.completion_tokens)                                 AS output,
        SUM(r.reasoning_tokens)                                  AS reasoning,

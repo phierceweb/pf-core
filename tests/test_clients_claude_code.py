@@ -17,7 +17,7 @@ from pf_core.clients.claude_code import (
     new_client,
     reset_client,
 )
-from pf_core.exceptions import AppError
+from pf_core.exceptions import AppError, ClientError
 
 
 @pytest.fixture(autouse=True)
@@ -283,6 +283,159 @@ class TestJsonEnvelope:
         assert json.loads(content)["result"] == "the answer"
 
 
+class TestEnvelopeTokenCounts:
+    """The envelope's ``usage`` block is the only token source this backend
+    has — without it a ``limit_tokens`` budget can never trip for claude_code
+    runs (cost_usd is structurally 0.0)."""
+
+    _USAGE = {
+        "input_tokens": 1200,
+        "output_tokens": 340,
+        "cache_read_input_tokens": 5000,
+        "cache_creation_input_tokens": 70,
+    }
+
+    def _chat(self, mock_which, mock_run, run, **client_kwargs):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = run
+        client = ClaudeCodeClient(**client_kwargs)
+        return client.chat(messages=[{"role": "user", "content": "hi"}])
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_envelope_usage_populates_token_counts(self, mock_which, mock_run):
+        _content, usage = self._chat(mock_which, mock_run, _envelope_run(usage=self._USAGE))
+        assert usage["prompt_tokens"] == 1200
+        assert usage["completion_tokens"] == 340
+        assert usage["cache_read_tokens"] == 5000
+        assert usage["cache_write_tokens"] == 70
+        assert usage["reasoning_tokens"] == 0
+        assert usage["cost_usd"] == 0.0  # subscription billing unchanged
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_envelope_without_usage_falls_back_to_zeros(self, mock_which, mock_run):
+        """Older CLIs emit no usage block — zeros, never a crash."""
+        _content, usage = self._chat(mock_which, mock_run, _envelope_run())
+        for key in (
+            "prompt_tokens",
+            "completion_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+        ):
+            assert usage[key] == 0
+
+    @patch("pf_core.clients.claude_code._log")
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_envelope_without_usage_warns(self, mock_which, mock_run, mock_log):
+        """Zeros from an envelope are a surprise — a tokens budget cannot gate
+        the call, so the condition has to be visible in the log."""
+        self._chat(mock_which, mock_run, _envelope_run())
+        assert [c.args[0] for c in mock_log.warning.call_args_list] == [
+            "claude_code_envelope_without_usage"
+        ]
+
+    @patch("pf_core.clients.claude_code._log")
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_envelope_with_usage_does_not_warn(self, mock_which, mock_run, mock_log):
+        self._chat(
+            mock_which,
+            mock_run,
+            _envelope_run(usage={"input_tokens": 10, "output_tokens": 3}),
+        )
+        assert mock_log.warning.call_args_list == []
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_partial_usage_defaults_missing_fields_to_zero(self, mock_which, mock_run):
+        _content, usage = self._chat(
+            mock_which, mock_run, _envelope_run(usage={"input_tokens": 10, "output_tokens": 3})
+        )
+        assert usage["prompt_tokens"] == 10
+        assert usage["completion_tokens"] == 3
+        assert usage["cache_read_tokens"] == 0
+        assert usage["cache_write_tokens"] == 0
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_non_integer_usage_values_read_as_zero(self, mock_which, mock_run):
+        _content, usage = self._chat(
+            mock_which,
+            mock_run,
+            _envelope_run(usage={"input_tokens": "lots", "output_tokens": None}),
+        )
+        assert usage["prompt_tokens"] == 0
+        assert usage["completion_tokens"] == 0
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_text_mode_keeps_zero_tokens(self, mock_which, mock_run):
+        """Consumer-suppressed envelope = no token source; zeros as before."""
+        _content, usage = self._chat(
+            mock_which,
+            mock_run,
+            _text_run("the answer\n"),
+            extra_args=["--output-format", "text"],
+        )
+        for key in (
+            "prompt_tokens",
+            "completion_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+        ):
+            assert usage[key] == 0
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_transcript_array_reads_usage_from_final_result_entry(self, mock_which, mock_run):
+        stdout = json.dumps(
+            [
+                {"type": "system", "subtype": "init"},
+                {
+                    "type": "result",
+                    "result": "the answer",
+                    "stop_reason": None,
+                    "usage": self._USAGE,
+                },
+            ]
+        )
+        _content, usage = self._chat(mock_which, mock_run, _text_run(stdout))
+        assert usage["prompt_tokens"] == 1200
+        assert usage["completion_tokens"] == 340
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_envelope_tokens_recorded_and_summed_by_budget_usage(
+        self, mock_which, mock_run, pf_engine
+    ):
+        """The chain the parse exists for: chat() usage -> LlmRunRepo.record ->
+        current_usage()['tokens'] — the figure a limit_tokens budget enforces."""
+        from pf_core.budget.check import current_usage
+        from pf_core.llm.tracking import LlmRunRepo, clear_resolver_caches, metadata
+
+        metadata.create_all(pf_engine)
+        clear_resolver_caches()
+        try:
+            _content, usage = self._chat(mock_which, mock_run, _envelope_run(usage=self._USAGE))
+            LlmRunRepo().record(
+                agent_type="summarizer",
+                model="sonnet",
+                provider="claude_code",
+                usage=usage,
+            )
+            budget = {"id": 1, "period": "daily", "scope_kind": "global", "scope_value": None}
+            summed = current_usage(budget)
+            # prompt + completion + cache read + cache write
+            assert summed["tokens"] == 1200 + 340 + 5000 + 70
+            assert summed["usd"] == 0.0
+            assert summed["calls"] == 1
+        finally:
+            clear_resolver_caches()
+            metadata.drop_all(pf_engine)
+
+
 class TestChatHappyPath:
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -400,11 +553,7 @@ class TestEnvIsolation:
     API key (the module docstring's "consumes no API credits" promise). A
     stray ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN in the parent environment
     must be stripped from the child env, or ``claude --print`` silently
-    switches to (billable, and possibly invalid) external API-key auth.
-
-    Regression guard: a key in a consumer project's ``.env`` made every
-    claude_code call fail auth while the Max session was perfectly
-    healthy."""
+    switches to (billable, and possibly invalid) external API-key auth."""
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -621,9 +770,10 @@ class TestChatErrors:
         with pytest.raises(ClaudeCodeError, match=r"exited 2"):
             client.chat(messages=[{"role": "user", "content": "x"}])
 
-    def test_error_class_is_app_error_subclass(self):
-        """Consumers catching pf_core.exceptions.AppError should also
-        catch ClaudeCodeError."""
+    def test_error_class_is_client_error_subclass(self):
+        """Consumers catching pf_core.exceptions.ClientError (or AppError)
+        should also catch ClaudeCodeError — parity with the other backends."""
+        assert issubclass(ClaudeCodeError, ClientError)
         assert issubclass(ClaudeCodeError, AppError)
 
 

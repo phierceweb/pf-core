@@ -48,6 +48,7 @@ def classify(*, text: str) -> dict:
         model=cfg["model"],
         parsed_output=parsed,
         raw_response=content,
+        usage=usage,  # refuses the store when finish_reason says truncated
     )
     return parsed
 ```
@@ -165,10 +166,13 @@ cache_store(
     model="anthropic/claude-opus-4-7",
     parsed_output={"label": "tech"},
     raw_response='{"label": "tech"}',
+    usage=usage,  # pass the client usage dict — the default form
 )
 ```
 
-No-op when exact caching is disabled for the agent. A store over an existing `input_hash` — a concurrent identical request, or a re-store after the entry expired — refreshes that row in place through the portable [`upsert`](db-upsert.md) helper: same id, same `created_at`, same `hit_count`/`last_hit_at`, new response and expiry. Since `input_hash` covers model, prompts, sampling, and configs, a conflicting row is the same logical request.
+No-op when exact caching is disabled for the agent.
+
+**Truncation guard.** A cache hit replays stored text with no finish reason, so a truncated response written to the cache would lose its flag forever and replay incomplete on every hit. `cache_store` therefore refuses a known-truncated store itself — pass the client `usage` dict and it derives truncation from `usage["finish_reason"]` (via [`truncated_from_usage`](llm-parse.md#detecting-truncation-truncated-not-the-text)); an explicit `truncated=` overrides. A refused store logs `cache_store_skipped_truncated` and returns. Unknown truncation (no `usage`, no `truncated`, or an unrecognised finish reason) stores as before. `llm_step` forwards `usage=` for you. A store over an existing `input_hash` — a concurrent identical request, or a re-store after the entry expired — refreshes that row in place through the portable [`upsert`](db-upsert.md) helper: same id, same `created_at`, same `hit_count`/`last_hit_at`, new response and expiry. Since `input_hash` covers model, prompts, sampling, and configs, a conflicting row is the same logical request.
 
 ## record_cache_hit()
 
@@ -216,7 +220,7 @@ Registered on the shared `pf_core.llm.tracking.schema.metadata`. Created by the 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | INT PK | |
-| `input_hash` | CHAR(64) UNIQUE | SHA256 hex — the cache key |
+| `input_hash` | CHAR(64) | SHA256 hex — unique with `agent_type_id` |
 | `agent_type_id` | SMALLINT FK | → `llm_agent_types.id` |
 | `model_id` | SMALLINT FK | → `llm_models.id` |
 | `source_run_id` | BIGINT FK | → `llm_runs.id` ON DELETE CASCADE |
@@ -227,11 +231,39 @@ Registered on the shared `pf_core.llm.tracking.schema.metadata`. Created by the 
 | `expires_at` | TIMESTAMP NULL | NULL = never |
 | `created_at` | TIMESTAMP | |
 
+Unique key: `(input_hash, agent_type_id)` — `uq_llm_cache_input_hash_agent`.
+`input_hash` covers model, prompts, sampling and configs but **not** the agent, so
+keying on it alone let one agent be served another's stored response.
+
+**Consumer migration (0.22.0):** drop `uq_llm_cache_input_hash` and add
+`uq_llm_cache_input_hash_agent` over `(input_hash, agent_type_id)`. Widening a
+unique key never conflicts with existing rows; the first call from each other
+agent misses once and stores its own entry.
+
 ### `llm_embeddings` (semantic layer — schema only today)
 
 Vector index for semantic cache. Not yet populated.
 
 ## Analytics queries
+
+### cache_stats() — the key-volatility diagnostic
+
+```python
+from pf_core.llm.cache import cache_stats
+
+rows = cache_stats()  # every agent with entries or runs
+rows = cache_stats(agent_type="classifier")
+rows = cache_stats(since=utc_cutoff(days=7))  # bound the run half
+```
+
+Pass `since=` on any polled surface. Unbounded, the run half's
+`COUNT(DISTINCT input_hash)` grows with lifetime run count, so a dashboard
+refreshing `/api/cache.json` re-scans the whole history each time; the admin
+pages pass their own window.
+
+One dict per agent slug: `agent_type`, `entries` (`llm_cache_entries` count), `hits` (sum of `hit_count`), `entries_hit` (entries with at least one hit), `last_hit_at`, `live_runs` (`llm_runs` rows with `status='success'`), `distinct_hashes` (distinct non-null `input_hash` among those runs).
+
+**The reading that matters:** `entries` ≈ `live_runs` with `hits` ≈ 0 means every call minted a fresh key — a cache that structurally cannot hit (e.g. a prompt interpolating the current date), which is otherwise indistinguishable from a cold cache. The admin `/cache` page renders this table; `llm_step(dry_run=True)` ([llm-step.md](llm-step.md#dry-run)) answers the per-call form of the same question.
 
 ```sql
 -- Cache hit rate last 7 days by agent type

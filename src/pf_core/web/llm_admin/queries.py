@@ -30,6 +30,7 @@ from pf_core.web.llm_admin._queries_runs import (
 from pf_core.web.llm_admin._queries_spend import (
     blocked_runs_24h,
     cache_hit_rate_by_agent,
+    cache_stats,
     cost_by_agent,
     cost_by_model,
     list_budgets_with_spend,
@@ -43,6 +44,7 @@ from pf_core.web.llm_admin._queries_util import (
 __all__ = [
     "blocked_runs_24h",
     "cache_hit_rate_by_agent",
+    "cache_stats",
     "cost_by_agent",
     "cost_by_model",
     "count_jobs",

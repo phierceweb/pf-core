@@ -160,6 +160,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
             "cache.html",
             {
                 "hit_rate": q.cache_hit_rate_by_agent(since=s, until=u),
+                "stats": q.cache_stats(since=s),
                 "top_entries": q.top_cache_entries(limit=50),
                 "since": s,
                 "until": u,

@@ -15,6 +15,7 @@ from pf_core.llm.cache import (
     CacheHit,
     ExactCacheRepo,
     cache_lookup,
+    cache_stats,
     cache_store,
     clear_config_cache,
     get_agent_cache_config,
@@ -314,6 +315,50 @@ def test_exact_cache_permanent_entry_never_expires(cache_db):
     assert row is not None
 
 
+def test_exact_cache_does_not_serve_another_agents_entry(cache_db):
+    """``input_hash`` covers the request but not the agent, so the slug has to
+    be part of the lookup key."""
+    run_id = _make_run()
+    ExactCacheRepo().store(
+        input_hash="f" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=run_id,
+        parsed_output={"label": "tech"},
+    )
+    assert ExactCacheRepo().lookup(input_hash="f" * 64, agent_type="summarizer") is None
+    own = ExactCacheRepo().lookup(input_hash="f" * 64, agent_type="classifier")
+    assert own is not None and own["parsed_output"] == {"label": "tech"}
+
+
+def test_exact_cache_two_agents_keep_separate_entries(cache_db):
+    """The upsert conflict key must include the agent, or two agents sharing a
+    hash evict each other on every call."""
+    run_id = _make_run()
+    repo = ExactCacheRepo()
+    id_a = repo.store(
+        input_hash="0" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=run_id,
+        parsed_output={"who": "a"},
+    )
+    id_b = repo.store(
+        input_hash="0" * 64,
+        agent_type="summarizer",
+        model="openai/gpt-4o",
+        source_run_id=run_id,
+        parsed_output={"who": "b"},
+    )
+    assert id_a != id_b
+    assert repo.lookup(input_hash="0" * 64, agent_type="classifier")["parsed_output"] == {
+        "who": "a"
+    }
+    assert repo.lookup(input_hash="0" * 64, agent_type="summarizer")["parsed_output"] == {
+        "who": "b"
+    }
+
+
 def test_exact_cache_store_conflict_returns_existing_id(cache_db):
     run_id = _make_run()
     repo = ExactCacheRepo()
@@ -511,6 +556,130 @@ def test_cache_store_noop_when_exact_disabled(cache_db, tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# cache_store — truncation guard
+# ---------------------------------------------------------------------------
+
+
+def _store(h: str, run_id: int, **kwargs) -> None:
+    cache_store(
+        agent_type="classifier",
+        input_hash=h,
+        source_run_id=run_id,
+        model="openai/gpt-4o",
+        parsed_output={"x": 1},
+        raw_response='{"x": 1}',
+        **kwargs,
+    )
+
+
+def test_cache_store_refuses_truncated_usage(cache_db):
+    run_id = _make_run()
+    h = "9" * 64
+    _store(h, run_id, usage={"finish_reason": "length"})
+    assert cache_lookup(agent_type="classifier", input_hash=h) is None
+
+
+def test_cache_store_refuses_explicit_truncated(cache_db):
+    run_id = _make_run()
+    h = "9" * 64
+    _store(h, run_id, truncated=True)
+    assert cache_lookup(agent_type="classifier", input_hash=h) is None
+
+
+def test_cache_store_stores_on_complete_usage(cache_db):
+    run_id = _make_run()
+    h = "9" * 64
+    _store(h, run_id, usage={"finish_reason": "stop"})
+    assert cache_lookup(agent_type="classifier", input_hash=h) is not None
+
+
+def test_cache_store_stores_when_truncation_unknown(cache_db):
+    run_id = _make_run()
+    h = "9" * 64
+    _store(h, run_id, usage={"prompt_tokens": 5})  # no finish_reason
+    assert cache_lookup(agent_type="classifier", input_hash=h) is not None
+
+
+def test_cache_store_explicit_flag_wins_over_usage(cache_db):
+    run_id = _make_run()
+    h = "9" * 64
+    _store(h, run_id, truncated=False, usage={"finish_reason": "length"})
+    assert cache_lookup(agent_type="classifier", input_hash=h) is not None
+
+
+# ---------------------------------------------------------------------------
+# cache_stats
+# ---------------------------------------------------------------------------
+
+
+def test_cache_stats_math(cache_db):
+    repo_runs = LlmRunRepo()
+    r1 = repo_runs.record(agent_type="classifier", model="openai/gpt-4o", input_hash="a" * 64)
+    repo_runs.record(agent_type="classifier", model="openai/gpt-4o", input_hash="a" * 64)
+    r2 = repo_runs.record(agent_type="classifier", model="openai/gpt-4o", input_hash="b" * 64)
+    repo = ExactCacheRepo()
+    entry_id = repo.store(
+        input_hash="a" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=r1,
+        parsed_output={"x": 1},
+    )
+    repo.store(
+        input_hash="b" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=r2,
+    )
+    repo.bump_hit(entry_id=entry_id)
+    repo.bump_hit(entry_id=entry_id)
+
+    (row,) = cache_stats(agent_type="classifier")
+    assert row["agent_type"] == "classifier"
+    assert row["entries"] == 2
+    assert row["hits"] == 2
+    assert row["entries_hit"] == 1
+    assert row["last_hit_at"] is not None
+    assert row["live_runs"] == 3
+    assert row["distinct_hashes"] == 2  # two runs shared hash "a"
+
+
+def test_cache_stats_volatile_key_shape(cache_db):
+    """N success runs, N distinct hashes, 0 hits — the structurally-cold cache."""
+    for i in range(3):
+        h = str(i) * 64
+        rid = LlmRunRepo().record(agent_type="volatile", model="openai/gpt-4o", input_hash=h)
+        cache_store(
+            agent_type="volatile",
+            input_hash=h,
+            source_run_id=rid,
+            model="openai/gpt-4o",
+            parsed_output={"i": i},
+        )
+    (row,) = cache_stats(agent_type="volatile")
+    assert row["entries"] == 3
+    assert row["live_runs"] == 3
+    assert row["distinct_hashes"] == 3
+    assert row["hits"] == 0
+    assert row["entries_hit"] == 0
+    assert row["last_hit_at"] is None
+
+
+def test_cache_stats_unfiltered_lists_every_active_agent(cache_db):
+    LlmRunRepo().record(agent_type="alpha", model="openai/gpt-4o", input_hash="c" * 64)
+    rid = _make_run(agent_type="beta")
+    cache_store(agent_type="beta", input_hash="d" * 64, source_run_id=rid, model="openai/gpt-4o")
+    slugs = [r["agent_type"] for r in cache_stats()]
+    assert "alpha" in slugs  # runs only, no entries
+    assert "beta" in slugs
+    assert slugs == sorted(slugs)
+
+
+def test_cache_stats_empty(cache_db):
+    assert cache_stats() == []
+
+
+# ---------------------------------------------------------------------------
 # record_cache_hit
 # ---------------------------------------------------------------------------
 
@@ -633,3 +802,19 @@ def test_age_bucket_old():
 
 def test_age_bucket_none():
     assert _age_bucket(None) == "cache_age:unknown"
+
+
+def test_cache_stats_since_bounds_the_run_half(cache_db):
+    """Unbounded, the run half scans lifetime history on every poll."""
+    from pf_core.llm.cache import cache_stats
+
+    _make_run()
+    unbounded = {r["agent_type"]: r for r in cache_stats()}
+    assert unbounded["classifier"]["live_runs"] >= 1
+
+    future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+    bounded = {r["agent_type"]: r for r in cache_stats(since=future)}
+    assert bounded.get("classifier", {"live_runs": 0})["live_runs"] == 0
+
+    past = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)
+    assert {r["agent_type"]: r for r in cache_stats(since=past)}["classifier"]["live_runs"] >= 1

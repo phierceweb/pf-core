@@ -65,7 +65,9 @@ def _insert_budget(
     scope_kind: str,
     scope_value: str | None,
     period: str,
-    limit_usd: float,
+    limit_usd: float | None = None,
+    limit_tokens: int | None = None,
+    limit_calls: int | None = None,
     action: str = "block",
     soft_thresholds=None,
 ) -> int:
@@ -80,6 +82,8 @@ def _insert_budget(
                 scope_value=scope_value,
                 period=period,
                 limit_usd=limit_usd,
+                limit_tokens=limit_tokens,
+                limit_calls=limit_calls,
                 action=action,
                 soft_thresholds=soft_thresholds,
                 enabled=True,
@@ -289,9 +293,9 @@ def test_cost_budget_exceeded_is_flow_exception():
         scope_kind="agent",
         scope_value="drafter",
         period="daily",
-        limit_usd=10.0,
-        spent_usd=9.5,
-        projected_usd=1.0,
+        limit_value=10.0,
+        spent_value=9.5,
+        projected_value=1.0,
     )
     assert isinstance(exc, FlowException)
     # Public shape unchanged: attributes + message survive the re-parenting
@@ -310,9 +314,9 @@ def test_cost_budget_exceeded_caught_by_name():
             scope_kind="global",
             scope_value=None,
             period="monthly",
-            limit_usd=100.0,
-            spent_usd=99.0,
-            projected_usd=2.0,
+            limit_value=100.0,
+            spent_value=99.0,
+            projected_value=2.0,
         )
 
 
@@ -490,6 +494,7 @@ def test_refresh_snapshots_writes_snapshot(budget_db):
     snap = BudgetSnapshotRepo().get(budget_id=budget["id"], period_start=period_start)
     assert snap is not None
     assert float(snap["spent_usd"]) == pytest.approx(4.25, abs=1e-6)
+    assert snap["spent_tokens"] == 150  # _spend records 100 prompt + 50 completion
     assert snap["run_count"] == 1
 
 
@@ -510,9 +515,9 @@ def test_record_blocked_run_writes_tagged_row(budget_db):
         scope_kind="agent",
         scope_value="drafter",
         period="daily",
-        limit_usd=10.0,
-        spent_usd=9.5,
-        projected_usd=1.0,
+        limit_value=10.0,
+        spent_value=9.5,
+        projected_value=1.0,
     )
     run_id = record_blocked_run(agent_type="drafter", model="claude-opus-4-7", exc=exc)
     assert run_id > 0
@@ -871,7 +876,7 @@ def test_snapshot_refresh_counts_run_created_during_refresh(budget_db, monkeypat
     import pf_core.budget.snapshot_job as snapshot_job
 
     _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=100.0)
-    real_aggregate = snapshot_job.aggregate_spent
+    real_aggregate = snapshot_job.aggregate_usage
 
     def _aggregate_then_spend(**kwargs):
         result = real_aggregate(**kwargs)
@@ -879,7 +884,7 @@ def test_snapshot_refresh_counts_run_created_during_refresh(budget_db, monkeypat
         _spend("drafter", "claude-opus-4-7", 5.0)
         return result
 
-    monkeypatch.setattr(snapshot_job, "aggregate_spent", _aggregate_then_spend)
+    monkeypatch.setattr(snapshot_job, "aggregate_usage", _aggregate_then_spend)
     snapshot_job.refresh_snapshots()
 
     from pf_core.budget.check import _current_spent
@@ -937,6 +942,282 @@ def test_refresh_snapshots_skips_budget_with_unknown_scope_kind(budget_db):
 
 
 # ---------------------------------------------------------------------------
+# Non-USD dimensions — token and call limits
+# ---------------------------------------------------------------------------
+
+
+def _spend_no_tokens(agent_type: str, cost: float) -> int:
+    """Insert a run whose token columns are NULL."""
+    return LlmRunRepo().record(
+        agent_type=agent_type,
+        model="claude-opus-4-7",
+        usage={"cost_usd": cost},
+        status="success",
+    )
+
+
+def test_flatten_scopes_accepts_float_and_mapping_forms():
+    rows = _flatten_scopes(
+        {
+            "agents": {
+                "drafter": {
+                    "daily": {"usd": 20.0, "tokens": 2_000_000, "calls": 500},
+                    "monthly": 400.0,
+                },
+                "watcher": {"daily": {"tokens": 1_000_000}},
+            }
+        }
+    )
+    by_key = {(r["scope_value"], r["period"]): r for r in rows}
+    mixed = by_key[("drafter", "daily")]
+    assert mixed["limit_usd"] == 20.0
+    assert mixed["limit_tokens"] == 2_000_000
+    assert mixed["limit_calls"] == 500
+    plain = by_key[("drafter", "monthly")]
+    assert plain["limit_usd"] == 400.0
+    assert plain["limit_tokens"] is None
+    assert plain["limit_calls"] is None
+    tokens_only = by_key[("watcher", "daily")]
+    assert tokens_only["limit_usd"] is None
+    assert tokens_only["limit_tokens"] == 1_000_000
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {},  # no dimension keys at all
+        {"token": 5},  # only unknown keys
+        {"usd": "twenty"},
+        {"tokens": "many"},
+        {"calls": [1]},
+    ],
+)
+def test_flatten_scopes_rejects_malformed_limit_mapping(value):
+    with pytest.raises(ConfigurationError):
+        _flatten_scopes({"global": {"daily": value}})
+
+
+def test_sync_round_trip_persists_dimension_limits(budget_db, tmp_path, monkeypatch):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text(
+        "agents:\n  drafter:\n    daily: {usd: 20.0, tokens: 2000000, calls: 500}\n"
+        "  watcher:\n    daily: {tokens: 1000000}\n"
+    )
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    assert sync_budgets_from_yaml()["inserted"] == 2
+
+    repo = BudgetRepo()
+    drafter = repo.find(scope_kind="agent", scope_value="drafter", period="daily")
+    assert float(drafter["limit_usd"]) == 20.0
+    assert drafter["limit_tokens"] == 2_000_000
+    assert drafter["limit_calls"] == 500
+    watcher = repo.find(scope_kind="agent", scope_value="watcher", period="daily")
+    assert watcher["limit_usd"] is None
+    assert watcher["limit_tokens"] == 1_000_000
+    assert watcher["limit_calls"] is None
+
+
+def test_tokens_only_budget_ignores_usd_and_blocks_on_tokens(budget_db):
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_tokens=1000)
+    _spend("drafter", "claude-opus-4-7", 999.0)  # 150 tokens, huge USD
+
+    # No USD limit — an enormous projected cost passes.
+    check_budget(agent_type="drafter", projected_cost_usd=999.0)
+
+    with pytest.raises(CostBudgetExceeded) as excinfo:
+        check_budget(agent_type="drafter", projected_cost_usd=0.0, projected_tokens=900)
+    exc = excinfo.value
+    assert exc.dimension == "tokens"
+    assert exc.limit_value == 1000.0
+    assert exc.spent_value == 150.0
+    assert exc.projected_value == 900.0
+    assert exc.limit_usd == 0.0  # the scope sets no USD cap
+    assert exc.spent_usd == 999.0  # real dollars, not the token count
+    assert "tokens" in str(exc)
+
+
+def test_calls_limit_blocks_the_limit_plus_first_call_exactly(budget_db):
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_calls=2)
+    _spend("drafter", "claude-opus-4-7", 0.1)
+
+    check_budget(agent_type="drafter", projected_cost_usd=0.1)  # 1 spent + default 1 <= 2
+    _spend("drafter", "claude-opus-4-7", 0.1)
+
+    with pytest.raises(CostBudgetExceeded) as excinfo:
+        check_budget(agent_type="drafter", projected_cost_usd=0.1)  # the (limit+1)th call
+    exc = excinfo.value
+    assert exc.dimension == "calls"
+    assert exc.spent_value == 2.0
+    assert exc.projected_value == 1.0
+
+
+def test_explicit_projected_calls_zero_is_a_pure_read(budget_db):
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_calls=2)
+    _spend("drafter", "claude-opus-4-7", 0.1)
+    _spend("drafter", "claude-opus-4-7", 0.1)
+
+    # At cap: default (None -> 1) would block, an explicit 0 plans no call.
+    check_budget(agent_type="drafter", projected_cost_usd=0.0, projected_calls=0)
+
+
+def test_usd_passes_while_tokens_trips_on_the_same_budget(budget_db):
+    _insert_budget(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_usd=100.0,
+        limit_tokens=200,
+    )
+    _spend("drafter", "claude-opus-4-7", 1.0)  # 150 tokens
+
+    with pytest.raises(CostBudgetExceeded) as excinfo:
+        check_budget(agent_type="drafter", projected_cost_usd=1.0, projected_tokens=100)
+    exc = excinfo.value
+    assert exc.dimension == "tokens"  # 1 + 1 <= 100 USD passed; 150 + 100 > 200 tripped
+    assert exc.limit_value == 200.0
+    assert exc.spent_value == 150.0
+    assert exc.projected_value == 100.0
+
+
+def test_unknown_limit_key_warns_and_enforces_known_keys(caplog):
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.config"):
+        rows = _flatten_scopes({"global": {"daily": {"usd": 5.0, "token": 9}}})
+    assert rows[0]["limit_usd"] == 5.0
+    assert rows[0]["limit_tokens"] is None
+    records = _event_records(caplog, "budget_config_unknown_limit_keys")
+    assert len(records) == 1
+    assert records[0].msg["unknown"] == ["token"]
+
+
+def test_warn_action_logs_and_continues_per_dimension(budget_db, caplog):
+    _insert_budget(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_tokens=100,
+        limit_calls=1,
+        action="warn",
+    )
+    _spend("drafter", "claude-opus-4-7", 0.1)  # 150 tokens, 1 call
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+        check_budget(agent_type="drafter", projected_cost_usd=0.1, projected_calls=1)  # no raise
+    warns = _event_records(caplog, "budget_warn_exceeded")
+    assert {r.msg["dimension"] for r in warns} == {"tokens", "calls"}
+
+
+def test_usd_block_still_raises_with_default_dimension(budget_db):
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=10.0)
+    _spend("drafter", "claude-opus-4-7", 9.5)
+    with pytest.raises(CostBudgetExceeded) as excinfo:
+        check_budget(agent_type="drafter", projected_cost_usd=1.0)
+    assert excinfo.value.dimension == "usd"
+
+
+def test_cost_budget_exceeded_dimension_defaults_to_usd():
+    exc = CostBudgetExceeded(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_value=10.0,
+        spent_value=9.5,
+        projected_value=1.0,
+    )
+    assert exc.dimension == "usd"
+
+
+def test_non_usd_dimension_keeps_the_usd_attributes_in_usd():
+    """A handler formatting ``limit_usd`` as currency must never be handed a
+    token count."""
+    exc = CostBudgetExceeded(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_value=1000.0,
+        spent_value=900.0,
+        projected_value=200.0,
+        dimension="tokens",
+        usd=(5.0, 1.25, 0.5),
+    )
+    assert (exc.limit_value, exc.spent_value, exc.projected_value) == (1000.0, 900.0, 200.0)
+    assert (exc.limit_usd, exc.spent_usd, exc.projected_usd) == (5.0, 1.25, 0.5)
+
+
+def test_non_usd_dimension_without_usd_figures_reports_zero_not_the_count():
+    exc = CostBudgetExceeded(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_value=1000.0,
+        spent_value=900.0,
+        projected_value=200.0,
+        dimension="tokens",
+    )
+    assert exc.limit_usd == exc.spent_usd == exc.projected_usd == 0.0
+
+
+def test_usd_dimension_mirrors_value_onto_the_usd_attributes():
+    exc = CostBudgetExceeded(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_value=10.0,
+        spent_value=9.5,
+        projected_value=1.0,
+    )
+    assert exc.limit_value == exc.limit_usd == 10.0
+    assert exc.spent_value == exc.spent_usd == 9.5
+
+
+def test_current_usage_snapshot_plus_delta_with_null_token_columns(budget_db):
+    from pf_core.budget.check import current_usage
+
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_tokens=10_000)
+    _spend("drafter", "claude-opus-4-7", 1.0)  # 150 tokens
+    _spend_no_tokens("drafter", 2.0)  # NULL token columns
+    time.sleep(1.1)
+    refresh_snapshots()
+    time.sleep(1.1)
+    _spend("drafter", "claude-opus-4-7", 4.0)  # 150 tokens after the snapshot
+    _spend_no_tokens("drafter", 8.0)
+
+    budget = BudgetRepo().find(scope_kind="agent", scope_value="drafter", period="daily")
+    snap = BudgetSnapshotRepo().get(
+        budget_id=budget["id"], period_start=compute_period_start("daily")
+    )
+    assert snap["spent_tokens"] == 150  # NULL token columns count as 0
+    assert snap["run_count"] == 2
+
+    usage = current_usage(budget)
+    assert usage["usd"] == pytest.approx(15.0, abs=1e-6)
+    assert usage["tokens"] == 300
+    assert usage["calls"] == 4
+
+
+def test_current_spent_matches_current_usage_usd(budget_db):
+    from pf_core.budget.check import current_spent, current_usage
+
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=100.0)
+    _spend("drafter", "claude-opus-4-7", 3.5)
+    budget = BudgetRepo().find(scope_kind="agent", scope_value="drafter", period="daily")
+    assert current_spent(budget) == pytest.approx(current_usage(budget)["usd"], abs=1e-9)
+
+
+def test_soft_thresholds_skipped_without_usd_limit(budget_db, caplog):
+    _insert_budget(
+        scope_kind="agent",
+        scope_value="drafter",
+        period="daily",
+        limit_tokens=10_000,
+        soft_thresholds=[0.5],
+    )
+    _spend("drafter", "claude-opus-4-7", 100.0)
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+        check_budget(agent_type="drafter", projected_cost_usd=100.0)
+    assert _event_records(caplog, "budget_threshold_crossed") == []
+
+
+# ---------------------------------------------------------------------------
 # Soft-threshold dedupe key
 # ---------------------------------------------------------------------------
 
@@ -956,3 +1237,74 @@ def test_threshold_dedupe_key_is_the_utc_period_start():
         }
         _maybe_log_threshold(budget=budget, spent_before=0.0, spent_after=6.0)
         assert _THRESHOLD_FIRED == {(42, str(compute_period_start(period)), 0.5)}
+
+
+def test_soft_thresholds_without_a_usd_limit_are_reported_at_sync(
+    budget_db, tmp_path, monkeypatch, caplog
+):
+    """Thresholds anchor to limit_usd, so on a tokens-only period they are dead
+    config and must be reported like every other inert-config case."""
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text(
+        "agents:\n"
+        "  watcher:\n"
+        "    soft_thresholds: [0.5]\n"
+        "    daily:\n"
+        "      tokens: 1000\n"
+        "    monthly: 50.0\n"
+    )
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.config"):
+        sync_budgets_from_yaml()
+    records = _event_records(caplog, "budget_config_soft_thresholds_ignored")
+    assert [r.msg["where"] for r in records] == ["agents.watcher.daily"]
+
+
+def test_soft_thresholds_with_a_usd_limit_are_not_reported(
+    budget_db, tmp_path, monkeypatch, caplog
+):
+    cfg = tmp_path / "budgets.yaml"
+    cfg.write_text("agents:\n  drafter:\n    soft_thresholds: [0.8]\n    daily: 20.0\n")
+    monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
+    with caplog.at_level(logging.WARNING, logger="pf_core.budget.config"):
+        sync_budgets_from_yaml()
+    assert _event_records(caplog, "budget_config_soft_thresholds_ignored") == []
+
+
+def test_snapshot_upsert_without_spent_tokens_preserves_the_existing_total(budget_db):
+    """``spent_tokens=None`` leaves an existing row's total alone. Without the
+    conditional it resets to 0 and a limit_tokens budget stops blocking."""
+    _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=50.0)
+    budget = BudgetRepo().find(scope_kind="agent", scope_value="drafter", period="daily")
+    period_start = compute_period_start("daily")
+    repo = BudgetSnapshotRepo()
+
+    repo.upsert(
+        budget_id=budget["id"],
+        period_start=period_start,
+        spent_usd=1.0,
+        spent_tokens=500,
+        run_count=1,
+    )
+    repo.upsert(
+        budget_id=budget["id"],
+        period_start=period_start,
+        spent_usd=2.0,
+        run_count=3,
+    )
+
+    snap = repo.get(budget_id=budget["id"], period_start=period_start)
+    assert snap["spent_tokens"] == 500, "omitted spent_tokens must not reset the total"
+    assert float(snap["spent_usd"]) == pytest.approx(2.0, abs=1e-6)
+    assert snap["run_count"] == 3
+
+
+def test_snapshot_upsert_insert_without_spent_tokens_starts_at_zero(budget_db):
+    _insert_budget(scope_kind="agent", scope_value="solo", period="daily", limit_usd=50.0)
+    budget = BudgetRepo().find(scope_kind="agent", scope_value="solo", period="daily")
+    period_start = compute_period_start("daily")
+    BudgetSnapshotRepo().upsert(
+        budget_id=budget["id"], period_start=period_start, spent_usd=1.0, run_count=1
+    )
+    snap = BudgetSnapshotRepo().get(budget_id=budget["id"], period_start=period_start)
+    assert snap["spent_tokens"] == 0

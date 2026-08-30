@@ -112,6 +112,55 @@ def _mapping(where: str, value: Any) -> dict[str, Any]:
     return value
 
 
+_LIMIT_KEYS: tuple[str, ...] = ("usd", "tokens", "calls")
+
+
+def _parse_limits(where: str, value: Any) -> dict[str, float | int | None]:
+    """Parse a period value — bare number (USD) or a {usd, tokens, calls} mapping."""
+    if isinstance(value, dict):
+        unknown = sorted(set(value) - set(_LIMIT_KEYS))
+        known = {k: value[k] for k in _LIMIT_KEYS if k in value}
+        if not known:
+            raise ConfigurationError(
+                f"budget config '{where}' mapping must set at least one of "
+                f"{list(_LIMIT_KEYS)}, got {unknown or '{}'}"
+            )
+        if unknown:
+            logger.warning(
+                "budget_config_unknown_limit_keys",
+                where=where,
+                unknown=unknown,
+                known=list(_LIMIT_KEYS),
+                message="not a budget dimension — these limits are not enforced",
+            )
+        out: dict[str, float | int | None] = {
+            "limit_usd": None,
+            "limit_tokens": None,
+            "limit_calls": None,
+        }
+        for key, caster, column in (
+            ("usd", float, "limit_usd"),
+            ("tokens", int, "limit_tokens"),
+            ("calls", int, "limit_calls"),
+        ):
+            if key not in known:
+                continue
+            try:
+                out[column] = caster(known[key])
+            except (TypeError, ValueError) as exc:
+                raise ConfigurationError(
+                    f"budget config '{where}.{key}' must be a number, got {known[key]!r}"
+                ) from exc
+        return out
+    try:
+        return {"limit_usd": float(value), "limit_tokens": None, "limit_calls": None}
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            f"budget config '{where}' must be a number or a "
+            f"{{usd, tokens, calls}} mapping, got {value!r}"
+        ) from exc
+
+
 def _flatten_scopes(raw: dict[str, Any]) -> list[dict[str, Any]]:
     """Flatten the YAML structure into (scope_kind, scope_value, period, ...) rows."""
     rows: list[dict[str, Any]] = []
@@ -124,18 +173,22 @@ def _flatten_scopes(raw: dict[str, Any]) -> list[dict[str, Any]]:
         for period in ("daily", "monthly"):
             if period not in block:
                 continue
-            try:
-                limit = float(block[period])
-            except (TypeError, ValueError) as exc:
-                raise ConfigurationError(
-                    f"budget config '{where}.{period}' must be a number, got {block[period]!r}"
-                ) from exc
+            limits = _parse_limits(f"{where}.{period}", block[period])
+            if defaults["soft_thresholds"] and limits["limit_usd"] is None:
+                logger.warning(
+                    "budget_config_soft_thresholds_ignored",
+                    where=f"{where}.{period}",
+                    message=(
+                        "soft_thresholds anchor to the usd limit — this period "
+                        "sets none, so no threshold crossing is logged"
+                    ),
+                )
             rows.append(
                 {
                     "scope_kind": kind,
                     "scope_value": value,
                     "period": period,
-                    "limit_usd": limit,
+                    **limits,
                     **defaults,
                 }
             )

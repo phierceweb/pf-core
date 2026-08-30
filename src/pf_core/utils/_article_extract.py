@@ -89,6 +89,22 @@ FETCH_STATUSES: frozenset[str] = frozenset(
     }
 )
 
+PERMANENT_FETCH_STATUSES: frozenset[str] = frozenset(
+    {
+        "not_found",
+        "unsupported_content_type",
+    }
+)
+
+
+def is_permanent(status: str) -> bool:
+    """True when a re-fetch cannot change this ``fetch_status`` verdict.
+
+    Unrecognized statuses are retryable, so one added upstream fails open.
+    """
+    return status in PERMANENT_FETCH_STATUSES
+
+
 # POST-DECODE form — the transport hands us ``resp.text``, so a non-ASCII
 # signature byte has already collapsed to U+FFFD. JPEG/gzip decode to bare
 # U+FFFD runs, too weak to match; they land on ``no_content``.

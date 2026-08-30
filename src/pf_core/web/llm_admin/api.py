@@ -165,6 +165,7 @@ def register_api_routes(router: APIRouter) -> None:
         return {
             "data": {
                 "hit_rate": q.cache_hit_rate_by_agent(since=s, until=u),
+                "stats": q.cache_stats(since=s),
                 "top_entries": q.top_cache_entries(limit=50),
             },
             "meta": {"since": s.isoformat(), "until": u.isoformat()},

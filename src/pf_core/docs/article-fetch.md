@@ -58,7 +58,7 @@ Or per-call:
 art = fetch_article(url, wayback_fallback=False)
 ```
 
-When the Wayback fetch succeeds, `art.used_wayback=True` and `art.final_url` is the `web.archive.org` URL. The `art.url` and `art.canonical_url` always reflect what the caller passed. A snapshot that extracts to nothing is discarded rather than returned, so it can't overwrite a more specific live status.
+When the Wayback fetch succeeds, `art.used_wayback=True` and `art.final_url` is the `web.archive.org` URL. The `art.url` and `art.canonical_url` reflect what the caller passed (empty when it was not a usable string). A snapshot that extracts to nothing is discarded rather than returned, so it can't overwrite a more specific live status.
 
 When the fallback finds nothing and the live fetch was `no_content`, you still get whatever extraction recovered — `title` and `date_published` are frequently present on a JS-rendered shell even with no body.
 
@@ -109,6 +109,24 @@ class FetchedArticle:
 | `no_content` | 2xx HTML the extractor chain could not pull a body from — JS-rendered shells, consent interstitials, non-article pages. Wayback IS attempted |
 
 `FETCH_STATUSES` is the machine-readable set. Assert against it in a consumer test if you branch on status values — the set grows between releases, and an allowlist that silently drops an unrecognized status is the failure mode it exists to catch.
+
+### Permanence
+
+`is_permanent(status)` answers "could a re-fetch change this verdict?" — `True` means no: don't retry, don't re-queue, don't route through a different fetch path. The permanent statuses are `not_found` (404/410 — the URL doesn't exist on the live web) and `unsupported_content_type` (a binary body is replayed byte-for-byte by any archive); `PERMANENT_FETCH_STATUSES` is the machine-readable set, always a subset of `FETCH_STATUSES`.
+
+Everything else — `paywalled`, `blocked`, `timeout`, `error`, `no_content` — is retryable: a re-fetch, a different route, or a Wayback capture can change those verdicts. Permanence is an allow-list: any status not in `PERMANENT_FETCH_STATUSES` (including a new one added upstream) is retryable, so consumers fail open to retry rather than permanently dropping a URL.
+
+`error` is the one retryable status that is not always transient — it also covers input no fetch can fix, such as an empty or non-string URL. Re-queue on the URL you were given, not blindly:
+
+```python
+from pf_core.utils.article_fetch import fetch_article, is_permanent
+
+art = fetch_article(url)
+if art.fetch_status != "ok" and not is_permanent(art.fetch_status) and art.url:
+    requeue(url)  # worth another attempt later
+```
+
+This is the same predicate `fetch_article` uses internally to decide whether the Wayback fallback is worth attempting.
 
 Detection of binary bodies runs on the **decoded** response text, so only signatures that survive a lossy UTF-8 decode are matched. JPEG and gzip decode to bare U+FFFD runs and are deliberately not claimed; they reach the extractor and land on `no_content`.
 
@@ -175,9 +193,9 @@ def cached_fetch(url: str, *, event_date=None, use_cache=True):
 
     art = fetch_article(url, event_date=event_date)
 
-    # Cache terminal states (ok, paywalled, unsupported_content_type are
-    # permanent; not_found, blocked, no_content are worth re-checking later).
-    # Don't cache transient errors (timeout, error) — they may recover.
+    # Cache everything except transient transport failures (timeout,
+    # error) — those may recover. For finer policy, is_permanent()
+    # separates verdicts a re-fetch can never change from the rest.
     if use_cache and art.fetch_status not in ("timeout", "error"):
         my_db.upsert_cached_article(art, fetcher_version=FETCHER_VERSION)
     return art

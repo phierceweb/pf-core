@@ -48,6 +48,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "ValidationSignal": ("pf_core.llm.validate", "ValidationSignal"),
     "cross_field_validator": ("pf_core.llm.validate", "cross_field_validator"),
     "parse_and_validate": ("pf_core.llm.validate", "parse_and_validate"),
+    "validate_value": ("pf_core.llm.validate", "validate_value"),
     "register_validator": ("pf_core.llm.validate", "register"),
     "register_tier1_domains": ("pf_core.llm.validate", "register_tier1_domains"),
     "register_url_hallucination_rules": (
@@ -105,4 +106,5 @@ if TYPE_CHECKING:  # keep static analysers / IDEs aware of the lazy re-exports
         register as register_validator,
         register_tier1_domains,
         register_url_hallucination_rules,
+        validate_value,
     )

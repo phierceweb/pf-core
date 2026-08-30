@@ -559,3 +559,316 @@ def test_metric_gate_with_no_source_fails_closed(tracking_db, monkeypatch):
     result = report.results[0]
     assert result.score == 0.0
     assert result.passed is False
+
+
+# ---------------------------------------------------------------------------
+# compare_experiments
+# ---------------------------------------------------------------------------
+
+
+def _seed_compare_agent(tracking_db, *, slug: str) -> tuple[int, int]:
+    from pf_core.llm.tracking import llm_agent_types, llm_models
+
+    with tracking_db.begin() as conn:
+        mid = conn.execute(
+            llm_models.insert().values(name=f"cmp-model-{slug}")
+        ).inserted_primary_key[0]
+        aid = conn.execute(llm_agent_types.insert().values(slug=slug)).inserted_primary_key[0]
+    return aid, mid
+
+
+def _seed_scored_replay(
+    tracking_db, *, agent_type_id: int, model_id: int, golden_id: int, tag: str, score: float
+) -> int:
+    from pf_core.llm.tracking import llm_run_links, llm_run_outcomes, llm_run_tags, llm_runs
+
+    with tracking_db.begin() as conn:
+        rid = conn.execute(
+            llm_runs.insert().values(
+                agent_type_id=agent_type_id, model_id=model_id, status="success"
+            )
+        ).inserted_primary_key[0]
+        conn.execute(
+            llm_run_links.insert().values(
+                parent_run_id=golden_id, child_run_id=rid, relation="replay"
+            )
+        )
+        conn.execute(llm_run_tags.insert().values(llm_run_id=rid, tag=tag))
+        conn.execute(
+            llm_run_outcomes.insert().values(llm_run_id=rid, outcome_kind="eval_score", score=score)
+        )
+    return rid
+
+
+def _compare_runner():
+    from pf_core.eval._runner import EvalRunner
+
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = EvalConfig({})
+    return runner
+
+
+def _seed_golden_run(tracking_db, *, agent_type_id: int, model_id: int) -> int:
+    from pf_core.llm.tracking import llm_runs
+
+    with tracking_db.begin() as conn:
+        return conn.execute(
+            llm_runs.insert().values(
+                agent_type_id=agent_type_id, model_id=model_id, status="success"
+            )
+        ).inserted_primary_key[0]
+
+
+def test_compare_experiments_raises_when_baseline_tag_matches_nothing(tracking_db):
+    """A typo'd baseline tag must raise, never return an empty comparison."""
+    from pf_core.exceptions import PreconditionError
+
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_empty_base_agent")
+    gid = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    _seed_scored_replay(
+        tracking_db,
+        agent_type_id=aid,
+        model_id=mid,
+        golden_id=gid,
+        tag="experiment:cand",
+        score=0.9,
+    )
+
+    with pytest.raises(PreconditionError, match="experiment:no-such-tag"):
+        _compare_runner().compare_experiments(
+            baseline="experiment:no-such-tag",
+            candidate="experiment:cand",
+            agent_type="cmp_empty_base_agent",
+        )
+
+
+def test_compare_experiments_raises_when_candidate_tag_matches_nothing(tracking_db):
+    from pf_core.exceptions import PreconditionError
+
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_empty_cand_agent")
+    gid = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    _seed_scored_replay(
+        tracking_db,
+        agent_type_id=aid,
+        model_id=mid,
+        golden_id=gid,
+        tag="experiment:base",
+        score=0.8,
+    )
+
+    with pytest.raises(PreconditionError, match="experiment:also-missing"):
+        _compare_runner().compare_experiments(
+            baseline="experiment:base",
+            candidate="experiment:also-missing",
+            agent_type="cmp_empty_cand_agent",
+        )
+
+
+def test_compare_experiments_returns_pairs_and_counts(tracking_db):
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_happy_agent")
+    g1 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    g2 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    for gid, score in ((g1, 0.8), (g2, 0.6)):
+        _seed_scored_replay(
+            tracking_db,
+            agent_type_id=aid,
+            model_id=mid,
+            golden_id=gid,
+            tag="experiment:base",
+            score=score,
+        )
+    for gid, score in ((g1, 0.9), (g2, 0.5)):
+        _seed_scored_replay(
+            tracking_db,
+            agent_type_id=aid,
+            model_id=mid,
+            golden_id=gid,
+            tag="experiment:cand",
+            score=score,
+        )
+
+    result = _compare_runner().compare_experiments(
+        baseline="experiment:base", candidate="experiment:cand", agent_type="cmp_happy_agent"
+    )
+    assert result["baseline_runs"] == 2
+    assert result["candidate_runs"] == 2
+    assert [p["golden_id"] for p in result["pairs"]] == sorted([g1, g2])
+    by_gid = {p["golden_id"]: p for p in result["pairs"]}
+    assert by_gid[g1]["baseline_score"] == pytest.approx(0.8)
+    assert by_gid[g1]["candidate_score"] == pytest.approx(0.9)
+    assert by_gid[g1]["delta"] == pytest.approx(0.1)
+    assert by_gid[g2]["delta"] == pytest.approx(-0.1)
+
+
+def test_compare_experiments_latest_replay_wins_for_reused_tag(tracking_db):
+    """Duplicate scored replays under one tag: latest wins; row count exposes it."""
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_dupe_agent")
+    gid = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    for score in (0.4, 0.9):
+        _seed_scored_replay(
+            tracking_db,
+            agent_type_id=aid,
+            model_id=mid,
+            golden_id=gid,
+            tag="experiment:base",
+            score=score,
+        )
+    _seed_scored_replay(
+        tracking_db,
+        agent_type_id=aid,
+        model_id=mid,
+        golden_id=gid,
+        tag="experiment:cand",
+        score=0.7,
+    )
+
+    result = _compare_runner().compare_experiments(
+        baseline="experiment:base", candidate="experiment:cand", agent_type="cmp_dupe_agent"
+    )
+    assert result["baseline_runs"] == 2
+    assert result["candidate_runs"] == 1
+    assert len(result["pairs"]) == 1
+    assert result["pairs"][0]["baseline_score"] == pytest.approx(0.9)
+    assert result["pairs"][0]["delta"] == pytest.approx(-0.2)
+
+
+def test_compare_experiments_reports_partial_overlap_not_raises(tracking_db):
+    """Counts larger than len(pairs) expose a shrunken pairing to the caller."""
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_partial_agent")
+    g1 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    g2 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    g3 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    for gid in (g1, g2):
+        _seed_scored_replay(
+            tracking_db,
+            agent_type_id=aid,
+            model_id=mid,
+            golden_id=gid,
+            tag="experiment:base",
+            score=0.7,
+        )
+    for gid in (g2, g3):
+        _seed_scored_replay(
+            tracking_db,
+            agent_type_id=aid,
+            model_id=mid,
+            golden_id=gid,
+            tag="experiment:cand",
+            score=0.8,
+        )
+
+    result = _compare_runner().compare_experiments(
+        baseline="experiment:base", candidate="experiment:cand", agent_type="cmp_partial_agent"
+    )
+    assert result["baseline_runs"] == 2
+    assert result["candidate_runs"] == 2
+    assert len(result["pairs"]) == 1
+    assert result["pairs"][0]["golden_id"] == g2
+
+
+def test_compare_experiments_raises_when_tags_share_no_golden(tracking_db):
+    """Two populated tags over different golden sets yield zero pairs, which
+    must not read as "no regressions"."""
+    from pf_core.exceptions import PreconditionError
+
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_disjoint_agent")
+    g1 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    g2 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    _seed_scored_replay(
+        tracking_db, agent_type_id=aid, model_id=mid, golden_id=g1, tag="base", score=0.9
+    )
+    _seed_scored_replay(
+        tracking_db, agent_type_id=aid, model_id=mid, golden_id=g2, tag="cand", score=0.9
+    )
+
+    with pytest.raises(PreconditionError, match="share no golden parent"):
+        _compare_runner().compare_experiments(
+            baseline="base", candidate="cand", agent_type="cmp_disjoint_agent"
+        )
+
+
+def test_compare_experiments_rejects_a_self_comparison(tracking_db):
+    """Comparing a tag with itself reports every delta as 0.0 — a clean gate
+    that proves nothing."""
+    from pf_core.exceptions import InvalidInputError
+
+    with pytest.raises(InvalidInputError, match="same tag"):
+        _compare_runner().compare_experiments(
+            baseline="base", candidate="base", agent_type="cmp_self_agent"
+        )
+
+
+def test_compare_experiments_skips_replays_with_a_null_score(tracking_db):
+    """A NULL eval_score is not a scored replay; it must be filtered out, not
+    crash the float() conversion."""
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_nullscore_agent")
+    g1 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    g2 = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    _seed_scored_replay(
+        tracking_db, agent_type_id=aid, model_id=mid, golden_id=g1, tag="base", score=0.5
+    )
+    _seed_scored_replay(
+        tracking_db, agent_type_id=aid, model_id=mid, golden_id=g1, tag="cand", score=0.7
+    )
+    _seed_scored_replay(
+        tracking_db, agent_type_id=aid, model_id=mid, golden_id=g2, tag="base", score=None
+    )
+    _seed_scored_replay(
+        tracking_db, agent_type_id=aid, model_id=mid, golden_id=g2, tag="cand", score=None
+    )
+
+    result = _compare_runner().compare_experiments(
+        baseline="base", candidate="cand", agent_type="cmp_nullscore_agent"
+    )
+    assert [p["golden_id"] for p in result["pairs"]] == [g1]
+    assert result["baseline_runs"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Tag matching is exact regardless of the server's collation
+# ---------------------------------------------------------------------------
+
+
+def test_exact_tag_rows_drops_case_variants():
+    """Simulates a case-insensitive collation (MySQL's utf8mb4_0900_ai_ci):
+    SQL ``=`` hands back the wrong-case rows, and the filter removes them."""
+    from pf_core.eval._experiments import _exact_tag_rows
+
+    rows = [
+        {"golden_id": 1, "score": 0.8, "tag": "experiment:v5"},
+        {"golden_id": 2, "score": 0.6, "tag": "experiment:V5"},
+    ]
+    assert [r["golden_id"] for r in _exact_tag_rows(rows, "experiment:v5")] == [1]
+    assert [r["golden_id"] for r in _exact_tag_rows(rows, "experiment:V5")] == [2]
+    assert _exact_tag_rows(rows, "experiment:V5X") == []
+
+
+def test_case_variant_candidate_raises_instead_of_reporting_zero_deltas(tracking_db, monkeypatch):
+    """On a case-insensitive server the candidate tag selects the baseline's
+    own rows, so neither guard fires and an all-zero-delta table reads as
+    'no regression' for an experiment that never ran."""
+    import pf_core.eval._experiments as ex
+    from pf_core.exceptions import PreconditionError
+
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_case_agent")
+    gid = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    _seed_scored_replay(
+        tracking_db,
+        agent_type_id=aid,
+        model_id=mid,
+        golden_id=gid,
+        tag="experiment:v5",
+        score=0.8,
+    )
+
+    real = ex._fetch_tag_rows
+    monkeypatch.setattr(
+        ex, "_fetch_tag_rows", lambda repo, tag, agent: real(repo, tag.lower(), agent)
+    )
+
+    with pytest.raises(PreconditionError, match="experiment:V5"):
+        ex.compare_experiments(
+            baseline="experiment:v5",
+            candidate="experiment:V5",
+            agent_type="cmp_case_agent",
+        )

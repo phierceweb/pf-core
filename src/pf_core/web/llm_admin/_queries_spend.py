@@ -8,12 +8,11 @@ from sqlalchemy import and_, case, desc, func, select
 
 from pf_core.budget._schema import llm_budgets
 from pf_core.budget.check import (
-    compute_period_end,
     compute_period_start,
-    current_spent,
+    current_usage,
 )
-from pf_core.budget.repo import aggregate_spent
 from pf_core.db.connection import transaction
+from pf_core.llm.cache import cache_stats as _cache_stats
 from pf_core.llm.cache._schema import llm_cache_entries
 from pf_core.llm.tracking.schema import (
     llm_agent_types,
@@ -81,6 +80,10 @@ def cache_hit_rate_by_agent(*, since: dt.datetime, until: dt.datetime) -> list[d
         return _normalize_all(conn.execute(stmt).mappings().fetchall())
 
 
+def cache_stats(*, agent_type: str | None = None, since=None) -> list[dict]:
+    return _cache_stats(agent_type=agent_type, since=since)
+
+
 def top_cache_entries(*, limit: int = 50) -> list[dict]:
     stmt = (
         select(
@@ -106,10 +109,13 @@ def top_cache_entries(*, limit: int = 50) -> list[dict]:
 
 
 def list_budgets_with_spend() -> list[dict]:
-    """Return every enabled budget with current-period spent + pct-of-limit.
+    """Return every enabled budget with current-period usage + pct per dimension.
 
-    Spend is the guard's own figure (``current_spent``) over the guard's own
+    Usage is the guard's own figure (``current_usage``) over the guard's own
     UTC period, so the page cannot read $0 while calls are being blocked.
+    Each configured dimension gets a ``pct_usd`` / ``pct_tokens`` /
+    ``pct_calls`` (``None`` when unconfigured); ``pct_of_limit`` — the sort
+    key — is the max across configured dimensions.
     """
     with transaction() as conn:
         budgets = (
@@ -121,15 +127,31 @@ def list_budgets_with_spend() -> list[dict]:
     out = []
     for b in budgets:
         row = _normalize(b)
-        period_start = compute_period_start(row["period"])
-        period_end = compute_period_end(row["period"], period_start)
-        spent = current_spent(row)
-        _, run_count = aggregate_spent(budget=row, period_start=period_start, period_end=period_end)
-        limit = float(row["limit_usd"])
-        row["spent_usd"] = spent
-        row["run_count"] = run_count
-        row["pct_of_limit"] = (spent / limit) if limit > 0 else 0.0
-        row["period_start"] = period_start
+        usage = current_usage(row)
+        row["spent_usd"] = float(usage["usd"])
+        row["spent_tokens"] = int(usage["tokens"])
+        row["run_count"] = int(usage["calls"])
+        pcts = []
+        for dim, limit_key, spent in (
+            ("usd", "limit_usd", row["spent_usd"]),
+            ("tokens", "limit_tokens", row["spent_tokens"]),
+            ("calls", "limit_calls", row["run_count"]),
+        ):
+            limit = row.get(limit_key)
+            if limit is None:
+                row[f"pct_{dim}"] = None
+                continue
+            # A zero limit admits nothing, so any usage against it is 100%.
+            pct = (spent / float(limit)) if float(limit) > 0 else (1.0 if spent > 0 else 0.0)
+            row[f"pct_{dim}"] = pct
+            pcts.append(pct)
+        row["pct_of_limit"] = max(pcts, default=0.0)
+        row["pct_dimension"] = max(
+            (d for d in ("usd", "tokens", "calls") if row.get(f"pct_{d}") is not None),
+            key=lambda d: row[f"pct_{d}"],
+            default="",
+        )
+        row["period_start"] = compute_period_start(row["period"])
         out.append(row)
 
     out.sort(key=lambda r: r["pct_of_limit"], reverse=True)

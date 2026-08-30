@@ -19,6 +19,7 @@ Public surface::
 
         # Pipeline
         parse_and_validate,
+        validate_value,
         ValidationResult,
         ValidationSignal,
 
@@ -40,6 +41,7 @@ from pf_core.llm.validate._pipeline import (  # noqa: F401
     ValidationResult,
     ValidationSignal,
     parse_and_validate,
+    validate_value,
 )
 from pf_core.llm.validate._jsonschema import JsonSchemaValidator  # noqa: F401
 from pf_core.llm.validate._pydantic import PydanticValidator  # noqa: F401
@@ -77,4 +79,5 @@ __all__ = [
     "register",
     "register_tier1_domains",
     "register_url_hallucination_rules",
+    "validate_value",
 ]

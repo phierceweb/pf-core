@@ -419,6 +419,84 @@ class TestTruncation:
             )
 
 
+class TestDryRun:
+    """dry_run answers "would this hit the exact cache?" with zero side effects."""
+
+    def _cache_rows(self, conn) -> int:
+        return conn.execute(text("SELECT count(*) FROM llm_cache_entries")).scalar_one()
+
+    def test_miss_returns_empty_and_writes_nothing(self, pf_tables, pf_connection, exact_cache):
+        from pf_core.llm.step import llm_step
+
+        client = FakeChat()
+        res = llm_step(
+            client=client, agent_type="step_probe", messages=MESSAGES, model="m1", dry_run=True
+        )
+        assert res.cache_hit is False
+        assert res.value is None
+        assert res.content == ""
+        assert res.run_id is None
+        assert res.validation is None
+        assert client.calls == []
+        assert _runs(pf_connection) == []
+        assert self._cache_rows(pf_connection) == 0
+
+    def test_hit_returns_stored_value_without_spending(self, pf_tables, pf_connection, exact_cache):
+        from pf_core.llm.step import llm_step
+
+        from pf_core.llm.cache import cache_store
+        from pf_core.llm.tracking import LlmRunRepo, compute_input_hash
+
+        # Seed the entry directly: dry_run must resolve the same hash llm_step uses.
+        rid = LlmRunRepo().record(agent_type="step_raw", model="m1")
+        cache_store(
+            agent_type="step_raw",
+            input_hash=compute_input_hash(model="m1", messages=MESSAGES),
+            source_run_id=rid,
+            model="m1",
+            parsed_output={"a": 1},
+            raw_response='{"a": 1}',
+        )
+
+        client = FakeChat()
+        res = llm_step(
+            client=client, agent_type="step_raw", messages=MESSAGES, model="m1", dry_run=True
+        )
+        assert res.cache_hit is True
+        assert res.value == {"a": 1}
+        assert res.content == '{"a": 1}'
+        assert res.run_id is None
+        assert client.calls == []
+
+        runs = _runs(pf_connection)
+        assert [r["status"] for r in runs] == ["success"]  # no cache_hit row written
+        hit_count = pf_connection.execute(
+            text("SELECT hit_count FROM llm_cache_entries")
+        ).scalar_one()
+        assert hit_count == 0  # no hit-count bump
+
+    def test_dry_run_performs_no_budget_check(
+        self, pf_tables, pf_connection, exact_cache, monkeypatch
+    ):
+        import pf_core.llm.step as step_mod
+        from pf_core.llm.step import BudgetEstimate, llm_step
+
+        def _fail_if_consulted(**kwargs):
+            raise AssertionError("budget consulted on dry_run")
+
+        monkeypatch.setattr(step_mod, "project_cost", _fail_if_consulted)
+        monkeypatch.setattr(step_mod, "check_budget", _fail_if_consulted)
+        res = llm_step(
+            client=FakeChat(),
+            agent_type="step_probe",
+            messages=MESSAGES,
+            model="m1",
+            dry_run=True,
+            budget=BudgetEstimate(),
+        )
+        assert res.cache_hit is False
+
+
 class TestBudget:
     def test_block_records_blocked_run_and_raises(self, pf_tables, pf_connection, monkeypatch):
         import pf_core.llm.step as step_mod
@@ -428,9 +506,9 @@ class TestBudget:
             scope_kind="agent",
             scope_value="step_probe",
             period="daily",
-            limit_usd=1.0,
-            spent_usd=1.0,
-            projected_usd=0.5,
+            limit_value=1.0,
+            spent_value=1.0,
+            projected_value=0.5,
         )
 
         def _block(**kwargs):
@@ -472,6 +550,58 @@ class TestBudget:
         )
         assert seen["estimated_prompt_tokens"] == 42
         assert seen["estimated_completion_tokens"] == 7
+
+    def test_dimensions_forwarded_to_check_budget(self, pf_tables, pf_connection, monkeypatch):
+        import pf_core.llm.step as step_mod
+        from pf_core.llm.step import BudgetEstimate, llm_step
+
+        seen: dict[str, Any] = {}
+
+        monkeypatch.setattr(step_mod, "project_cost", lambda **kwargs: 0.0)
+        monkeypatch.setattr(step_mod, "check_budget", lambda **kwargs: seen.update(kwargs))
+        llm_step(
+            client=FakeChat(),
+            agent_type="step_raw",
+            messages=MESSAGES,
+            model="m1",
+            tags=["experiment:opus47"],
+            budget=BudgetEstimate(prompt_tokens=42, completion_tokens=7),
+        )
+        assert seen["projected_tokens"] == 49
+        assert seen["projected_calls"] == 1
+        assert seen["tags"] == ["experiment:opus47"]
+
+    def test_tag_scoped_block_budget_gates_a_tagged_call(self, pf_tables, pf_connection):
+        from pf_core.budget._schema import llm_budgets
+        from pf_core.db.connection import transaction
+        from pf_core.llm.step import BudgetEstimate, llm_step
+
+        with transaction() as conn:
+            conn.execute(
+                llm_budgets.insert().values(
+                    scope_kind="tag",
+                    scope_value="experiment:opus47",
+                    period="daily",
+                    limit_calls=0,
+                    action="block",
+                    enabled=True,
+                )
+            )
+        client = FakeChat()
+        with pytest.raises(CostBudgetExceeded) as excinfo:
+            llm_step(
+                client=client,
+                agent_type="step_raw",
+                messages=MESSAGES,
+                model="m1",
+                tags=["experiment:opus47"],
+                budget=BudgetEstimate(),
+            )
+        assert excinfo.value.scope_kind == "tag"
+        assert client.calls == []
+        runs = _runs(pf_connection)
+        assert len(runs) == 1
+        assert runs[0]["status"] == "budget_blocked"
 
     def test_no_budget_kwarg_skips_gate(self, pf_tables, pf_connection, monkeypatch):
         import pf_core.llm.step as step_mod

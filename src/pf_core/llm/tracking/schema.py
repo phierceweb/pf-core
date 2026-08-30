@@ -79,15 +79,11 @@ _COST_USD = Numeric(10, 6)
 class _server_now_minus_seconds(expression.FunctionElement):
     """Cross-dialect ``CURRENT_TIMESTAMP - INTERVAL N SECOND``.
 
-    Use when a cutoff needs to be computed server-side — e.g. worker lease
-    expiry, retention purge thresholds. Computing the cutoff in Python with
-    ``datetime.now(timezone.utc) - timedelta(...)`` and binding it as a
-    WHERE-clause value is unsafe on MySQL: TIMESTAMP columns are stored in
-    the session time zone and aware-UTC bind values silently skew the
-    comparison by the session offset.
-
-    Holding the subtraction on the server guarantees left- and right-hand
-    sides of the comparison share a time-zone frame whatever it is.
+    Use when the comparison arbitrates between concurrent actors or destroys
+    data — lease expiry, claim ownership, retention purge. Both sides then come
+    from the database's clock, so a worker whose host clock runs fast cannot
+    reclaim a job that is still running. For a selection threshold prefer
+    :func:`pf_core.db.utc_cutoff`; ``docs/db-dialect.md`` covers the choice.
 
     Construct with a positive integer number of seconds; the expression
     evaluates to "that many seconds before now" in the DB's own clock.

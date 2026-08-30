@@ -27,27 +27,40 @@ def check(desc, fn):
 
 # 1. Foundation modules import cleanly with only base deps installed.
 foundation = [
-    "pf_core", "pf_core.exceptions", "pf_core.log", "pf_core.config",
-    "pf_core.output", "pf_core.parallel", "pf_core.services",
-    "pf_core.services.base", "pf_core.utils", "pf_core.utils.env",
-    "pf_core.utils.dates", "pf_core.utils.ids", "pf_core.utils.json",
-    "pf_core.utils.similarity", "pf_core.utils.vocab",
+    "pf_core",
+    "pf_core.exceptions",
+    "pf_core.log",
+    "pf_core.config",
+    "pf_core.output",
+    "pf_core.parallel",
+    "pf_core.services",
+    "pf_core.services.base",
+    "pf_core.utils",
+    "pf_core.utils.env",
+    "pf_core.utils.dates",
+    "pf_core.utils.ids",
+    "pf_core.utils.json",
+    "pf_core.utils.similarity",
+    "pf_core.utils.vocab",
     # generic JSON-from-messy-text recovery (lives outside pf_core.llm).
     "pf_core.utils.json_recovery",
     # pure URL parsing / HTML metadata — no httpx.
-    "pf_core.utils.url_parse", "pf_core.utils.url_html",
+    "pf_core.utils.url_parse",
+    "pf_core.utils.url_html",
 ]
 for mod in foundation:
     check(f"import {mod}", lambda m=mod: importlib.import_module(m))
 
 # 2. Heavy deps must be absent in a bare install.
 for pkg in ["httpx", "pydantic", "json_repair", "tenacity", "typer"]:
+
     def _absent(p=pkg):
         try:
             importlib.import_module(p)
         except ImportError:
             return
         raise AssertionError(f"{p} unexpectedly importable")
+
     check(f"{pkg} NOT installed", _absent)
 
 
@@ -63,17 +76,24 @@ def _friendly(mod, needle):
     raise AssertionError(f"{mod} imported but should have raised")
 
 
-check("pf_core.llm.parse -> friendly [validate] error",
-      lambda: _friendly("pf_core.llm.parse", "pf-core[validate]"))
-check("pf_core.llm.validate -> friendly [validate] error",
-      lambda: _friendly("pf_core.llm.validate", "pf-core[validate]"))
-check("pf_core.clients.openrouter -> friendly [llm] error",
-      lambda: _friendly("pf_core.clients.openrouter", "pf-core[llm]"))
+check(
+    "pf_core.llm.parse -> friendly [validate] error",
+    lambda: _friendly("pf_core.llm.parse", "pf-core[validate]"),
+)
+check(
+    "pf_core.llm.validate -> friendly [validate] error",
+    lambda: _friendly("pf_core.llm.validate", "pf-core[validate]"),
+)
+check(
+    "pf_core.clients.openrouter -> friendly [llm] error",
+    lambda: _friendly("pf_core.clients.openrouter", "pf-core[llm]"),
+)
 
 
 # 4. Lazy util re-export raises a friendly [http] error on attribute access.
 def _lazy_http():
     import pf_core.utils as u
+
     try:
         u.check_url  # noqa: B018
     except ImportError as e:

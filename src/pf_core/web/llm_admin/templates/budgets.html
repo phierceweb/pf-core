@@ -13,7 +13,9 @@
 <table>
   <tr>
     <th>Scope</th><th>Period</th>
-    <th class="num">Spent</th><th class="num">Limit</th><th class="num">%</th>
+    <th class="num">Spent</th><th class="num">Limit</th>
+    <th class="num">Tokens</th><th class="num">Calls</th>
+    <th class="num">Worst %</th>
     <th>Status</th><th>Action</th>
   </tr>
   {% for b in budgets %}
@@ -26,7 +28,21 @@
     <td>{{ b.period }}</td>
     <td class="num">{{ cost(b.spent_usd) }}</td>
     <td class="num">{{ cost(b.limit_usd) }}</td>
-    <td class="num">{{ pct(b.pct_of_limit) }}</td>
+    <td class="num">
+      {%- if b.limit_tokens is none -%}&mdash;{%- else -%}
+        {{ '{:,}'.format(b.spent_tokens) }} / {{ '{:,}'.format(b.limit_tokens) }}
+      {%- endif -%}
+    </td>
+    <td class="num">
+      {%- if b.limit_calls is none -%}&mdash;{%- else -%}
+        {{ b.run_count }} / {{ b.limit_calls }}
+      {%- endif -%}
+    </td>
+    <td class="num">
+      {%- if b.pct_dimension -%}
+        {{ pct(b.pct_of_limit) }} <span class="dim">{{ b.pct_dimension }}</span>
+      {%- else -%}&mdash;{%- endif -%}
+    </td>
     <td style="min-width:120px;">
       <div class="progress {{ bar_class }}"><div style="width: {{ [pct_val * 100, 100] | min }}%;"></div></div>
     </td>

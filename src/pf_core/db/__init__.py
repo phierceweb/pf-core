@@ -11,13 +11,19 @@ from pf_core.db.connection import (
     transaction,
 )
 from pf_core.db.helpers import coerce_json_col, dumps_json, now_iso, row_to_dict
+from pf_core.db.dialect import (
+    insert_ignore_prefix,
+    insert_ignore_suffix,
+    now_sql,
+    row_lock_suffix,
+    utc_cutoff,
+)
 from pf_core.db.json_compat import (
     SUPPORTED_DIALECTS,
     autoinc_pk,
     bool_type,
     decimal_type,
     fk_int_type,
-    insert_ignore_prefix,
     json_col_type,
     json_extract_sql,
     mediumtext_type,
@@ -56,6 +62,7 @@ __all__ = [
     "get_latest_with_fallback",
     "insert_ignore",
     "insert_ignore_prefix",
+    "insert_ignore_suffix",
     "is_postgres",
     "is_sqlite",
     "json_col_type",
@@ -64,11 +71,13 @@ __all__ = [
     "mediumtext_type",
     "not_deleted",
     "now_expr",
+    "now_sql",
     "now_iso",
     "on_update_now_clause",
     "ping",
     "resolve_model_id",
     "restore",
+    "row_lock_suffix",
     "row_to_dict",
     "small_autoinc_pk",
     "soft_delete",
@@ -76,4 +85,5 @@ __all__ = [
     "tiny_autoinc_pk",
     "transaction",
     "upsert",
+    "utc_cutoff",
 ]

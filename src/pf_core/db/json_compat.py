@@ -63,11 +63,22 @@ def json_extract_sql(dialect: str, col: str, path: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def now_expr(dialect: str) -> str:
-    """Return the SQL expression for "current UTC timestamp"."""
+def now_expr(dialect: str, *, fractional: bool = True) -> str:
+    """Return the SQL expression for "current UTC timestamp".
+
+    SQLite compares as text, so the shape must match how SQLAlchemy renders a
+    bound ``DateTime``: ``strftime('%f')`` gives three fractional digits against
+    its six, which sorts a stamped row below its own round-trip. Hence ``%f000``.
+
+    MySQL gets ``CURRENT_TIMESTAMP(6)``; the bare form truncates to seconds. In
+    DDL ``fractional`` must match ``timestamp_type``'s, or MySQL rejects the
+    statement (ERROR 1067).
+    """
     _check(dialect)
     if dialect == "sqlite":
-        return "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+        return "strftime('%Y-%m-%d %H:%M:%f000', 'now')"
+    if dialect == "mysql":
+        return "CURRENT_TIMESTAMP(6)" if fractional else "CURRENT_TIMESTAMP"
     return "CURRENT_TIMESTAMP"
 
 
@@ -76,6 +87,8 @@ def timestamp_type(dialect: str, *, fractional: bool = True) -> str:
 
     Args:
         fractional: Include microsecond precision (MySQL ``TIMESTAMP(6)``).
+            Must match the ``fractional`` passed to :func:`now_expr` and
+            :func:`on_update_now_clause` for the same column.
     """
     _check(dialect)
     if dialect == "mysql":
@@ -170,16 +183,19 @@ def bool_type(dialect: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def on_update_now_clause(dialect: str) -> str:
+def on_update_now_clause(dialect: str, *, fractional: bool = True) -> str:
     """Return the inline DDL clause that sets a column to NOW() on update.
 
     MySQL has native ``ON UPDATE CURRENT_TIMESTAMP``. Postgres and SQLite
     require a separate trigger — this returns an empty string and the caller
     must emit the trigger SQL elsewhere.
+
+    ``fractional`` must match the column's fsp and the DEFAULT's; see
+    :func:`now_expr`.
     """
     _check(dialect)
     if dialect == "mysql":
-        return "ON UPDATE CURRENT_TIMESTAMP(6)"
+        return "ON UPDATE CURRENT_TIMESTAMP(6)" if fractional else "ON UPDATE CURRENT_TIMESTAMP"
     return ""
 
 

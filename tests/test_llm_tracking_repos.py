@@ -94,6 +94,50 @@ def test_record_reuses_existing_agent_and_model_ids(tracking_db):
 
 
 # ---------------------------------------------------------------------------
+# LlmRunRepo.mark_failed()
+# ---------------------------------------------------------------------------
+
+
+def test_mark_failed_flips_status_and_error_columns_only(tracking_db):
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        usage={"prompt_tokens": 100, "completion_tokens": 50, "cost_usd": 0.01},
+    )
+    before = LlmRunRepo().get(run_id)
+
+    LlmRunRepo().mark_failed(run_id, error="schema rejected", error_class="ValidationError")
+
+    after = LlmRunRepo().get(run_id)
+    assert after["status"] == "failed"
+    assert after["error"] == "schema rejected"
+    assert after["error_class"] == "ValidationError"
+    untouched = {k: v for k, v in after.items() if k not in ("status", "error", "error_class")}
+    assert untouched == {
+        k: v for k, v in before.items() if k not in ("status", "error", "error_class")
+    }
+
+
+def test_mark_failed_defaults_error_class_to_none(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    LlmRunRepo().mark_failed(run_id, error="boom")
+    row = LlmRunRepo().get(run_id)
+    assert row["status"] == "failed"
+    assert row["error"] == "boom"
+    assert row["error_class"] is None
+
+
+def test_mark_failed_caps_error_length(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    LlmRunRepo().mark_failed(run_id, error="x" * 20_000)
+    assert len(LlmRunRepo().get(run_id)["error"]) == 10_000
+
+
+def test_mark_failed_unknown_run_id_warns_without_raising(tracking_db):
+    LlmRunRepo().mark_failed(999_999, error="nothing here")
+
+
+# ---------------------------------------------------------------------------
 # LlmRunRepo.record() — extra_run_values hook
 # ---------------------------------------------------------------------------
 
@@ -959,7 +1003,9 @@ def test_cost_by_model_aggregates_runs(tracking_db):
     opus = by_model["claude-opus-4-7"]
     assert opus["runs"] == 2
     assert float(opus["total_cost_usd"]) == pytest.approx(0.03)
-    assert opus["billable_input"] == (1000 - 200) + (1500 - 300)
+    # prompt_tokens already excludes cached input (pf_core.pricing bills
+    # cache_read separately on top of it), so nothing is subtracted here.
+    assert opus["billable_input"] == 1000 + 1500
     assert opus["cached_input"] == 500
     assert opus["output"] == 1200
     assert opus["reasoning"] == 100

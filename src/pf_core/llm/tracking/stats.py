@@ -44,9 +44,8 @@ class LlmRunStatsRepo(Repository):
         Returns one row per model with: ``model``, ``runs``, ``billable_input``,
         ``cached_input``, ``output``, ``reasoning``, ``total_cost_usd``.
         """
-        billable = func.coalesce(s.llm_runs.c.prompt_tokens, 0) - func.coalesce(
-            s.llm_runs.c.cache_read_tokens, 0
-        )
+        # prompt_tokens already excludes cached input — do not subtract it.
+        billable = func.coalesce(s.llm_runs.c.prompt_tokens, 0)
         stmt = (
             select(
                 s.llm_models.c.name.label("model"),

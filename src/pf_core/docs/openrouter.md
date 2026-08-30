@@ -60,7 +60,7 @@ content, usage = client.chat(
 
 ```python
 {
-    "prompt_tokens": 1200,
+    "prompt_tokens": 1200,  # uncached input — cache_read_tokens already subtracted
     "completion_tokens": 450,
     "cache_read_tokens": 0,  # from prompt_tokens_details.cached_tokens when present
     "cache_write_tokens": 0,
@@ -72,7 +72,9 @@ content, usage = client.chat(
 }
 ```
 
-`cost_usd` is OpenRouter's own reported cost for the call (the `usage.cost` field) — not a local estimate.
+`prompt_tokens` is the **uncached** input. OpenRouter reports it cache-inclusive (the OpenAI shape); the client subtracts `cache_read_tokens` so the key means the same thing here, in [`AnthropicClient`](anthropic.md) and in [`ClaudeCodeClient`](claude-code.md) — and so [`pf_core.pricing`](pricing.md) can bill the cache columns on top of it without double-charging. Total input the model saw is `prompt_tokens + cache_read_tokens + cache_write_tokens`. A route reporting more cached tokens than prompt tokens clamps to 0, never negative.
+
+`cost_usd` is OpenRouter's own reported cost for the call (the `usage.cost` field). When a route does not surface one, the client falls back to a local [`pf_core.pricing`](pricing.md) estimate over the same token split it records — so treat the number as billing truth only when the route reports `cost`.
 
 `finish_reason` is the first choice's finish reason as the route reported it (`None` when absent). **`"length"` means the model hit `max_tokens` and `content` is truncated mid-stream** — a short string that looks complete. Truncated content is still returned (so [`parse_llm_json(recover=True)`](llm-parse.md) can salvage it), and the client logs an `openrouter_truncated` warning; callers that need whole responses must check the key (or hand it to [`parse_llm_json(truncated=...)`](llm-parse.md#detecting-truncation-truncated-not-the-text)):
 

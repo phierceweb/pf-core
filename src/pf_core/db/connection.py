@@ -186,6 +186,14 @@ def get_engine(url: str | None = None) -> Engine:
         else:  # postgresql
             engine = create_engine(resolved_url, connect_args=connect_args(resolved_url))
 
+            @event.listens_for(engine, "connect")
+            def _postgres_session_setup(dbapi_conn, _record):
+                # As above: framework timestamp columns are TIMESTAMPTZ here,
+                # so an unpinned session skews every naive-UTC comparison.
+                cur = dbapi_conn.cursor()
+                cur.execute("SET TIME ZONE 'UTC'")
+                cur.close()
+
         _engine = engine
         return _engine
 

@@ -27,6 +27,7 @@ Published to PyPI as `pf-core` (Python 3.12+); pin a compatible release (`pf-cor
 - [cost-budget](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/cost-budget.md)
 - [database](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/database.md)
 - [dates](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/dates.md)
+- [db-dialect](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/db-dialect.md)
 - [db-upsert](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/db-upsert.md)
 - [doctor](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/doctor.md)
 - [env](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/env.md)

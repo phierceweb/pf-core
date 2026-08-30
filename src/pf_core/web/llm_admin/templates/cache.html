@@ -22,6 +22,27 @@
 <p>No runs in the window.</p>
 {% endif %}
 
+<h2>Cache effectiveness by agent (all time)</h2>
+{% if stats %}
+<table>
+  <tr><th>Agent</th><th class="num">Entries</th><th class="num">Hits</th><th class="num">Entries hit</th><th class="num">Live runs</th><th class="num">Distinct hashes</th><th>Last hit</th></tr>
+  {% for s in stats %}
+  <tr>
+    <td>{{ s.agent_type }}</td>
+    <td class="num">{{ s.entries }}</td>
+    <td class="num">{{ s.hits }}</td>
+    <td class="num">{{ s.entries_hit }}</td>
+    <td class="num">{{ s.live_runs }}</td>
+    <td class="num">{{ s.distinct_hashes }}</td>
+    <td>{{ s.last_hit_at or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<div class="meta">Entries ≈ live runs with ~0 hits means every call minted a fresh key — a cache that structurally cannot hit (e.g. a prompt interpolating the current date).</div>
+{% else %}
+<p>No cache activity yet.</p>
+{% endif %}
+
 <h2>Top cache entries by hit count</h2>
 {% if top_entries %}
 <table>

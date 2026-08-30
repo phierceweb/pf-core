@@ -25,8 +25,6 @@ Usage::
 from __future__ import annotations
 
 import datetime as dt
-import os
-from dataclasses import dataclass
 from typing import Any
 
 from pf_core.exceptions import FlowException
@@ -50,9 +48,14 @@ class CostBudgetExceeded(FlowException):
         scope_kind: ``'global' | 'agent' | 'job_kind' | 'job_id' | 'tag'``
         scope_value: Scope identifier (e.g. agent slug); ``None`` for global
         period: ``'daily' | 'monthly'``
-        limit_usd: The cap that was exceeded
-        spent_usd: Recorded spend before the planned call
-        projected_usd: Projected cost of the planned call
+        limit_value: The cap that was exceeded — in the tripping dimension's
+            unit (USD for ``dimension='usd'``, tokens/calls otherwise)
+        spent_value: Recorded usage before the planned call (same unit)
+        projected_value: Projected usage of the planned call (same unit)
+        dimension: ``'usd' | 'tokens' | 'calls'`` — which limit tripped
+        limit_usd: The scope's USD cap, or ``0.0`` when it sets none. Always
+            USD whichever dimension tripped, so a handler can format it as
+            currency (likewise ``spent_usd`` / ``projected_usd``).
     """
 
     def __init__(
@@ -61,21 +64,34 @@ class CostBudgetExceeded(FlowException):
         scope_kind: str,
         scope_value: str | None,
         period: str,
-        limit_usd: float,
-        spent_usd: float,
-        projected_usd: float,
+        limit_value: float,
+        spent_value: float,
+        projected_value: float,
+        dimension: str = "usd",
+        usd: tuple[float, float, float] | None = None,
     ) -> None:
         self.scope_kind = scope_kind
         self.scope_value = scope_value
         self.period = period
+        self.limit_value = float(limit_value)
+        self.spent_value = float(spent_value)
+        self.projected_value = float(projected_value)
+        self.dimension = dimension
+        limit_usd, spent_usd, projected_usd = usd or (
+            (limit_value, spent_value, projected_value) if dimension == "usd" else (0.0, 0.0, 0.0)
+        )
         self.limit_usd = float(limit_usd)
         self.spent_usd = float(spent_usd)
         self.projected_usd = float(projected_usd)
         descriptor = f"{scope_kind}:{scope_value}" if scope_value else scope_kind
+
+        def _fmt(v: float) -> str:
+            return f"{v:.4f}" if dimension == "usd" else f"{v:.0f}"
+
         super().__init__(
-            f"budget exceeded: {descriptor} ({period}) "
-            f"spent={self.spent_usd:.4f} + projected={self.projected_usd:.4f} "
-            f"> limit={self.limit_usd:.4f}"
+            f"budget exceeded: {descriptor} ({period}) {dimension} "
+            f"spent={_fmt(self.spent_value)} + projected={_fmt(self.projected_value)} "
+            f"> limit={_fmt(self.limit_value)}"
         )
 
 
@@ -84,27 +100,11 @@ class CostBudgetExceeded(FlowException):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class _ScopeSummary:
-    """Per-scope spent / limit / threshold view used internally."""
-
-    scope_kind: str
-    scope_value: str | None
-    period: str
-    limit_usd: float
-    spent_usd: float
-    action: str
-    soft_thresholds: list[float]
-    budget_id: int
-
-
 def _enforcement_disabled() -> bool:
     """BUDGET_ENFORCEMENT_DISABLED kill switch — disables the guard pair."""
-    return os.environ.get("BUDGET_ENFORCEMENT_DISABLED", "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    from pf_core.utils.env import resolve_bool
+
+    return resolve_bool(None, "BUDGET_ENFORCEMENT_DISABLED", default=False)
 
 
 def project_cost(
@@ -229,13 +229,15 @@ def compute_period_end(period: str, start: dt.date) -> dt.date:
 # ---------------------------------------------------------------------------
 
 
-def current_spent(budget: dict, *, conn=None) -> float:
-    """Return current spent for *budget* = snapshot + live delta since snapshot.
+def current_usage(budget: dict, *, conn=None) -> dict[str, float | int]:
+    """Return current usage for *budget* = snapshot + live delta since snapshot.
 
     The one definition of "spent" — the guard, the admin pages, and anything
-    else reporting budget state must agree.
+    else reporting budget state must agree. Returns ``{"usd": float,
+    "tokens": int, "calls": int}``, where ``tokens`` sums all four token
+    columns — uncached prompt, completion, cache read and cache write.
     """
-    from pf_core.budget.repo import BudgetSnapshotRepo, aggregate_spent
+    from pf_core.budget.repo import BudgetSnapshotRepo, aggregate_usage
 
     now = dt.datetime.now(dt.timezone.utc)
     period_start = compute_period_start(budget["period"], now)
@@ -243,35 +245,43 @@ def current_spent(budget: dict, *, conn=None) -> float:
 
     snap = BudgetSnapshotRepo().get(budget_id=budget["id"], period_start=period_start)
     if snap is None:
-        spent, _ = aggregate_spent(
+        return aggregate_usage(
             budget=budget, period_start=period_start, period_end=period_end, conn=conn
         )
-        return spent
 
     # Snapshot exists — add runs from last_updated on; inclusive, because the
     # aggregate behind it stopped strictly below that same cutoff.
-    from sqlalchemy import and_, func, select
+    from sqlalchemy import and_, select
 
-    from pf_core.budget.repo import apply_scope_filter
+    from pf_core.budget.repo import apply_scope_filter, usage_columns
     from pf_core.db.connection import transaction
     from pf_core.llm.tracking.schema import llm_runs
 
     def _delta(c):
-        q = select(func.coalesce(func.sum(llm_runs.c.cost_usd), 0)).where(
+        q = select(*usage_columns()).where(
             and_(
                 llm_runs.c.created_at >= snap["last_updated"],
                 llm_runs.c.created_at < period_end,
                 llm_runs.c.status.notin_(["cache_hit", "budget_blocked"]),
             )
         )
-        return float(c.execute(apply_scope_filter(q, budget)).scalar() or 0.0)
+        return c.execute(apply_scope_filter(q, budget)).fetchone()
 
     if conn is not None:
-        delta = _delta(conn)
+        usd, tokens, calls = _delta(conn)
     else:
         with transaction() as c:
-            delta = _delta(c)
-    return float(snap["spent_usd"]) + delta
+            usd, tokens, calls = _delta(c)
+    return {
+        "usd": float(snap["spent_usd"]) + float(usd or 0),
+        "tokens": int(snap.get("spent_tokens") or 0) + int(tokens or 0),
+        "calls": int(snap.get("run_count") or 0) + int(calls or 0),
+    }
+
+
+def current_spent(budget: dict, *, conn=None) -> float:
+    """USD-only view of :func:`current_usage`."""
+    return float(current_usage(budget, conn=conn)["usd"])
 
 
 _current_spent = current_spent
@@ -290,8 +300,9 @@ def _maybe_log_threshold(
     spent_before: float,
     spent_after: float,
 ) -> None:
+    # Soft thresholds are USD-only: the fractions anchor to limit_usd.
     thresholds = budget.get("soft_thresholds") or []
-    if not thresholds:
+    if not thresholds or budget.get("limit_usd") is None:
         return
     limit = float(budget["limit_usd"])
     period_start = compute_period_start(budget["period"])
@@ -368,6 +379,8 @@ def check_budget(
     *,
     agent_type: str | None = None,
     projected_cost_usd: float,
+    projected_tokens: int | None = None,
+    projected_calls: int | None = None,
     job_id: int | None = None,
     job_kind: str | None = None,
     tags: list[str] | None = None,
@@ -375,12 +388,20 @@ def check_budget(
 ) -> None:
     """Pre-call guard. Raises :class:`CostBudgetExceeded` if a block scope is over cap.
 
+    Each budget is enforced on every dimension it configures a limit for —
+    USD against ``projected_cost_usd``, tokens against ``projected_tokens``,
+    calls against ``projected_calls``. Soft thresholds are USD-only.
+
     When no enabled scope matches, the call is uncapped and logged as
     ``budget_no_scopes_matched`` rather than passing silently.
 
     Args:
         agent_type: Agent slug (optional — skips agent scope when None).
         projected_cost_usd: Estimated cost of the planned call.
+        projected_tokens: Estimated prompt + completion tokens (None = 0).
+        projected_calls: Number of calls being planned. ``None`` counts as 1 —
+            the guard fronts exactly one call by definition; pass an explicit
+            ``0`` for a pure state read that plans no call.
         job_id: Current job id (checks job_id scope when given).
         job_kind: Current job kind (checks job_kind scope when given).
         tags: Tags attached to the call (checks tag scopes).
@@ -388,8 +409,9 @@ def check_budget(
             expected to attach a ``budget:override`` tag + outcome row.
 
     Raises:
-        CostBudgetExceeded: First matching block scope whose spent + projected
-            exceeds the limit. Warn scopes log only.
+        CostBudgetExceeded: First matching block scope with a dimension whose
+            spent + projected exceeds its limit (``exc.dimension`` names it).
+            Warn scopes log only.
     """
     if override:
         logger.info(
@@ -417,32 +439,50 @@ def check_budget(
     budgets.sort(key=lambda b: (order.get(b["scope_kind"], 99), b["period"]))
 
     for budget in budgets:
-        spent = current_spent(budget)
-        after = spent + projected_cost_usd
-        _maybe_log_threshold(budget=budget, spent_before=spent, spent_after=after)
+        usage = current_usage(budget)
+        spent = float(usage["usd"])
+        _maybe_log_threshold(
+            budget=budget, spent_before=spent, spent_after=spent + projected_cost_usd
+        )
 
-        limit = float(budget["limit_usd"])
-        if after <= limit:
-            continue
+        dimensions = (
+            ("usd", budget.get("limit_usd"), spent, float(projected_cost_usd)),
+            ("tokens", budget.get("limit_tokens"), usage["tokens"], projected_tokens or 0),
+            (
+                "calls",
+                budget.get("limit_calls"),
+                usage["calls"],
+                1 if projected_calls is None else projected_calls,
+            ),
+        )
+        for dimension, raw_limit, dim_spent, dim_projected in dimensions:
+            if raw_limit is None:
+                continue
+            limit = float(raw_limit)
+            if dim_spent + dim_projected <= limit:
+                continue
 
-        action = budget.get("action", "block")
-        if action == "warn":
-            logger.warning(
-                "budget_warn_exceeded",
+            action = budget.get("action", "block")
+            if action == "warn":
+                logger.warning(
+                    "budget_warn_exceeded",
+                    scope_kind=budget["scope_kind"],
+                    scope_value=budget.get("scope_value"),
+                    period=budget["period"],
+                    dimension=dimension,
+                    spent=round(float(dim_spent), 4),
+                    projected=round(float(dim_projected), 4),
+                    limit=round(limit, 4),
+                )
+                continue
+
+            raise CostBudgetExceeded(
                 scope_kind=budget["scope_kind"],
                 scope_value=budget.get("scope_value"),
                 period=budget["period"],
-                spent=round(spent, 4),
-                projected=round(projected_cost_usd, 4),
-                limit=round(limit, 4),
+                limit_value=limit,
+                spent_value=dim_spent,
+                projected_value=dim_projected,
+                dimension=dimension,
+                usd=(float(budget.get("limit_usd") or 0.0), spent, float(projected_cost_usd)),
             )
-            continue
-
-        raise CostBudgetExceeded(
-            scope_kind=budget["scope_kind"],
-            scope_value=budget.get("scope_value"),
-            period=budget["period"],
-            limit_usd=limit,
-            spent_usd=spent,
-            projected_usd=projected_cost_usd,
-        )

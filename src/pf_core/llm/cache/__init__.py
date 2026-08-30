@@ -31,6 +31,7 @@ Quick start::
         model=cfg["model"],
         parsed_output=parsed,
         raw_response=raw,
+        usage=usage,  # refuses the store when finish_reason says truncated
     )
 
 See ``docs/llm-cache.md`` for the full guide.
@@ -53,7 +54,7 @@ from pf_core.llm.cache.config import (  # noqa: F401
     clear_config_cache,
     get_agent_cache_config,
 )
-from pf_core.llm.cache.exact import ExactCacheRepo
+from pf_core.llm.cache.exact import ExactCacheRepo, cache_stats
 from pf_core.llm.cache.invalidate import (  # noqa: F401
     by_agent,
     by_model,
@@ -161,10 +162,17 @@ def cache_store(
     parsed_output: Any = None,
     raw_response: str | None = None,
     canonical_text: str | None = None,  # reserved for future semantic store
+    usage: dict | None = None,
+    truncated: bool | None = None,
 ) -> None:
     """Store a response in the cache for future lookup.
 
-    No-op when exact caching is disabled for *agent_type*.
+    No-op when exact caching is disabled for *agent_type*. Refuses the store
+    when the response is known-truncated — a cache hit replays stored text
+    with no finish reason, so the flag would be lost forever. An explicit
+    ``truncated=`` wins; otherwise truncation is derived from ``usage`` via
+    :func:`~pf_core.llm.parse.truncated_from_usage`. Unknown truncation
+    (neither given) stores as before.
 
     Args:
         agent_type: Agent slug used to load TTL policy.
@@ -174,10 +182,23 @@ def cache_store(
         parsed_output: Parsed JSON to cache.
         raw_response: Raw LLM response string to cache.
         canonical_text: Canonicalized text, reserved for future semantic indexing.
+        usage: The client ``usage`` dict; its ``finish_reason`` decides
+            truncation when ``truncated`` is not given.
+        truncated: Explicit truncation flag; ``True`` skips the store
+            (logged as ``cache_store_skipped_truncated``).
     """
     cfg = get_agent_cache_config(agent_type)
 
     if not cfg.exact:
+        return
+
+    if truncated is None and usage is not None:
+        # Lazy: parse needs the [validate] extra; the cache alone must not.
+        from pf_core.llm.parse import truncated_from_usage
+
+        truncated = truncated_from_usage(usage)
+    if truncated is True:
+        logger.info("cache_store_skipped_truncated", agent_type=agent_type)
         return
 
     repo = ExactCacheRepo()
@@ -222,6 +243,7 @@ __all__ = [
     "CacheHit",
     # High-level helpers
     "cache_lookup",
+    "cache_stats",
     "cache_store",
     "record_cache_hit",
     # Repos

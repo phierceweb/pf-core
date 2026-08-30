@@ -1,18 +1,11 @@
 """Tracked LLM calls — invoke a client and record exactly one ``llm_runs`` row.
 
-Two shapes over the same recording contract (failure rows on client
-exceptions, then re-raise):
-
-- :func:`tracked_call` — render a spec into a single user message, resolve
-  its ``system_prompt_id``, invoke, record; with ``expect_json=True``, parse
-  with one tracked retry (linked via ``llm_run_links.relation="retry"``),
-  raising :class:`LlmJsonError` (raw response on ``.raw``) on exhaustion.
-- :func:`tracked_messages_call` — the same contract for a verbatim message
-  list.
+:func:`tracked_call` renders a prompt spec; :func:`tracked_messages_call`
+takes a verbatim message list. Both record a failure row on a client
+exception and re-raise.
 
 The client is injected: anything exposing ``chat(messages=..., model=...)
--> (content, usage)``. See ``docs/llm-tracked.md`` for usage and the
-comparison with the ``@track_run`` decorator.
+-> (content, usage)``. See ``docs/llm-tracked.md``.
 """
 
 from __future__ import annotations
@@ -20,7 +13,7 @@ from __future__ import annotations
 import time
 from typing import Any, Protocol
 
-from pf_core.exceptions import AppError, InvalidInputError
+from pf_core.exceptions import AppError, DataError, InvalidInputError
 from pf_core.llm.parse import parse_llm_json, truncated_from_usage
 from pf_core.llm.prompts import render_spec
 from pf_core.llm.recording import call_summary, current_session_metadata, record_call
@@ -39,11 +32,31 @@ except ImportError as e:  # pragma: no cover - exercised by the extra matrix
 
     raise extra_import_error("tracking", "sqlalchemy", feature="pf_core.llm.tracked") from e
 
-from pf_core.log import get_logger
+from pf_core.log import get_logger, log_exception
 
 logger = get_logger(__name__)
 
 _MAX_ERROR_LEN = 10_000
+
+
+def _mark_parse_failure(repo: LlmRunRepo, run_id: int | None) -> None:
+    """Best-effort: flip the rejected run's row to failed before LlmJsonError.
+
+    A DB error here must never mask the parse failure being raised.
+    """
+    if run_id is None:
+        return
+    try:
+        repo.mark_failed(
+            run_id,
+            error="response JSON unparseable after successful chat",
+            error_class="LlmJsonError",
+        )
+    except Exception as exc:
+        log_exception(
+            DataError("mark_failed write failed", context={"run_id": run_id}, cause=exc),
+            message_prepend="could not mark run failed",
+        )
 
 
 class LlmJsonError(AppError):
@@ -93,66 +106,38 @@ def tracked_call(
 ) -> tuple[Any, int | None]:
     """Run one tracked LLM call: render → invoke → record → optional JSON.
 
-    Renders ``spec[part]`` with the chosen placeholder ``style``, resolves
-    a ``system_prompt_id`` against ``llm_prompts`` (auto-registering the
-    ``agent_type`` on first use), sends the rendered text as the user
-    message, and records exactly one ``llm_runs`` row.
+    Renders ``spec[part]`` (auto-registering ``agent_type`` and the prompt
+    in ``llm_prompts``), sends it as the user message, and records exactly
+    one ``llm_runs`` row. Full semantics: ``docs/llm-tracked.md``.
 
     Args:
-        client: any object with ``chat(messages=..., model=...) ->
-            (content, usage)``. Construct it with whatever per-stage
-            options you need (model pin, ``--allowedTools``, timeout)
-            before passing it in.
-        agent_type: slug for ``llm_agent_types``. Auto-registered.
-        spec: dict from :func:`pf_core.llm.prompts.load_prompt_spec` —
-            must carry ``agent``, ``version`` and ``part``.
+        client: object with ``chat(messages=..., model=...) -> (content, usage)``.
+        agent_type: ``llm_agent_types`` slug, auto-registered.
+        spec: dict from :func:`pf_core.llm.prompts.load_prompt_spec`.
         model: model id/alias — passed to ``client.chat`` and recorded.
-        render_kwargs: placeholder substitution values. For ``style="@@"``
-            keys are upper-cased internally (token placeholders are
-            ``@@UPPER@@``); for ``style="brace"`` they pass through.
-            ``None``/empty for prompts with no placeholders.
-        part: which spec section to render and record (default
-            ``"system"``).
-        style: ``"@@"`` (default) or ``"brace"`` — see
-            :func:`pf_core.llm.prompts.render`.
-        provider: optional value written to ``llm_runs.provider``.
-        expect_json: when ``True``, parse the response via
-            ``parse_llm_json(recover=True, strict=True)`` and return the
-            parsed object; otherwise return the raw string.
-        json_retry: when ``True`` (and ``expect_json``), retry once on a
-            parse failure. The retry writes a second ``llm_runs`` row
-            linked to the first via ``llm_run_links.relation="retry"``.
-            Skipped when the provider reported truncation — the retry
-            would resend the same prompt under the same cap.
-        on_truncation: forwarded to :func:`parse_llm_json`. ``"raise"``
-            (default) treats a truncated response as a parse failure —
-            retried, then surfaced as :class:`LlmJsonError` — rather than
-            returning the salvaged prefix as if it were the whole answer.
-            ``"warn"`` opts back into the prefix. Truncation is taken from
-            the client's ``usage["finish_reason"]`` plus the bracket-level
-            recovery step; a client that reports no finish reason leaves
-            only the latter.
-        on_record_error: ``"warn"`` makes the tracking sink best-effort —
-            a failed ``record()`` logs a warning and yields ``run_id=None``
-            instead of masking the call result. A record failure never
-            replaces a client exception under either value.
-        repo: optional :class:`LlmRunRepo` to share a transaction or
-            route writes in tests. Defaults to a fresh instance.
+        render_kwargs: placeholder values (upper-cased for ``style="@@"``).
+        part: spec section to render and record (default ``"system"``).
+        style: ``"@@"`` or ``"brace"`` — see :func:`pf_core.llm.prompts.render`.
+        provider: optional ``llm_runs.provider`` value.
+        expect_json: parse the response and return the object instead of text.
+        json_retry: retry a parse failure once (second run row linked via
+            ``relation="retry"``); skipped when the provider reported
+            truncation — the retry would truncate identically.
+        on_truncation: ``"raise"`` (default) treats a provider-reported or
+            recovered truncation as a parse failure; ``"warn"`` returns the
+            salvaged prefix.
+        on_record_error: ``"warn"`` logs a failed ``record()`` and yields
+            ``run_id=None``; a record failure never masks a client exception.
+        repo: optional :class:`LlmRunRepo` to share a transaction/route tests.
 
     Returns:
-        ``(content_or_parsed, run_id)`` — ``content_or_parsed`` is a
-        string when ``expect_json`` is ``False``, else the parsed
-        dict/list. ``run_id`` is the row of the call whose output is
-        returned (the retry row when the retry succeeded), or ``None``
-        when the row could not be written under ``on_record_error="warn"``.
+        ``(content_or_parsed, run_id)`` — the retry row's id when the retry
+        succeeded; ``None`` when the row wasn't written under ``"warn"``.
 
     Raises:
-        LlmJsonError: ``expect_json`` is ``True`` and parsing failed on
-            both the initial call and the retry (or the retry was skipped
-            because ``json_retry`` is ``False`` or the response was known
-            to be truncated).
-        InvalidInputError: unknown ``on_truncation`` or ``on_record_error``
-            value.
+        LlmJsonError: parsing failed after the retry budget; the rejected
+            row is first marked failed via :meth:`LlmRunRepo.mark_failed`.
+        InvalidInputError: unknown ``on_truncation``/``on_record_error``.
     """
     if on_truncation not in ("warn", "raise"):
         raise InvalidInputError(f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}")
@@ -212,6 +197,7 @@ def tracked_call(
         # The retry resends the same prompt under the same cap, so a known
         # token-limit cut just truncates again at the caller's expense.
         if not json_retry or truncated:
+            _mark_parse_failure(_repo, run_id)
             raise LlmJsonError(content)
 
     retry_content, retry_usage, retry_run_id = _invoke_and_record(
@@ -235,6 +221,7 @@ def tracked_call(
         )
         return parsed, retry_run_id
     except InvalidInputError as exc:
+        _mark_parse_failure(_repo, retry_run_id)
         raise LlmJsonError(retry_content) from exc
 
 
@@ -339,33 +326,20 @@ def tracked_messages_call(
 ) -> tuple[str, dict, int | None]:
     """One tracked call with a verbatim *messages* list.
 
-    The messages-based sibling of :func:`tracked_call` (which renders a spec
-    into a single user message). Sends *messages* unchanged, records exactly
-    one ``llm_runs`` row — ``status="failed"`` with the error captured when
-    the client raises (then re-raises) — and returns
-    ``(content, usage, run_id)``.
+    The messages-based sibling of :func:`tracked_call`: sends *messages*
+    unchanged, records exactly one ``llm_runs`` row (``status="failed"``
+    when the client raises, then re-raises), and returns
+    ``(content, usage, run_id)``. Full semantics: ``docs/llm-tracked.md``.
 
-    ``input_hash`` defaults to
-    :func:`~pf_core.llm.tracking.compute_input_hash` over *messages* (with
-    model/sampling/configs), so the recorded key matches the exact cache's.
-
-    ``sampling`` is forwarded to ``chat()`` AND recorded; ``chat_kwargs`` is
-    forwarded only (transport options like ``response_format``/``timeout``
-    are not sampling). ``spec`` — a :func:`~pf_core.llm.prompts.load_prompt_spec`
-    dict, or minimally ``{"version": int, "system": str}`` — registers the
-    canonical system (and, when present, user) template in ``llm_prompts``
-    and stamps the ids on the run; ``spec_on_change`` is passed through to
-    ``resolve_prompt_id``. ``on_record_error="warn"`` makes the tracking sink
-    best-effort: a failed ``record()`` logs a warning and yields
-    ``run_id=None`` instead of masking the call result.
-
-    ``metadata`` is a flat dict split via
-    :func:`~pf_core.llm.tracking.split_metadata` and merged beneath explicit
-    ``tags``/``metrics`` (tags concatenated + deduped; explicit metrics win).
-    When a :mod:`pf_core.llm.recording` window is open, its session metadata
-    merges beneath ``metadata`` (call wins) and a per-call summary is
-    appended to the window on success and failure. ``job_id`` attributes the
-    run explicitly; ``None`` keeps ``record()``'s ambient-Job fallback.
+    Non-obvious contracts: ``input_hash`` defaults to
+    :func:`~pf_core.llm.tracking.compute_input_hash` over *messages*, so the
+    recorded key matches the exact cache's. ``sampling`` is forwarded AND
+    recorded; ``chat_kwargs`` is forwarded only (transport, not sampling).
+    ``metadata`` splits via :func:`~pf_core.llm.tracking.split_metadata` and
+    merges beneath explicit ``tags``/``metrics``; an open
+    :mod:`pf_core.llm.recording` window merges beneath ``metadata`` and
+    receives a per-call summary. ``on_record_error="warn"`` yields
+    ``run_id=None`` on a failed ``record()`` instead of masking the result.
 
     Raises:
         InvalidInputError: unknown ``on_record_error`` value.

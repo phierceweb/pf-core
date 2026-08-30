@@ -12,9 +12,27 @@ import json
 # The CLI's own truncation predicate, normalised to OpenRouter's "length".
 TRUNCATION_STOP_REASONS = ("max_tokens", "model_context_window_exceeded")
 
+_ENVELOPE_TOKEN_KEYS = {
+    "input_tokens": "prompt_tokens",
+    "output_tokens": "completion_tokens",
+    "cache_read_input_tokens": "cache_read_tokens",
+    "cache_creation_input_tokens": "cache_write_tokens",
+}
 
-def unwrap_envelope(stdout: str) -> tuple[str, str | None] | None:
-    """Read ``(content, finish_reason)`` out of a ``--output-format json`` envelope.
+
+def _envelope_tokens(envelope: dict) -> dict[str, int]:
+    usage = envelope.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
+    out: dict[str, int] = {}
+    for src, dst in _ENVELOPE_TOKEN_KEYS.items():
+        v = usage.get(src)
+        out[dst] = v if isinstance(v, int) and not isinstance(v, bool) else 0
+    return out
+
+
+def unwrap_envelope(stdout: str) -> tuple[str, str | None, dict[str, int]] | None:
+    """Read ``(content, finish_reason, tokens)`` out of a ``--output-format json`` envelope.
 
     Returns ``None`` for anything that is not the documented shape — the caller
     decides what that means. ``stop_reason`` is a nullable free string in the
@@ -23,6 +41,10 @@ def unwrap_envelope(stdout: str) -> tuple[str, str | None] | None:
     ``is_error`` envelope reports no reason at all — the CLI emits the result
     message after any error message, so a trailing error marks the whole run.
     A transcript array (``--verbose``) unwraps via its final ``result`` entry.
+
+    ``tokens`` maps the envelope's ``usage`` counts onto the shared usage-dict
+    keys (``prompt_tokens`` / ``completion_tokens`` / ``cache_read_tokens`` /
+    ``cache_write_tokens``); fields the envelope omits (older CLIs) are 0.
     """
     try:
         envelope = json.loads(stdout)
@@ -36,12 +58,13 @@ def unwrap_envelope(stdout: str) -> tuple[str, str | None] | None:
     text = envelope.get("result")
     if not isinstance(text, str):
         return None
+    tokens = _envelope_tokens(envelope)
     stop_reason = envelope.get("stop_reason")
     if envelope.get("is_error") or not isinstance(stop_reason, str):
-        return text.strip(), None
+        return text.strip(), None, tokens
     if stop_reason in TRUNCATION_STOP_REASONS:
-        return text.strip(), "length"
-    return text.strip(), stop_reason
+        return text.strip(), "length", tokens
+    return text.strip(), stop_reason, tokens
 
 
 def envelope_error(stdout: str) -> str | None:

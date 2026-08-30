@@ -12,13 +12,13 @@ repos:
         always_run: true
       - id: ruff
         name: ruff
-        entry: .venv/bin/ruff check src tests
+        entry: .venv/bin/ruff check src tests bin
         language: system
         pass_filenames: false
         always_run: true
       - id: ruff-format
         name: ruff format
-        entry: .venv/bin/ruff format --check src tests
+        entry: .venv/bin/ruff format --check src tests bin
         language: system
         pass_filenames: false
         always_run: true

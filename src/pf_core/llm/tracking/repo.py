@@ -24,6 +24,9 @@ from pf_core.llm.tracking._resolvers import (
     resolve_agent_type_id,
     resolve_llm_model_id,
 )
+from pf_core.log import get_logger
+
+logger = get_logger(__name__)
 
 
 # Columns that record() unpacks from the ``sampling`` dict.
@@ -42,6 +45,8 @@ _USAGE_COLS = (
 
 # Recursion cap for the messages digest; message trees are a few levels deep.
 _DIGEST_MAX_DEPTH = 12
+
+_MAX_ERROR_LEN = 10_000
 
 
 def _compute_input_hash(
@@ -350,6 +355,29 @@ class LlmRunRepo(Repository):
                 )
 
         return int(run_id)
+
+    def mark_failed(self, run_id: int, *, error: str, error_class: str | None = None) -> None:
+        """Flip an existing run to ``status="failed"``, recording the error.
+
+        For a caller that recorded a successful call and *then* failed to use
+        the response (parse, validation): mark the row that carries the real
+        tokens instead of inserting a phantom second zero-token row. Unknown
+        ``run_id`` logs a warning and returns — this runs inside error paths,
+        so it never raises for a missing row.
+        """
+        with self._tx() as conn:
+            result = conn.execute(
+                s.llm_runs.update()
+                .where(s.llm_runs.c.id == run_id)
+                .values(
+                    status="failed",
+                    error=error[:_MAX_ERROR_LEN],
+                    error_class=error_class,
+                )
+            )
+            updated = result.rowcount
+        if updated == 0:
+            logger.warning("llm_run_mark_failed_unknown_id", run_id=run_id)
 
     # ------------------------------------------------------------------
     # Read
