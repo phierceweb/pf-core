@@ -35,7 +35,7 @@ _md = MetaData()
 _widgets = Table(
     "widgets",
     _md,
-    Column("slug", Text, primary_key=True),
+    Column("slug", String(64), primary_key=True),
     Column("name", Text),
     Column("n", Integer),
 )
@@ -120,8 +120,9 @@ def test_mysql_family_dialects(name):
     ii = _sql(_ii(name), dialect)
     # No-op ON DUPLICATE KEY UPDATE — NOT INSERT IGNORE (which would swallow non-duplicate errors).
     assert "INSERT IGNORE" not in ii
-    assert "ON DUPLICATE KEY UPDATE SLUG = WIDGETS.SLUG" in ii
-    assert "RETURNING" not in ii  # MySQL has none here; the count comes from rowcount
+    assert "ON DUPLICATE KEY UPDATE SLUG = IF(LAST_INSERT_ID(" in ii
+    assert "WIDGETS.SLUG, WIDGETS.SLUG)" in ii
+    assert "RETURNING" not in ii  # MySQL has none here; the count comes from lastrowid
     up = _sql(_up(name), dialect)
     assert "ON DUPLICATE KEY UPDATE" in up
     set_clause = up.split("ON DUPLICATE KEY UPDATE", 1)[1]
@@ -190,7 +191,7 @@ def test_mysql_roundtrip(mysql_engine):
     try:
         with mysql_engine.begin() as c:
             assert insert_ignore(c, t, {"slug": "a", "name": "A", "n": 1}, conflict=["slug"]) == 1
-            # second insert conflicts → skipped (rowcount 0) AND the original row is untouched
+            # second insert conflicts → skipped AND the original row is untouched
             assert insert_ignore(c, t, {"slug": "a", "name": "A2", "n": 2}, conflict=["slug"]) == 0
             row = c.execute(
                 text("SELECT name, n FROM pf_core_upsert_test WHERE slug = 'a'")

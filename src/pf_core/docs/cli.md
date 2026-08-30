@@ -38,7 +38,9 @@ Wraps `app()` with standardized exception handling:
 |-----------|----------|
 | `typer.Exit(N)` | Exits with code `N`. See note below. |
 | `ClickException` | Show the usage/error message, exit with the exception's own `exit_code` |
+| `InvalidInputError` raised in a typer `parser=` | That error's message, exit 1, as for `FlowException`. click catches it as a `ValueError` and would print a usage error naming only the raw value; a `FlowException` that is a `ValueError` in its own right keeps that usage error, as it always did |
 | `FlowException` | Print message to stderr (red), exit 1 |
+| pydantic `ValidationError` wrapping a validator's `InvalidInputError` | That error's message, exit 1, as for `FlowException` — whatever else the `ValidationError` holds (see [exceptions.md](exceptions.md)); any other `ValidationError` propagates |
 | `AppError` | `log_exception()` + print to stderr, exit 1 |
 | `typer.Abort` | Print "Interrupted.", exit 130 |
 | `KeyboardInterrupt` | Exit 130 silently — typer converts it to `Exit(130)` before `run_cli` sees it |

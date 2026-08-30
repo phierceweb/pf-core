@@ -5,12 +5,12 @@ Two branches — separating expected domain failures from actual errors.
 Services raise domain exceptions; the HTTP layer translates them to status codes.
 
 FlowException (expected domain failures — not bugs)
-├── NotFoundError                   → 404  entity does not exist
-├── InvalidInputError               → 422  bad data from caller
-├── PreconditionError               → 409  state conflict (already done, wrong status)
-├── ActionNotAllowedError           → 403  business rule says no
-└── ConfigurationError              → 500  missing/invalid config = broken app
-    └── PipelineNotRegisteredError  → 500  validator pipeline not registered
+├── NotFoundError                     → 404  entity does not exist
+├── InvalidInputError (ValueError)    → 422  bad data from caller
+├── PreconditionError (RuntimeError)  → 409  state conflict (already done, wrong status)
+├── ActionNotAllowedError             → 403  business rule says no
+└── ConfigurationError                → 500  missing/invalid config = broken app
+    └── PipelineNotRegisteredError    → 500  validator pipeline not registered
 
 AppError (actual errors — bugs, infra failures)
 ├── ClientError             → 500  external API failed
@@ -20,6 +20,13 @@ AppError (actual errors — bugs, infra failures)
 The web app_factory registers a handler for each FlowException subclass so
 every domain exception maps to the correct HTTP status automatically.
 
+InvalidInputError and PreconditionError also subclass the builtin they replace, so
+an existing ``except ValueError`` / ``except RuntimeError`` still catches them and
+pydantic converts an InvalidInputError raised in a validator. FlowException comes
+first in their MRO, so a FlowException handler wins over a builtin one. pf-core's
+boundaries answer a validation error that wraps one as that InvalidInputError
+(``unwrap_flow_exception``), as they did before pydantic could wrap it.
+
 Service-layer rule: only raise FlowException or AppError subclasses.
 Never raise bare Exception — it loses structured context and is unsearchable in logs.
 
@@ -27,6 +34,9 @@ Log key: APP-{ClassName}  (set by log_exception() in pf_core.log)
 """
 
 from __future__ import annotations
+
+import sys
+from typing import Any
 
 
 # ---------------------------------------------------------------------------
@@ -42,14 +52,14 @@ class FlowException(Exception):
     """
 
 
-class InvalidInputError(FlowException):
+class InvalidInputError(FlowException, ValueError):
     """Bad input parameters — mapped to 422 by the HTTP layer.
 
     The caller supplied data that fails validation.
     """
 
 
-class PreconditionError(FlowException):
+class PreconditionError(FlowException, RuntimeError):
     """Required state is not met — mapped to 409 Conflict by the HTTP layer.
 
     Examples: task already complete, entity not in expected state,
@@ -190,3 +200,42 @@ class TaskError(AppError):
     ) -> None:
         super().__init__(message, context, cause=cause)
         self.running_log: str = running_log
+
+
+# The validation errors that keep each original exception in an error's ``ctx``; looked up
+# in sys.modules, since an exception of a module never imported cannot be one of them.
+_VALIDATION_ERRORS = (
+    ("pydantic_core", "ValidationError"),
+    ("fastapi.exceptions", "ValidationException"),
+)
+
+
+def _validation_errors(exc: BaseException) -> list[Any]:
+    for module, name in _VALIDATION_ERRORS:
+        cls = getattr(sys.modules.get(module), name, None)
+        if cls is not None and isinstance(exc, cls):
+            return list(exc.errors())
+    return []
+
+
+def _converted_before(cls: type) -> bool:
+    """Whether pydantic (or click) converted ``cls`` before InvalidInputError became a ValueError."""
+    if cls is InvalidInputError:
+        return False
+    return cls in (ValueError, AssertionError) or any(map(_converted_before, cls.__bases__))
+
+
+def unwrap_flow_exception(exc: BaseException) -> FlowException | None:
+    """The FlowException a pydantic validator raised, when pydantic wrapped it, else None.
+
+    Before InvalidInputError was a ValueError, one raised in a validator escaped validation as
+    itself. pydantic now wraps it in a ``ValidationError`` (FastAPI: a ``RequestValidationError``,
+    ``WebSocketRequestValidationError`` or ``ResponseValidationError``), keeping each original
+    in its error's ``ctx``. This returns the first that would have escaped, whatever else is in
+    the error, so a boundary answers it as it did before; None for ordinary bad input.
+    """
+    for error in _validation_errors(exc):
+        raised = (error.get("ctx") or {}).get("error") if isinstance(error, dict) else None
+        if isinstance(raised, InvalidInputError) and not _converted_before(type(raised)):
+            return raised
+    return None

@@ -101,7 +101,7 @@ On exception the wrapper:
 | `label_fn` | `Callable[[Any], str] \| None` | `None` (uses `str(item)`) | Extracts a string label from one item |
 | `reporter` | `Reporter \| None` | `None` | Optional `pf_core.output.Reporter` for user-facing error lines |
 | `log_label` | `str` | `"worker failed"` | Prefix for `log_exception` — pass per-service prefix for log grepping |
-| `catch` | exception type or tuple | `Exception` | Exception types to absorb; narrow to let others propagate |
+| `catch` | exception type or tuple | `Exception` | Exception types to absorb; narrow to let others propagate. A validation error wrapping a validator's `InvalidInputError` is matched and recorded as that error ([exceptions.md](exceptions.md#builtin-bases-valueerror-and-runtimeerror)) |
 
 ## Batch summary log
 

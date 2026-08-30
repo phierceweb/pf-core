@@ -12,9 +12,16 @@ app framework (``[db]``, ``[web]``, ``[jobs]``, ``[tracking]``, ``[eval]``,
 ``[admin]``). See ``docs/INSTALLATION.md`` for the extras matrix.
 """
 
-from importlib.metadata import PackageNotFoundError, version
 
-try:
-    __version__ = version("pf-core")
-except PackageNotFoundError:  # running from a source tree with no install
-    __version__ = "0.0.0+unknown"
+def __getattr__(name: str) -> str:
+    """PEP 562: ``__version__`` reads package metadata on first access, not at import."""
+    if name != "__version__":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        value = version("pf-core")
+    except PackageNotFoundError:  # running from a source tree with no install
+        value = "0.0.0+unknown"
+    globals()["__version__"] = value
+    return value

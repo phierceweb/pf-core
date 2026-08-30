@@ -25,7 +25,7 @@ This is the orchestration layer on top of [LLM tracking](llm-tracking.md). It do
 
 **Do not:** use it for multi-message conversations, streaming, or flows that need to attach configs/validations/metrics to the run. Those compose `LlmRunRepo.record()` directly.
 
-The client is injected, never coded in. Bake per-stage options (model pin, `--allowedTools`, timeout) into the client before passing it — the orchestrator stays backend-agnostic.
+The client is injected, never coded in. Bake per-stage options (model pin, `tools`, timeout) into the client before passing it — the orchestrator stays backend-agnostic.
 
 ---
 

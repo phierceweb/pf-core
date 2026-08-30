@@ -431,3 +431,51 @@ class TestItemLabel:
 
     def test_integer_item(self):
         assert _item_label(42) == "42"
+
+
+class TestResilientValidatorFlowException:
+    """A worker builds a model whose validator raises InvalidInputError: absorbed and recorded as
+    that InvalidInputError, as before pydantic wrapped it."""
+
+    @staticmethod
+    def _worker():
+        from pydantic import BaseModel, field_validator
+
+        from pf_core.exceptions import InvalidInputError
+
+        class Row(BaseModel):
+            day: str
+
+            @field_validator("day")
+            @classmethod
+            def _day(cls, v: str) -> str:
+                raise InvalidInputError(f"not a date: {v}")
+
+        return lambda item: Row(day=item)
+
+    def test_catch_flow_exception_absorbs_it(self):
+        from pf_core.exceptions import FlowException
+
+        failures: list[tuple[str, str]] = []
+        run_parallel(["x"], resilient(failures, catch=FlowException)(self._worker()), workers=1)
+        assert failures == [("x", "not a date: x")]
+
+    def test_the_default_catch_records_its_message(self, caplog):
+        import logging
+
+        failures: list[tuple[str, str]] = []
+        with caplog.at_level(logging.DEBUG):
+            run_parallel(["x"], resilient(failures)(self._worker()), workers=1)
+        assert failures == [("x", "not a date: x")]
+        [record] = [r for r in caplog.records if r.name == "exceptions"]
+        assert (record.levelno, record.msg["event"]) == (logging.WARNING, "APP-InvalidInputError")
+
+    def test_a_catch_it_does_not_match_lets_it_propagate(self):
+        import pytest
+
+        from pf_core.exceptions import AppError
+
+        failures: list[tuple[str, str]] = []
+        with pytest.raises(Exception, match="not a date"):
+            run_parallel(["x"], resilient(failures, catch=AppError)(self._worker()), workers=1)
+        assert failures == []

@@ -15,6 +15,9 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from pf_core.exceptions import ConfigurationError
+from pf_core.guards.adoption import allowlist_block, baseline_block
+from pf_core.guards.comments import total_root_problems
 from pf_core.guards.config import (
     HARD_DEFAULT,
     SOFT_DEFAULT,
@@ -24,11 +27,13 @@ from pf_core.guards.config import (
     load_guards_config,
     prefix_limit,
 )
+from pf_core.guards.framework_config import FrameworkConfig
 from pf_core.guards.layering import (
     filter_allowlisted,
     layering_violations,
     stale_allowlist_entries,
 )
+from pf_core.guards.opt_in import report_opt_in
 
 
 _DEFAULT_CONFIG = ".pf-guards.toml"
@@ -43,7 +48,8 @@ class FileSizeViolation:
 
 
 def _line_count(p: Path) -> int:
-    return len(p.read_text(encoding="utf-8").splitlines())
+    # Bytes split only where Python ends a row, and no source encoding can fail the read.
+    return len(p.read_bytes().splitlines())
 
 
 def scan_file_sizes(
@@ -129,9 +135,9 @@ def _load_baseline(path: str | None) -> dict[str, int]:
     return {k: int(v) for k, v in json.loads(p.read_text(encoding="utf-8")).items()}
 
 
-def _config_problems(*, hard: int, soft: int, cfg: GuardsConfig) -> list[str]:
+def _config_problems(*, hard: int, soft: int, cfg: GuardsConfig, roots: list[str]) -> list[str]:
     """Nonsense-value checks for the resolved gate config (fail loud, exit 2)."""
-    out: list[str] = []
+    out = total_root_problems(roots, cfg.comment_budget) if cfg.comment_budget is not None else []
     if hard <= 0:
         out.append(f"hard must be positive (got {hard})")
     if soft <= 0:
@@ -149,15 +155,7 @@ def _config_problems(*, hard: int, soft: int, cfg: GuardsConfig) -> list[str]:
     return out
 
 
-def run_cli(argv: list[str] | None = None) -> int:
-    """Run the structural gate. Returns the process exit code (0 ok, 1 fail).
-
-    Reads [tool.pf_guards] from --config (default ./.pf-guards.toml); explicit
-    flags override config values. A missing config file exits 2 — except the
-    default path with --root given, which is an ad-hoc, flag-specified run
-    (gate adoption). Runs the file-size gate and the layering checker; a hard
-    size violation or any layering violation fails the gate.
-    """
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pf-guards", description="pf-core structural gate")
     parser.add_argument("--config", default=_DEFAULT_CONFIG)
     parser.add_argument("--root", default=None)
@@ -176,12 +174,38 @@ def run_cli(argv: list[str] | None = None) -> int:
         help="print a paste-ready [tool.pf_guards.baseline] block grandfathering "
         "every file currently over its hard limit (gate adoption helper)",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--framework",
+        action="store_true",
+        help="run only the framework check, with every rule on when "
+        "[tool.pf_guards.framework] is absent",
+    )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="list framework breaches without failing on them (rollout)",
+    )
+    return parser
+
+
+def run_cli(argv: list[str] | None = None) -> int:
+    """Run the structural gate. Returns the process exit code (0 ok, 1 fail).
+
+    Reads [tool.pf_guards] from --config (default ./.pf-guards.toml); explicit
+    flags override config values. A missing config file exits 2 — except the
+    default path with --root given, which is an ad-hoc, flag-specified run
+    (gate adoption). Runs the file-size gate and the layering checker; a hard
+    size violation or any layering violation fails the gate, as does a function
+    over max_function_lines or prose over comment_budget when set. The framework check
+    runs when [tool.pf_guards.framework] exists, or on --framework (it alone) or
+    --report (its breaches listed, never failing).
+    """
+    args = _parser().parse_args(argv)
 
     if Path(args.config).is_file():
         try:
             cfg = load_guards_config(args.config)
-        except (tomllib.TOMLDecodeError, ValueError) as e:
+        except (tomllib.TOMLDecodeError, ValueError, ConfigurationError) as e:
             print(f"pf-guards: malformed config {args.config}: {e}")
             return 2
     elif args.config == _DEFAULT_CONFIG and args.root is not None:
@@ -199,15 +223,24 @@ def run_cli(argv: list[str] | None = None) -> int:
     hard = args.hard if args.hard is not None else cfg.hard
     soft = args.soft if args.soft is not None else cfg.soft
 
-    problems = _config_problems(hard=hard, soft=soft, cfg=cfg)
+    problems = _config_problems(hard=hard, soft=soft, cfg=cfg, roots=roots)
     if problems:
         for p in problems:
             print(f"pf-guards: bad config: {p}")
         return 2
-    for r in roots:
+    run_fw = cfg.framework is not None or args.framework or args.report
+    fw_cfg = cfg.framework or FrameworkConfig()
+    fw_roots = roots if args.root is not None or fw_cfg.root is None else fw_cfg.root
+    fw_roots = [fw_roots] if isinstance(fw_roots, str) else list(fw_roots)
+    for r in [*roots, *(fw_roots if run_fw else [])]:
         if not Path(r).is_dir():
             print(f"pf-guards: scan root not found: {r} (set [tool.pf_guards] root or --root)")
             return 2
+    if args.framework:
+        only = report_opt_in(
+            fw_roots, GuardsConfig(), framework_roots=fw_roots, framework=fw_cfg, report=args.report
+        )
+        return 1 if only else 0
 
     multi = len(roots) > 1
     raw: list[FileSizeViolation] = []
@@ -223,9 +256,9 @@ def run_cli(argv: list[str] | None = None) -> int:
 
     if args.emit_baseline or args.emit_allowlist:
         if args.emit_baseline:
-            _print_baseline_block(raw)
+            print(baseline_block({v.path: v.lines for v in raw if v.severity == "hard"}))
         if args.emit_allowlist:
-            _print_allowlist_block(layering)
+            print(allowlist_block(layering))
         return 0
 
     stale_bl = stale_baseline_entries(raw, baseline=baseline)
@@ -247,22 +280,11 @@ def run_cli(argv: list[str] | None = None) -> int:
         print(f"\n{len(hard_v)} file(s) over the hard limit. Split them or update the baseline.")
     if layering:
         print(f"\n{len(layering)} layering violation(s).")
-    return 1 if hard_v or layering or stale_bl or stale_al else 0
-
-
-def _print_baseline_block(raw: list[FileSizeViolation]) -> None:
-    """Paste-ready TOML grandfathering every file currently over its hard limit."""
-    print("[tool.pf_guards.baseline]")
-    for v in sorted((v for v in raw if v.severity == "hard"), key=lambda v: v.path):
-        print(f'"{v.path}" = {v.lines}')
-
-
-def _print_allowlist_block(violations: list) -> None:
-    """Paste-ready TOML for the current (un-allowlisted) layering violations."""
-    print("[tool.pf_guards.layering_allowlist]")
-    by_path: dict[str, set[str]] = {}
-    for v in violations:
-        by_path.setdefault(v.path, set()).add(v.imported)
-    for path in sorted(by_path):
-        mods = ", ".join(f'"{m}"' for m in sorted(by_path[path]))
-        print(f'"{path}" = [{mods}]')
+    opt_failed = report_opt_in(
+        roots,
+        cfg,
+        framework_roots=fw_roots if run_fw else None,
+        framework=fw_cfg,
+        report=args.report,
+    )
+    return 1 if hard_v or layering or stale_bl or stale_al or opt_failed else 0

@@ -169,33 +169,38 @@ def get_engine(url: str | None = None) -> Engine:
                 cur.execute(f"PRAGMA busy_timeout = {busy_timeout}")
                 cur.close()
 
-        elif dialect == "mysql":
+        else:
             _install_mysqldb_shim(resolved_url)
             engine = create_engine(resolved_url, connect_args=connect_args(resolved_url))
-
-            @event.listens_for(engine, "connect")
-            def _mysql_session_setup(dbapi_conn, _record):
-                # Pin the session to UTC so TIMESTAMP round-trips as naive-UTC
-                # (SQLite's contract). Otherwise CURRENT_TIMESTAMP uses the
-                # server's time_zone and every naive-UTC comparison skews.
-                cur = dbapi_conn.cursor()
-                cur.execute("SET time_zone = '+00:00'")
-                cur.execute("SET foreign_key_checks = 1")
-                cur.close()
-
-        else:  # postgresql
-            engine = create_engine(resolved_url, connect_args=connect_args(resolved_url))
-
-            @event.listens_for(engine, "connect")
-            def _postgres_session_setup(dbapi_conn, _record):
-                # As above: framework timestamp columns are TIMESTAMPTZ here,
-                # so an unpinned session skews every naive-UTC comparison.
-                cur = dbapi_conn.cursor()
-                cur.execute("SET TIME ZONE 'UTC'")
-                cur.close()
+            _install_server_session_setup(engine, dialect)
 
         _engine = engine
         return _engine
+
+
+def _install_server_session_setup(engine: Engine, dialect: str) -> None:
+    """Pin every new MySQL/Postgres connection on *engine* to pf_core's session contract."""
+    if dialect == "mysql":
+
+        @event.listens_for(engine, "connect")
+        def _mysql_session_setup(dbapi_conn, _record):
+            # Pin the session to UTC so TIMESTAMP round-trips as naive-UTC
+            # (SQLite's contract). Otherwise CURRENT_TIMESTAMP uses the
+            # server's time_zone and every naive-UTC comparison skews.
+            cur = dbapi_conn.cursor()
+            cur.execute("SET time_zone = '+00:00'")
+            cur.execute("SET foreign_key_checks = 1")
+            cur.close()
+
+    elif dialect == "postgresql":
+
+        @event.listens_for(engine, "connect")
+        def _postgres_session_setup(dbapi_conn, _record):
+            # As above: framework timestamp columns are TIMESTAMPTZ here,
+            # so an unpinned session skews every naive-UTC comparison.
+            cur = dbapi_conn.cursor()
+            cur.execute("SET TIME ZONE 'UTC'")
+            cur.close()
 
 
 def reset_engine() -> None:

@@ -36,6 +36,22 @@ class TestCheckLayering:
         _mk(tmp_path / "scripts/tool.py", "from app.services.x import y\n")
         assert check_layering(tmp_path) == []
 
+    def test_a_file_with_a_coding_cookie_is_checked(self, tmp_path: Path) -> None:
+        p = tmp_path / "app/repo/legacy.py"
+        p.parent.mkdir(parents=True)
+        body = "# -*- coding: latin-1 -*-\nNAME = 'caf\xe9'\nfrom app.services.x import y\n"
+        p.write_bytes(body.encode("latin-1"))
+        assert [(v.path, v.line) for v in check_layering(tmp_path)] == [("app/repo/legacy.py", 3)]
+
+    def test_skip_comment_in_a_file_with_a_coding_cookie(self, tmp_path: Path) -> None:
+        p = tmp_path / "app/repo/legacy.py"
+        p.parent.mkdir(parents=True)
+        body = (
+            "# -*- coding: latin-1 -*-\nNAME = 'caf\xe9'\n# lint-layers: skip\nimport app.api.x\n"
+        )
+        p.write_bytes(body.encode("latin-1"))
+        assert check_layering(tmp_path) == []
+
 
 class TestLayeringParity:
     def test_orchestrator_importing_repo_is_violation(self, tmp_path: Path) -> None:

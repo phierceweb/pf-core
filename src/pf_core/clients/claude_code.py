@@ -8,48 +8,7 @@ interface as :class:`pf_core.clients.openrouter.OpenRouterClient` so a
 caller can swap clients transparently. Per-agent routing between the two
 backends is the job of the model router — :func:`pf_core.llm.router.resolve_agent`.
 
-Notes:
-
-- ``model`` is passed verbatim as ``--model X`` to
-  the CLI. Without it, ``claude --print`` runs against the user's active
-  interactive session model, which can silently chew through Claude Max
-  quota in batch consumers. Resolution: per-call ``chat(model=...)`` >
-  ``ClaudeCodeClient(model=...)`` constructor arg > ``$PF_CORE_CLAUDE_CODE_MODEL``
-  env var > no flag (session default). The string is whatever
-  ``claude --model`` accepts (``haiku``, ``sonnet``, ``opus``, or full
-  IDs like ``claude-haiku-4-5``).
-- ``temperature``, ``max_tokens``, ``top_p``, and ``response_format`` are
-  accepted but **ignored** — the active Claude Code session controls
-  sampling. They're in the signature so callers can use the same kwargs
-  they'd use for OpenRouter without code changes.
-- Token counts in the returned ``usage`` dict come from the JSON envelope's
-  ``usage`` block (prompt / completion / cache read / cache write). An envelope
-  that omits them (older CLIs) yields 0 and logs
-  ``claude_code_envelope_without_usage``; text mode — a consumer
-  ``--output-format`` or ``--verbose`` in ``extra_args`` — yields 0 silently.
-  ``prompt_tokens`` is the uncached input, matching the other clients.
-  ``reasoning_tokens`` is always 0 — not parsed from the envelope.
-  ``duration_ms`` is wall-clock from invocation.
-- ``usage["finish_reason"]`` carries the model's stop reason, read off the
-  ``--output-format json`` envelope and normalised onto OpenRouter's
-  vocabulary. See :func:`~pf_core.clients._claude_code_wire.unwrap_envelope`.
-- ``cost_usd`` is always 0.0 — Claude Max sessions don't bill per-call.
-- All ``system`` messages are joined (in encountered order) and separated
-  from the joined non-system messages with ``\\n\\n---\\n\\n``, then sent
-  as a single prompt. See :func:`~pf_core.clients._claude_code_wire.flatten_messages`.
-
-Usage::
-
-    from pf_core.clients.claude_code import get_client
-
-    # Pin to haiku for batch work — protects Claude Max quota
-    client = get_client(model="haiku")
-    content, usage = client.chat(
-        messages=[
-            {"role": "system", "content": "You are a summarizer."},
-            {"role": "user", "content": "Summarize this..."},
-        ],
-    )
+Defaults, flags and the ``usage`` fields are documented in ``docs/claude-code.md``.
 """
 
 from __future__ import annotations
@@ -58,11 +17,20 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Sequence
+from contextlib import ExitStack
 from typing import Any
 
 from pf_core.clients._claude_code_wire import (
+    SESSION_CONTINUATION_FLAGS,
+    TOOLS_FLAG,
+    checked_tools,
     envelope_error,
-    flatten_messages,
+    has_flag,
+    split_messages,
+    stdin_and_system_flag,
+    system_prompt_file,
+    tool_args,
     translate_model,
     unwrap_envelope,
 )
@@ -72,29 +40,21 @@ from pf_core.log import get_logger
 _log = get_logger(__name__)
 
 
-# Default wall-clock cap for a single ``claude --print`` invocation.
-# Long-form synthesis (multi-step summaries) can
-# exceed a minute, but anything past 10 minutes is almost certainly a
-# hung subprocess. Per-instance override via ``ClaudeCodeClient(timeout=N)``.
+# Long-form synthesis can exceed a minute; past 10 minutes the subprocess is
+# almost certainly hung.
 DEFAULT_TIMEOUT_SECONDS = 600
 
-# Wall-clock cap for ``preflight()`` — should be much shorter than the
-# per-call default. The whole point is to fail fast on a logged-out
-# session; if a ``claude --print "ok"`` round-trip takes longer than
-# 30 seconds, something is worth knowing about.
+# preflight() exists to fail fast on a logged-out session.
 DEFAULT_PREFLIGHT_TIMEOUT_SECONDS = 30
 
-# --safe-mode runs `claude --print` with all customizations off (project
-# CLAUDE.md, skills, hooks, plugins). On by default via isolate=True; the
-# why lives in ClaudeCodeClient's `isolate` docstring.
 _SAFE_MODE_FLAG = "--safe-mode"
+_NO_PERSIST_FLAG = "--no-session-persistence"
 
 # The JSON envelope carries the model's stop_reason; text-mode stdout has no
 # equivalent, so truncation would be unreportable without it.
 _OUTPUT_FORMAT_FLAG = "--output-format"
 
-# extra_args that change stdout's shape suppress envelope mode — the consumer
-# owns the output and the client reads it as text, exactly as pre-envelope.
+# extra_args that change stdout's shape suppress envelope mode; stdout is read as text.
 _SHAPE_FLAGS = (_OUTPUT_FORMAT_FLAG, "--verbose")
 
 # Backoff before retry N (0-based): _RETRY_BACKOFF_BASE * (N + 1) seconds.
@@ -102,8 +62,7 @@ _RETRY_BACKOFF_BASE = 0.5
 
 
 class ClaudeCodeError(ClientError):
-    """The ``claude --print`` subprocess call failed (binary missing,
-    non-zero exit, or wall-clock timeout)."""
+    """A ``claude --print`` call could not run, failed, or reported an error."""
 
 
 _MODEL_ENV_VAR = "PF_CORE_CLAUDE_CODE_MODEL"
@@ -117,24 +76,40 @@ class ClaudeCodeClient:
             call. Defaults to :data:`DEFAULT_TIMEOUT_SECONDS`.
         binary: Path to the ``claude`` executable. Defaults to whatever
             is on the user's ``PATH``. Override for non-standard installs.
-        extra_args: Additional CLI flags inserted after ``--safe-mode``
-            (when ``isolate=True``) and before ``--model`` / ``--print``
-            (e.g. ``["--allowedTools", "Bash"]``). Empty by default.
-            Supplying ``--output-format`` or ``--verbose`` here suppresses the
-            client's own envelope — stdout is read as text and no
+        extra_args: CLI flags inserted after the client's own and before
+            ``--model`` / ``--print``. A ``--tools`` here replaces the client's
+            tool flags. An append system-prompt flag composes with the client's
+            ``--system-prompt-file``; a replace flag, or an append flag with
+            ``agent_prompt=True``, replaces it and puts the system messages ahead
+            of the user content on stdin. ``--output-format`` or ``--verbose``
+            suppresses the JSON envelope, so stdout is read as text and no
             ``finish_reason`` is reported.
-        model: Default model passed as ``--model X`` on every call. Falls
-            back to ``$PF_CORE_CLAUDE_CODE_MODEL`` if not provided. Set
-            to ``None`` (the default) to omit the flag entirely and let
-            the active session decide. Per-call ``chat(model=...)``
-            overrides this for one call.
+        model: Default model passed as ``--model X``; falls back to
+            ``$PF_CORE_CLAUDE_CODE_MODEL``, and ``None`` omits the flag.
+            Per-call ``chat(model=...)`` overrides it.
         isolate: Run with ``--safe-mode`` so the call ignores the ambient
-            project's CLAUDE.md / skills / hooks / plugins (auth, model, and
-            explicit flags still apply). ``True`` by default — the secure
-            choice for a programmatic call, which almost never wants the
-            surrounding repo's instructions. Set ``False`` only when a
-            consumer deliberately runs claude inside a project to use that
-            project's customizations. See :data:`_SAFE_MODE_FLAG`.
+            project's CLAUDE.md / skills / hooks / plugins. ``True`` by default
+            — a programmatic call almost never wants the surrounding repo's
+            instructions; ``False`` deliberately uses them.
+        persist_session: Let the CLI save each call as a session transcript
+            under ``~/.claude/projects``. ``False`` by default (passes
+            ``--no-session-persistence``); set ``True`` to keep transcripts
+            for debugging a specific call. A ``--resume`` / ``--continue`` /
+            ``--session-id`` in ``extra_args`` keeps them regardless — a
+            resumable session is the point of that flag.
+        tools: Built-in tools the model may call, passed as ``--tools``
+            (e.g. ``["Read", "Grep"]``, or ``["default"]`` for the CLI's full
+            set). Empty by default — a completion needs none — which passes
+            ``--tools ""`` and ``--strict-mcp-config``, so no built-in or MCP
+            tool loads. A prompt that asks for a tool this leaves out gets an
+            answer written without it, not an error. Raises
+            ``ConfigurationError`` for MCP names, or for tools granted only
+            through ``--allowedTools`` in ``extra_args``.
+        agent_prompt: Keep Claude Code's own agent system prompt — its tool-use
+            guidance and workspace context — and append the system messages to
+            it (``--append-system-prompt-file``). ``False`` by default: the
+            system messages replace it (``--system-prompt-file``), as the other
+            backends send them.
     """
 
     def __init__(
@@ -146,6 +121,9 @@ class ClaudeCodeClient:
         model: str | None = None,
         retry: int = 0,
         isolate: bool = True,
+        persist_session: bool = False,
+        tools: Sequence[str] | None = (),
+        agent_prompt: bool = False,
     ) -> None:
         self.timeout = timeout
         self.binary = binary
@@ -153,6 +131,9 @@ class ClaudeCodeClient:
         self.model = model if model is not None else os.environ.get(_MODEL_ENV_VAR) or None
         self.retry = retry
         self.isolate = isolate
+        self.persist_session = persist_session
+        self.tools = checked_tools(tools, self.extra_args)
+        self.agent_prompt = agent_prompt
         _log.info(
             "claude_code_client_init",
             binary=self.binary,
@@ -160,6 +141,9 @@ class ClaudeCodeClient:
             timeout=self.timeout,
             retry=self.retry,
             isolate=self.isolate,
+            persist_session=self.persist_session,
+            tools=self.tools,
+            agent_prompt=self.agent_prompt,
         )
 
     def chat(
@@ -175,21 +159,15 @@ class ClaudeCodeClient:
     ) -> tuple[str, dict]:
         """Run one chat completion via ``claude --print``.
 
-        ``model`` (when non-empty) is added to the subprocess as
-        ``--model X``; an empty string falls through to the instance
-        default (which itself falls back to ``$PF_CORE_CLAUDE_CODE_MODEL``,
-        and finally to no flag at all).
-
-        ``temperature`` / ``max_tokens`` / ``top_p`` / ``response_format``
-        are accepted for API parity with :class:`OpenRouterClient` but
-        ignored — the active Claude Code session decides sampling.
-        ``timeout`` overrides the per-instance default just for this call.
+        ``model`` (when non-empty) is passed as ``--model X``; empty falls through
+        to the instance default. ``temperature`` / ``max_tokens`` / ``top_p`` /
+        ``response_format`` are accepted for API parity with
+        :class:`OpenRouterClient` and ignored. ``timeout`` overrides the
+        per-instance default for this call.
 
         Returns:
-            ``(content, usage)`` where ``usage`` carries the same keys as
-            ``OpenRouterClient.chat``. Token counts come from the JSON
-            envelope (0 in text mode or when the envelope omits them);
-            ``cost_usd`` is always 0.0.
+            ``(content, usage)``; ``usage`` carries ``OpenRouterClient.chat``'s
+            keys, with token counts from the JSON envelope and ``cost_usd`` 0.0.
         """
         binary_path = shutil.which(self.binary)
         if binary_path is None:
@@ -199,8 +177,8 @@ class ClaudeCodeClient:
                 context={"binary": self.binary},
             )
 
-        prompt = flatten_messages(messages)
-        if not prompt:
+        system, body = split_messages(messages)
+        if not body:
             raise ClaudeCodeError(
                 "messages list contained no usable user content",
                 context={"messages_count": len(messages)},
@@ -208,23 +186,90 @@ class ClaudeCodeClient:
 
         resolved_model = translate_model(model or self.model)
         model_flag = ["--model", resolved_model] if resolved_model else []
-        # isolate=True prepends --safe-mode (leads the argv). See _SAFE_MODE_FLAG.
         isolation_args = [_SAFE_MODE_FLAG] if self.isolate else []
+        resuming = has_flag(self.extra_args, SESSION_CONTINUATION_FLAGS)
+        persist_args = [] if self.persist_session or resuming else [_NO_PERSIST_FLAG]
+        tools_args = [] if has_flag(self.extra_args, (TOOLS_FLAG,)) else tool_args(self.tools)
         envelope_mode = not any(
             a.startswith(flag) for a in self.extra_args for flag in _SHAPE_FLAGS
         )
         format_args = [_OUTPUT_FORMAT_FLAG, "json"] if envelope_mode else []
-        # No positional prompt: it goes on stdin, which has no ARG_MAX ceiling.
-        cmd = [
-            binary_path,
-            *isolation_args,
-            *self.extra_args,
-            *model_flag,
-            *format_args,
-            "--print",
-        ]
+        prompt, system_flag = stdin_and_system_flag(
+            messages, system, body, extra_args=self.extra_args, agent_prompt=self.agent_prompt
+        )
         wall_timeout = timeout if timeout is not None else self.timeout
 
+        with ExitStack() as stack:
+            system_args = []
+            if system_flag:
+                system_args = [system_flag, stack.enter_context(system_prompt_file(system))]
+            # No positional prompt: it goes on stdin, which has no ARG_MAX ceiling.
+            cmd = [
+                binary_path,
+                *isolation_args,
+                *persist_args,
+                *tools_args,
+                *system_args,
+                *self.extra_args,
+                *model_flag,
+                *format_args,
+                "--print",
+            ]
+            result, elapsed_ms = self._run(cmd, prompt, wall_timeout)
+
+        content = result.stdout.strip()
+        finish_reason: str | None = None
+        tokens: dict[str, int] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+        }
+        if envelope_mode:
+            unwrapped = unwrap_envelope(result.stdout)
+            if unwrapped is None:
+                # The client asked for JSON, so raw stdout is machine output,
+                # not an answer — returning it as content would be corruption.
+                raise ClaudeCodeError(
+                    "claude --output-format json produced an unreadable envelope. "
+                    "Upgrade the CLI, or pass extra_args=['--output-format', 'text'] "
+                    "to restore text-mode output (truncation then unreportable).",
+                    context={"model": resolved_model, "stdout_head": content[:200]},
+                )
+            content, finish_reason, tokens = unwrapped
+            if not any(tokens.values()):
+                _log.warning(
+                    "claude_code_envelope_without_usage",
+                    model=resolved_model,
+                    message="no usage counts — a tokens budget cannot gate this call",
+                )
+            if envelope_error(result.stdout) is not None:
+                raise ClaudeCodeError(
+                    f"`{self.binary} --print` reported an error: {content[:500]}",
+                    context={"model": resolved_model},
+                )
+
+        usage: dict[str, Any] = {
+            **tokens,
+            "reasoning_tokens": 0,
+            "cost_usd": 0.0,
+            "duration_ms": elapsed_ms,
+            "system_fingerprint": None,
+        }
+        if finish_reason is not None:
+            usage["finish_reason"] = finish_reason
+        if finish_reason == "length":
+            _log.warning(
+                "claude_code_truncated",
+                model=resolved_model,
+                content_len=len(content),
+            )
+        return content, usage
+
+    def _run(
+        self, cmd: list[str], prompt: str, wall_timeout: int
+    ) -> tuple[subprocess.CompletedProcess[str], int]:
+        """Run ``cmd`` with ``prompt`` on stdin, retrying per ``self.retry`` → (result, elapsed_ms)."""
         # Strip the API-key vars: a key in the parent env would hijack
         # `claude --print` into billable API auth instead of the Max session.
         sub_env = {
@@ -292,79 +337,21 @@ class ClaudeCodeClient:
         # Unreachable: every loop path either breaks (success) or raises.
         # The assert is for the type checker.
         assert result is not None  # noqa: S101
-
-        content = result.stdout.strip()
-        finish_reason: str | None = None
-        tokens: dict[str, int] = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-        }
-        if envelope_mode:
-            unwrapped = unwrap_envelope(result.stdout)
-            if unwrapped is None:
-                # The client asked for JSON, so raw stdout is machine output,
-                # not an answer — returning it as content would be corruption.
-                raise ClaudeCodeError(
-                    "claude --output-format json produced an unreadable envelope. "
-                    "Upgrade the CLI, or pass extra_args=['--output-format', 'text'] "
-                    "to restore text-mode output (truncation then unreportable).",
-                    context={"model": resolved_model, "stdout_head": content[:200]},
-                )
-            content, finish_reason, tokens = unwrapped
-            if not any(tokens.values()):
-                _log.warning(
-                    "claude_code_envelope_without_usage",
-                    model=resolved_model,
-                    message="no usage counts — a tokens budget cannot gate this call",
-                )
-            if envelope_error(result.stdout) is not None:
-                raise ClaudeCodeError(
-                    f"`{self.binary} --print` reported an error: {content[:500]}",
-                    context={"model": resolved_model},
-                )
-
-        # Match the OpenRouterClient.chat usage-dict shape so the two
-        # clients are drop-in interchangeable. Fields that don't apply
-        # to the CLI return 0 / 0.0 / None.
-        usage: dict[str, Any] = {
-            **tokens,
-            "reasoning_tokens": 0,
-            "cost_usd": 0.0,
-            "duration_ms": elapsed_ms,
-            "system_fingerprint": None,
-        }
-        if finish_reason is not None:
-            usage["finish_reason"] = finish_reason
-        if finish_reason == "length":
-            _log.warning(
-                "claude_code_truncated",
-                model=resolved_model,
-                content_len=len(content),
-            )
-        return content, usage
+        return result, elapsed_ms
 
     def preflight(self, *, timeout: int = DEFAULT_PREFLIGHT_TIMEOUT_SECONDS) -> None:
         """Smoke-test the local Claude Code session before launching a batch.
 
-        Issues one ``claude --print "ok"`` against the configured binary
-        and model. Returns ``None`` on success; raises
-        :class:`ClaudeCodeError` with an actionable ``<binary> /login``
-        remediation message on any failure (auth lapse, missing binary,
-        timeout, non-zero exit).
-
-        Useful before a long fan-out of calls — catches a logged-out
-        session in single-digit seconds instead of after N failed
-        subprocess invocations. The raised error carries
-        ``context["preflight"] = True`` so log filters can distinguish
-        preflight failures from per-call failures.
+        Issues one ``claude --print "ok"`` against the configured binary and
+        model, catching a logged-out session in seconds instead of after N
+        failed calls. Returns ``None`` on success; on any failure (auth lapse,
+        missing binary, timeout, non-zero exit) raises :class:`ClaudeCodeError`
+        naming the ``<binary> /login`` remediation, with
+        ``context["preflight"] = True``.
 
         Args:
-            timeout: Wall-clock cap (seconds) for the smoke call.
-                Defaults to :data:`DEFAULT_PREFLIGHT_TIMEOUT_SECONDS` —
-                preflight should complete in single-digit seconds; if
-                it doesn't, something is worth knowing about.
+            timeout: Wall-clock cap (seconds) for the smoke call. Defaults to
+                :data:`DEFAULT_PREFLIGHT_TIMEOUT_SECONDS`.
         """
         try:
             content, _ = self.chat(
@@ -392,13 +379,10 @@ class ClaudeCodeClient:
 
 
 # ---------------------------------------------------------------------------
-# Module-level singletons (one per model)
+# Module-level singletons (one per distinct set of arguments)
 # ---------------------------------------------------------------------------
-#
-# Calls with the same ``model`` share an instance; the first call with a given
-# ``model`` wins for the other args (timeout / binary / extra_args).
 
-_clients: dict[str | None, ClaudeCodeClient] = {}
+_clients: dict[tuple[Any, ...], ClaudeCodeClient] = {}
 
 
 def get_client(
@@ -409,31 +393,32 @@ def get_client(
     model: str | None = None,
     retry: int = 0,
     isolate: bool = True,
+    persist_session: bool = False,
+    tools: Sequence[str] | None = (),
+    agent_prompt: bool = False,
 ) -> ClaudeCodeClient:
-    """Return the per-model singleton, creating it on first call for that model.
+    """Return the shared client for exactly these arguments, creating it on first use.
 
-    The cache is keyed on the explicitly-passed ``model`` value (so
-    ``get_client(model="haiku")`` and ``get_client(model="sonnet")`` are
-    distinct instances; ``get_client()`` is its own slot under the key
-    ``None``). For each cache slot, the first call's args win — later
-    calls return the cached instance and ignore ``timeout`` / ``binary``
-    / ``extra_args`` / ``retry`` / ``isolate``. Because ``isolate`` defaults
-    to ``True``, the cached client is safe-mode-isolated by default — a later
-    caller cannot accidentally downgrade a model's shared client to a
-    non-isolated one. Use :func:`reset_client` to drop all cached instances
-    (useful for testing), or :func:`new_client` for a fresh,
-    independently-configured instance.
+    Each distinct set of arguments is its own instance, so one caller's ``tools``,
+    ``extra_args`` or ``isolate=False`` never reaches a client another caller asked for.
     """
-    if model not in _clients:
-        _clients[model] = new_client(
+    # A string stays one, so the constructor refuses it rather than a tuple splitting it.
+    tool_names = tools if isinstance(tools, str) else tuple(tools or ())
+    flags = tuple(extra_args or ())
+    key = (timeout, binary, flags, model, retry, isolate, persist_session, tool_names, agent_prompt)
+    if key not in _clients:
+        _clients[key] = new_client(
             timeout=timeout,
             binary=binary,
-            extra_args=extra_args,
+            extra_args=list(flags),
             model=model,
             retry=retry,
             isolate=isolate,
+            persist_session=persist_session,
+            tools=tool_names,
+            agent_prompt=agent_prompt,
         )
-    return _clients[model]
+    return _clients[key]
 
 
 def new_client(
@@ -444,15 +429,11 @@ def new_client(
     model: str | None = None,
     retry: int = 0,
     isolate: bool = True,
+    persist_session: bool = False,
+    tools: Sequence[str] | None = (),
+    agent_prompt: bool = False,
 ) -> ClaudeCodeClient:
-    """Construct a fresh client with :func:`get_client`'s defaults but no
-    caching — every call returns a new instance.
-
-    The escape hatch from the per-model singleton's first-call-wins
-    semantics: use it (directly, or via per-backend ``client_kwargs`` in
-    the model router) when different agents need differently-tuned clients
-    (timeout, retry, isolate) in one process.
-    """
+    """A fresh, uncached client with :func:`get_client`'s defaults."""
     return ClaudeCodeClient(
         timeout=timeout if timeout is not None else DEFAULT_TIMEOUT_SECONDS,
         binary=binary if binary is not None else "claude",
@@ -460,9 +441,12 @@ def new_client(
         model=model,
         retry=retry,
         isolate=isolate,
+        persist_session=persist_session,
+        tools=tools,
+        agent_prompt=agent_prompt,
     )
 
 
 def reset_client() -> None:
-    """Drop all cached per-model singletons. Useful for tests."""
+    """Drop all cached singletons. Useful for tests."""
     _clients.clear()

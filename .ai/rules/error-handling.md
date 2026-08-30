@@ -16,6 +16,8 @@ All exceptions thrown from service and orchestrator code must use the hierarchy 
 
 `FlowException` exceptions have no `context` dict — they carry only a message.
 
+`InvalidInputError` is also a `ValueError` and `PreconditionError` a `RuntimeError`, so replacing a builtin raise with one keeps existing `except` clauses and `pytest.raises` working (see `docs/exceptions.md`).
+
 ---
 
 ### `AppError` — actual errors, always log with traceback
@@ -103,3 +105,5 @@ for task in pending:
 **CLI:** Catch `FlowException` → print message, exit 1. Catch `AppError` → log_exception + print, exit 1.
 
 **API:** FastAPI error handlers in `pf_core.web.app_factory` map `FlowException` → 4xx JSON/HTML; `AppError` → 500 JSON/HTML.
+
+Both boundaries also answer a pydantic `ValidationError` that wraps a validator's `InvalidInputError` (pydantic wraps it because it is a `ValueError`) as that `InvalidInputError`, whatever else it holds — `pf_core.exceptions.unwrap_flow_exception`. A boundary you write yourself should do the same.

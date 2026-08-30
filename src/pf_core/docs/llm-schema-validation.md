@@ -40,7 +40,7 @@ The pipeline runs in three tiers. Each produces zero or more `ValidationSignal` 
 
 **Do:** keep agent slugs identical across the router YAML, `@track_run(agent_type=...)`, and `register(agent_type=...)`.
 
-**Do not:** raise on shape failure inside the pipeline. The pipeline returns a structured result; the service decides retry, fallback, or job failure.
+**Do not:** raise on shape failure inside the pipeline. The pipeline returns a structured result; the service decides retry, fallback, or job failure. (An `InvalidInputError` a shape model's own validator raises is not a shape failure: it escapes `validate_shape` as itself.)
 
 ---
 

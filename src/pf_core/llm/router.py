@@ -58,7 +58,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any, NamedTuple
 
-from pf_core.exceptions import ConfigurationError, FlowException
+from pf_core.exceptions import ConfigurationError, FlowException, unwrap_flow_exception
 from pf_core.llm._router_config import (
     agent_block_or_raise as _agent_block_or_raise,
     selection as _selection,
@@ -293,18 +293,17 @@ def call_with_fallback(
     ``(content, usage, resolved)``, where ``resolved.backend`` is the
     backend that answered (pass it to tracking as the provider label).
 
-    Retry set: by default every ``Exception`` except
-    :class:`~pf_core.exceptions.FlowException` — a budget cap, a bad
-    request or missing config fails identically on the next backend, so
-    falling back only spends money. Pass ``retry_on`` to override it
+    Retry set: by default every ``Exception`` except :class:`~pf_core.exceptions.FlowException`
+    — a budget cap, a bad request or missing config fails identically on the next backend, so
+    falling back only spends money. A validation error wrapping a validator's
+    ``InvalidInputError`` is classified as that error. Pass ``retry_on`` to override the set
     exactly, including with ``FlowException`` subclasses.
 
-    Exhaustion semantics: if every attempt failed, the **last call
-    exception is re-raised unchanged** (so callers' existing except clauses
-    keep working); if no backend was even constructable, raises
-    :class:`ConfigurationError` listing the failures. Clients still own
-    same-backend retry — narrow ``retry_on`` further to your domain's
-    transport errors to avoid burning a second backend on a non-transient bug.
+    Exhaustion semantics: if every attempt failed, the **last call exception is re-raised
+    unchanged** (so callers' existing except clauses keep working); if no backend was even
+    constructable, raises :class:`ConfigurationError` listing the failures. Clients still own
+    same-backend retry — narrow ``retry_on`` further to your domain's transport errors to avoid
+    burning a second backend on a non-transient bug.
     """
     catch: tuple[type[BaseException], ...] = (Exception,) if retry_on is None else retry_on
     never_retry: tuple[type[BaseException], ...] = (FlowException,) if retry_on is None else ()
@@ -313,10 +312,11 @@ def call_with_fallback(
     for resolved in _candidates(slug, model_override=model_override, failures=failures):
         try:
             content, usage = resolved.client.chat(messages=messages, **resolved.chat_kwargs)
-        except catch as exc:
-            if isinstance(exc, never_retry):
+        except BaseException as raised:
+            exc = unwrap_flow_exception(raised) or raised
+            if not isinstance(exc, catch) or isinstance(exc, never_retry):
                 raise
-            last_exc = exc
+            last_exc = raised
             failures.append(f"{resolved.backend}: {exc}")
             logger.warning(
                 "router_call_failed_trying_next",

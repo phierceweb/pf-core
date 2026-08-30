@@ -314,6 +314,31 @@ class TestLogException:
             log_exception(InvalidInputError("x"), event_prefix="COMP")
         assert _record(caplog).msg["event"] == "COMP-InvalidInputError"
 
+    def test_a_validation_error_wrapping_an_invalid_input_error_logs_it(self, caplog):
+        """pydantic wraps a validator's InvalidInputError; it logs as it did before the wrap."""
+        from pydantic import BaseModel, field_validator
+
+        class Window(BaseModel):
+            start: str
+
+            @field_validator("start")
+            @classmethod
+            def _start(cls, v: str) -> str:
+                raise InvalidInputError("start must be a date")
+
+        try:
+            Window(start="x")
+        except Exception as exc:  # the InvalidInputError itself, or pydantic's wrapper round it
+            raised = exc
+        with caplog.at_level(logging.DEBUG):
+            log_exception(raised)
+        rec = _record(caplog)
+        assert rec.levelno == logging.WARNING
+        assert (rec.msg["event"], rec.msg["message"]) == (
+            "APP-InvalidInputError",
+            "start must be a date",
+        )
+
     def test_non_framework_exception(self, caplog):
         with caplog.at_level(logging.DEBUG):
             log_exception(ValueError("plain python error"))

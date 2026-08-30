@@ -190,7 +190,8 @@ def log_exception(
 
     Behaviour by exception type:
         AppError: full traceback + merged context chain; default ERROR.
-        FlowException: no traceback; default WARNING.
+        FlowException: no traceback; default WARNING. A validation error wrapping a
+            validator's InvalidInputError is logged as that InvalidInputError.
         Anything else: no traceback; default ERROR.
 
     Context merging (highest → lowest priority):
@@ -206,8 +207,9 @@ def log_exception(
         log_level:          Override default level.
         event_prefix:       Prefix for the log event key (default "APP").
     """
-    from pf_core.exceptions import AppError, FlowException
+    from pf_core.exceptions import AppError, FlowException, unwrap_flow_exception
 
+    exc = unwrap_flow_exception(exc) or exc
     _ensure_setup()
     # Log under the configured app-logger tree so the record reaches the same
     # handlers (root by default) — not a hardcoded "app.exceptions" that a

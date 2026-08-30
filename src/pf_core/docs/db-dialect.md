@@ -34,6 +34,26 @@ compares correctly against the other. It emits `CURRENT_TIMESTAMP(6)` on MySQL
 (matching `TIMESTAMP(6)` column precision) and, on SQLite, a space-separated
 `strftime` form that compares lexicographically against bound datetimes.
 
+### Backfilling a SQLite column stamped before 0.22.0
+
+Before 0.22.0 the SQLite form was ISO `T`/`Z` with three fractional digits. Those
+values no longer compare against a bound `DateTime`, and they sort above
+space-separated ones within the same calendar date, so a column holding both
+shapes orders wrong. Convert the old rows once, per affected column:
+
+```sql
+UPDATE t SET c = replace(rtrim(c, 'Z'), 'T', ' ') || '000' WHERE c LIKE '%T%';
+```
+
+**Keep the `WHERE`**, which also makes the statement re-runnable. Without it,
+rows that were never `T`-stamped — whole seconds from `CURRENT_TIMESTAMP` or
+`datetime('now')` — get `000` appended to the seconds field, turning
+`2026-08-08 05:17:59` into `2026-08-08 05:17:59000`.
+
+`CREATE TABLE IF NOT EXISTS` leaves an existing column `DEFAULT` untouched, so
+check whether the default still stamps the old form before treating the backfill
+as final.
+
 For insert-or-ignore, prefer [`insert_ignore`](db-upsert.md), which builds the
 whole statement from `Table` metadata. The prefix/suffix pair is the escape
 hatch for SQL that cannot go through it — always use **both**, because on

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pf_core.guards.config import GuardsConfig, app_rel
+from pf_core.guards.sources import parse_file, source_lines
 
 ALLOWED_IMPORTS: dict[str, set[str]] = {
     "api": {"services", "orchestrators", "db"},
@@ -52,12 +53,8 @@ class LayeringViolation:
     line: int = 0
 
 
-def _skip_comment(p: Path) -> bool:
-    try:
-        with p.open(encoding="utf-8") as fh:
-            return any("lint-layers: skip" in line for _, line in zip(range(5), fh, strict=False))
-    except OSError:
-        return True
+def _skip_comment(text: str) -> bool:
+    return any("lint-layers: skip" in line for line in source_lines(text)[:5])
 
 
 def _imports(tree: ast.AST, pkg: list[str]) -> list[tuple[str, int]]:
@@ -115,11 +112,13 @@ def layering_violations(
             continue
         parts = a.split("/")
         layer = parts[1] if len(parts) >= 2 and parts[1] in allowed else None
-        if layer is None or "tests" in parts or p.name == "conftest.py" or _skip_comment(p):
+        if layer is None or "tests" in parts or p.name == "conftest.py":
             continue
         try:
-            tree = ast.parse(p.read_text(encoding="utf-8"))
-        except SyntaxError:
+            text, tree = parse_file(p)
+        except (OSError, SyntaxError):
+            continue
+        if _skip_comment(text):
             continue
         pkg = a.split("/")[:-1]
         for mod, lineno in _imports(tree, pkg):

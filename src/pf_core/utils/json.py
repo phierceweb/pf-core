@@ -19,14 +19,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pf_core.log import get_logger
-
 _logger = None
 
 
 def _get_logger():
     global _logger
     if _logger is None:
+        from pf_core.log import get_logger  # structlog loads on first use, not at import
+
         _logger = get_logger(__name__)
     return _logger
 

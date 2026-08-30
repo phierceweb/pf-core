@@ -186,7 +186,7 @@ content, usage, resolved = call_with_fallback("summarizer", msgs)
 # resolved.backend answered — use it as the tracking provider label
 ```
 
-- By default (`retry_on=None`) every `Exception` **except** `FlowException` logs and moves to the next backend; a `FlowException` propagates immediately, since a budget cap, invalid request, or missing config fails identically on the next backend and falling back only spends money. Passing `retry_on` replaces the set exactly — including the `FlowException` carve-out, so `retry_on=(Exception,)` does fall back on one. Narrow it to transport-shaped errors (`(ClientError,)`, timeouts) to be stricter still.
+- By default (`retry_on=None`) every `Exception` **except** `FlowException` logs and moves to the next backend; a `FlowException` propagates immediately, since a budget cap, invalid request, or missing config fails identically on the next backend and falling back only spends money. Passing `retry_on` replaces the set exactly — including the `FlowException` carve-out, so `retry_on=(Exception,)` does fall back on one. Narrow it to transport-shaped errors (`(ClientError,)`, timeouts) to be stricter still. A pydantic `ValidationError` wrapping a validator's `InvalidInputError` is classified as that `InvalidInputError`, so by default it does not fall back either.
 - No `preflight()` on this path — the call itself is the probe.
 - Exhaustion re-raises the **last call exception unchanged** (existing except clauses keep working); if no backend was even constructable, raises `ConfigurationError` listing the failures.
 - Without `fallback: true` this is a plain single-backend call.

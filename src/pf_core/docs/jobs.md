@@ -119,7 +119,7 @@ register_kind(
 - Re-registering the same `kind` with a different signature raises `ConfigurationError`.
 - Re-registering with the same signature is a no-op.
 
-**Defaults:** If `states` and `transitions` are omitted, `DEFAULT_STATES` and `DEFAULT_TRANSITIONS` are used — they model the `pending → running → {succeeded, failed, canceled, partial}` flow. Omit `inputs_schema` to skip input validation.
+**Defaults:** If `states` and `transitions` are omitted, `DEFAULT_STATES` and `DEFAULT_TRANSITIONS` are used — they model the `pending → running → {succeeded, failed, canceled, partial}` flow. Omit `inputs_schema` to skip input validation. Input or output that fails its schema raises `InvalidInputError` naming the failure; when a schema's own validator raised an `InvalidInputError`, that one escapes as itself.
 
 **Do:** put registration calls in a module imported at app startup (e.g. `app/jobs/__init__.py`). The registry is process-local — call `clear_registry()` in test fixtures.
 

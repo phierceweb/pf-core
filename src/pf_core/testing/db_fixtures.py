@@ -17,8 +17,8 @@ pf_engine
     File-backed SQLite engine (per-test temp file, ``NullPool``), fresh per
     test. Patches ``pf_core.db.connection`` so ``get_engine()`` /
     ``transaction()`` use the test engine. Set ``PF_TEST_DATABASE_URL`` to
-    point every test at a disposable Postgres/MySQL database instead.
-    Clears the tracking resolver caches at setup.
+    point every test at a disposable Postgres/MySQL server instead, each in
+    its own schema/database. Clears the tracking resolver caches at setup.
 
 pf_engine_teardown
     No-op hook. Override in a consumer conftest to return a zero-arg
@@ -46,7 +46,6 @@ pf-core-owned table (tracking, jobs, cache, budget)::
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 
 import pytest
@@ -56,7 +55,7 @@ from sqlalchemy.pool import NullPool, StaticPool
 from sqlalchemy.schema import CreateIndex, CreateTable
 
 from pf_core.exceptions import InvalidInputError
-from pf_core.testing import _ddl
+from pf_core.testing import _ddl, _server_db
 
 
 def _create_test_engine(url: str = "sqlite://") -> Engine:
@@ -71,9 +70,13 @@ def _create_test_engine(url: str = "sqlite://") -> Engine:
     is why ``pf_engine`` passes a per-test temp file.
     """
     if not url.startswith("sqlite"):
-        # Operator-managed backend (PF_TEST_DATABASE_URL) — e.g. a throwaway
-        # Postgres. NullPool as in production; SQLite pragmas don't apply.
-        return create_engine(url, poolclass=NullPool)
+        from pf_core.db.connection import _install_mysqldb_shim, _install_server_session_setup
+
+        # NullPool so teardown's DROP never waits on a pooled connection.
+        _install_mysqldb_shim(url)
+        engine = create_engine(url, poolclass=NullPool)
+        _install_server_session_setup(engine, _server_db.backend_dialect(url))
+        return engine
 
     in_memory = url in ("sqlite://", "sqlite:///:memory:")
     engine = create_engine(
@@ -111,27 +114,34 @@ def _dialect(name: str):
 def metadata_ddl(
     metadata: MetaData,
     *,
-    dialect: str = "sqlite",
+    dialect: str | None = None,
     if_not_exists: bool = True,
     only: set[str] | frozenset[str] | None = None,
 ) -> list[str]:
     """Compile *metadata* into DDL strings for the ``pf_schema`` fixture.
 
     Tables come first in dependency order, then their indexes. ``only``
-    restricts output to the named tables (and their indexes).
+    restricts output to the named tables (and their indexes). ``dialect``
+    defaults to the backend ``pf_engine`` targets — ``PF_TEST_DATABASE_URL``'s,
+    else SQLite. MySQL has no ``CREATE INDEX IF NOT EXISTS``, so its index
+    statements are unconditional.
     """
-    d = _dialect(dialect)
+    name = dialect or _server_db.active_dialect()
+    d = _dialect(name)
+    index_if_not_exists = if_not_exists and name != "mysql"
     tables = [t for t in metadata.sorted_tables if only is None or t.name in only]
     stmts = [str(CreateTable(t, if_not_exists=if_not_exists).compile(dialect=d)) for t in tables]
     for t in tables:
         for idx in t.indexes:
-            stmts.append(str(CreateIndex(idx, if_not_exists=if_not_exists).compile(dialect=d)))
+            stmts.append(
+                str(CreateIndex(idx, if_not_exists=index_if_not_exists).compile(dialect=d))
+            )
     return stmts
 
 
 def framework_ddl(
     *,
-    dialect: str = "sqlite",
+    dialect: str | None = None,
     if_not_exists: bool = True,
     only: set[str] | frozenset[str] | None = None,
 ) -> list[str]:
@@ -178,43 +188,41 @@ def pf_engine(tmp_path, monkeypatch, pf_engine_teardown) -> Iterator[Engine]:
     so tests never see each other's data.
 
     Set ``PF_TEST_DATABASE_URL`` to run the same suite against a disposable
-    Postgres/MySQL database instead; tests create and drop tables in it, so
-    never point it at real data.
+    Postgres/MySQL server instead. Each test then gets its own schema
+    (Postgres) or database (MySQL), created at setup and dropped at teardown,
+    so tests stay isolated there too. The URL's role needs the privilege to
+    create them; never point it at real data.
 
     After this fixture runs, ``get_engine()`` and ``transaction()`` from
     ``pf_core.db`` use this test engine instead of the real one. Tracking
     resolver caches are cleared at setup so ids cached against a previous
     test's database can't leak into this one.
     """
-    url = os.environ.get("PF_TEST_DATABASE_URL", "").strip()
-    if not url:
-        db_path = tmp_path / "pf_core_test.sqlite"
-        url = f"sqlite:///{db_path}"
-    monkeypatch.setenv("DATABASE_URL", url)
+    url = _server_db.configured_url() or f"sqlite:///{tmp_path / 'pf_core_test.sqlite'}"
+    with _server_db.isolated_url(url) as test_url:
+        monkeypatch.setenv("DATABASE_URL", test_url)
+        engine = _create_test_engine(test_url)
 
-    engine = _create_test_engine(url)
+        import pf_core.db.connection as conn_mod
 
-    # Patch get_engine() to return our test engine
-    import pf_core.db.connection as conn_mod
+        original_engine = conn_mod._engine
+        conn_mod._engine = engine
 
-    original_engine = conn_mod._engine
-    conn_mod._engine = engine
+        try:
+            from pf_core.llm.tracking import clear_resolver_caches
+        except ImportError:
+            pass  # [db]-only install — no tracking caches to clear
+        else:
+            clear_resolver_caches()
 
-    try:
-        from pf_core.llm.tracking import clear_resolver_caches
-    except ImportError:
-        pass  # [db]-only install — no tracking caches to clear
-    else:
-        clear_resolver_caches()
-
-    yield engine
-
-    # Cleanup — hook first, while the engine is still alive and patched in.
-    if pf_engine_teardown is not None:
-        pf_engine_teardown()
-
-    engine.dispose()
-    conn_mod._engine = original_engine
+        try:
+            yield engine
+            # Cleanup — hook first, while the engine is still alive and patched in.
+            if pf_engine_teardown is not None:
+                pf_engine_teardown()
+        finally:
+            engine.dispose()
+            conn_mod._engine = original_engine
 
 
 @pytest.fixture()

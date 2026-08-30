@@ -1,5 +1,9 @@
 name: test
-on: [push, pull_request]
+# workflow_call: publish.yml runs this whole workflow on the tagged sha before uploading.
+on:
+  push:
+  pull_request:
+  workflow_call:
 jobs:
   # Full suite against the [full] framework surface, across supported Pythons.
   full:
@@ -18,6 +22,54 @@ jobs:
       # Typecheck needs the full closure above; config in [tool.mypy].
       - run: python -m mypy
         if: matrix.python-version == '3.12'
+
+  # The same suite against real servers: pf_engine gives each test its own
+  # schema (Postgres) or database (MySQL) under PF_TEST_DATABASE_URL.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: pf
+          POSTGRES_PASSWORD: pf
+          POSTGRES_DB: pftest
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pf -d pftest"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PF_TEST_DATABASE_URL: postgresql+psycopg://pf:pf@127.0.0.1:5432/pftest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[full,articles,anthropic,image-phash,dev,postgres]"
+      - run: python -m pytest tests/ -q
+
+  mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: pf
+          MYSQL_DATABASE: pftest
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -ppf"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    env:
+      PF_TEST_DATABASE_URL: mysql+pymysql://root:pf@127.0.0.1:3306/pftest
+      PF_CORE_TEST_MYSQL_URL: mysql+pymysql://root:pf@127.0.0.1:3306/pftest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[full,articles,anthropic,image-phash,dev,mysql]"
+      - run: python -m pytest tests/ -q
 
   # The extras-tiering claims stay honest: the base install must import and
   # pass the bare smoke without the LLM/db/web stacks present.

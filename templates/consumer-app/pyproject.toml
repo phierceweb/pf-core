@@ -9,10 +9,8 @@ description = "A pf-core full-stack app (FastAPI + SQLAlchemy)."
 requires-python = ">=3.12"
 dependencies = [
     # pf-core with the whole framework surface. Add a DB driver extra
-    # ([postgres] or [mysql]) for non-SQLite backends. Pinned to a compatible
-    # PyPI release (picks up patch/minor within the line). 0.4+ carries the
-    # config-driven structural gate (config in .pf-guards.toml).
-    "pf-core[__EXTRAS__]~=0.22.0",
+    # ([postgres] or [mysql]) for non-SQLite backends. ~= takes patch releases only.
+    "pf-core[__EXTRAS__]~=0.23.0",
 ]
 
 [project.optional-dependencies]

@@ -86,6 +86,11 @@ A deprecated API keeps working and emits a `DeprecationWarning` naming its repla
 - `pf_core.clients.routing.get_routed_client(use_claude_code)` → use `pf_core.llm.router.resolve_agent` or `get_client_for_backend`.
 - `pf_core.llm.tracking.track_run()` without an explicit `provider=` → pass the backend (e.g. `resolve_agent(...).backend`) or `provider=None`.
 
+## License
+
+Contributions are accepted under the Apache License 2.0. Opening a pull request
+licenses your work to the project under those terms.
+
 ## Questions
 
 Open an issue for bugs and feature requests. For anything security-sensitive,

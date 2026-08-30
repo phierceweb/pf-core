@@ -2,6 +2,127 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.23.0 — 2026-09-29
+
+### Breaking
+- `ClaudeCodeClient` calls are plain completions by default: no tools (`--tools ""` and
+  `--strict-mcp-config`), and the `system` messages sent as the system prompt from a private
+  temp file (`--system-prompt-file`) in place of Claude Code's agent prompt; only the other
+  messages go on stdin. New `tools` and `agent_prompt` args (also on `get_client` /
+  `new_client` and router `client_kwargs`) name the built-in tools the model may call and
+  keep Claude Code's prompt, appending the `system` messages with
+  `--append-system-prompt-file`. A `--tools` in `extra_args` replaces the client's tool
+  flags; a consumer append flag composes with the client's `--system-prompt-file`, and a
+  replace flag (or an append flag with `agent_prompt=True`) flattens the messages onto stdin
+  as before.
+- A prompt that relied on the old default tool set — asking the model to Read a file or run
+  a command, with no flags — now gets an answer written without the tool, and nothing
+  raises. Name the tools: `tools=["Read"]`.
+- Granting tools only through `--allowedTools` in `extra_args` raises `ConfigurationError`
+  at construction — pass `tools=[...]`. So do MCP names in `tools` (MCP tools need
+  `isolate=False` and `--allowedTools`), `tools` given as a string, and `tools` alongside a
+  `--tools` in `extra_args`.
+- `claude_code.get_client()` shares one client per distinct set of arguments, not per
+  `model`. A later call with other args gets its own client where it used to get the first
+  call's, so one caller's `tools`, `extra_args` or `isolate=False` never reaches another's,
+  and `get_client(model=m)` no longer inherits an earlier call's `timeout` or `retry`.
+- Under `PF_TEST_DATABASE_URL`, `pf_engine` gives each test its own Postgres schema or MySQL
+  database, dropped at teardown, and applies `get_engine()`'s session setup (UTC). The URL's
+  role needs the privilege to create them, and apart from tables an extension installed, a
+  test reads only the tables it creates (through `pf_schema` / `pf_tables`). On Postgres the
+  `search_path` is the test schema then `public`, so extension types and functions there still
+  resolve; because a table there would resolve too, setup raises `ConfigurationError` naming
+  each table or view in `public` that no extension owns, tables an earlier `pf_engine` created
+  there included. Point the URL at an empty database. Teardown's `DROP` is bounded by
+  `PF_TEST_LOCK_TIMEOUT_S` (default 10s; `0` waits forever).
+- `InvalidInputError` also subclasses `ValueError`, and `PreconditionError` subclasses
+  `RuntimeError`. `except ValueError` / `except RuntimeError`, and `pytest.raises` of either,
+  now catch them, including around code that already raised them; `isinstance(exc,
+  ValueError)` is true for an `InvalidInputError`. pydantic turns an `InvalidInputError`
+  raised in a validator into a `ValidationError` (FastAPI: its request, websocket or response
+  validation error) instead of letting it escape validation, and argparse turns one raised by
+  a `type=` converter into a usage error. click does the same to one raised by a typer
+  `parser=`; `run_cli` answers that one with its message and exit 1, as before. The 422 / 409
+  HTTP mapping still wins over a handler registered for the builtin. Code outside pf-core that
+  catches `FlowException` around a model construction sees the `ValidationError`;
+  `unwrap_flow_exception()` gives back the error. A class that lists the builtin first —
+  `class E(ValueError, InvalidInputError)`, `class E(RuntimeError, PreconditionError)` — now
+  raises `TypeError` at definition (no consistent MRO); list the pf-core class first.
+- `.pf-guards.toml` refuses an unknown key under `[tool.pf_guards]` by name, with the nearest
+  known key suggested; the gate exits 2.
+
+### Added
+- `python -m pf_core.guards` runs a framework check when `.pf-guards.toml` has a
+  `[tool.pf_guards.framework]` table. It fails on code that hand-rolls what pf-core ships —
+  importing `logging`, `dotenv`, `requests` / `httpx` / `aiohttp` / `urllib3`,
+  `concurrent.futures`, `multiprocessing` or `hashlib`; raising builtin `Exception`,
+  `RuntimeError` or `ValueError`; `os.environ` / `os.getenv` reads, `print()`, `.exception()`
+  on a logger (`logger`, `_log`, `log`, `logging`, …), `os.replace()`;
+  `.write_text(json.dumps(...))` — and names the pf-core replacement for each. `disable` turns
+  rules off, `replace` renames the replacement a message names, and
+  `[[tool.pf_guards.framework.exempt]]` exempts a rule for one path with a reason of
+  at least four words; an exemption that suppresses nothing fails the gate. `os.environ` /
+  `os.getenv` are also caught through another name (`import os as o`, `from os import environ,
+  getenv`). Not breaches: `ValueError` in a pydantic validator (a decorator imported from
+  pydantic, or a function handed to its `AfterValidator` / `BeforeValidator` /
+  `PlainValidator` / `WrapValidator`) or in an argparse `type=` converter (the function, a
+  method through its class, or each one a `type=lambda` calls, defined in or imported into the
+  module that passes it, an import resolved to the module it names), and the environment
+  unpacked into a dict literal passed as a call's `env=`. `--framework` runs the check alone;
+  `--report` lists breaches, `0 framework breaches` on a clean tree, and exits 0.
+  `pf_core.guards.check_framework()` is the Python entry point; it raises `ConfigurationError`
+  on a stale exemption, and `FrameworkConfig` / `FrameworkExemption` refuse on construction
+  what the TOML refuses.
+- `max_function_lines` in `[tool.pf_guards]` turns on a function-length check: a hard limit,
+  or a table of `hard`, `soft` (default `hard` x `soft_fraction`), per-layer `layers` and
+  path-prefix `limits`. A function over its hard limit fails the gate and one over its soft
+  target warns, each printed with its path, `def` line, qualified name and length. Length
+  runs from the `def` line to the last line; a nested function is also measured on its own.
+  `pf_core.guards.scan_function_lengths()` is the Python entry point.
+- `[tool.pf_guards.comment_budget]` turns on a ceiling on comment and docstring lines per line
+  of code, per module (`file`) and across the scanned roots (`total`); a module with fewer
+  than `min_code_lines` lines of code counts only toward the total, and `total_root` limits the
+  total to some of the scanned roots. A module or total over its ceiling fails the gate.
+  `pf_core.guards.scan_comment_budget()` is the Python entry point.
+- With the function-length limit, comment budget or framework check on, a file under their
+  roots that does not parse fails the gate, `--report` included, and each check still runs over
+  the other files. Files are read as Python reads them (a BOM, a coding cookie). The `scan_*`
+  functions and `check_framework()` raise its `SyntaxError`; `scan_*` take
+  `skip_unparsed=True` to pass over it.
+- `pf_core.exceptions.unwrap_flow_exception()` returns the `InvalidInputError` a validator
+  raised from a pydantic `ValidationError` or FastAPI's `RequestValidationError` /
+  `WebSocketRequestValidationError` / `ResponseValidationError` — the first one, whatever
+  else the error holds — or `None`. pf-core answers it as it answered the escaped error: the
+  app from `create_app` with the handler for its class (422), `run_cli` with its message and
+  exit 1, `log_exception` at WARNING as `APP-InvalidInputError`; `resilient` matches `catch`
+  against it and records its message, `call_with_fallback` does not fall back on it, and a job
+  kind's schema validation and `PydanticValidator.validate_shape` let it escape as itself. A
+  validation error without one reaches the handler that answered it before: FastAPI's own,
+  the app's, the app's `ValueError` handler, or the 500 path. `create_app` returns a `FastAPI`
+  subclass that wraps the four validation-error handlers when the app starts, including ones
+  registered after `create_app`.
+
+### Changed
+- `ClaudeCodeClient` passes `--no-session-persistence` by default, so calls no longer write
+  session transcripts to `~/.claude/projects/`. New `persist_session` arg (also on
+  `get_client` / `new_client`) restores them, as does a `--resume` / `--continue` /
+  `--session-id` in `extra_args`.
+- `metadata_ddl` / `framework_ddl` default `dialect` to the test backend
+  (`PF_TEST_DATABASE_URL`'s, else SQLite) instead of always SQLite. On MySQL their index
+  statements omit `IF NOT EXISTS`, which MySQL does not support.
+- `import pf_core.utils.io` and `pf_core.utils.json` load no logging stack until they log, and
+  `pf_core.__version__` reads package metadata on first access: importing either drops from
+  about 80 ms to under 20 ms.
+
+### Fixed
+- `python -m pf_core.guards` crashed on a file in a declared encoding (a coding cookie). The
+  size gate now counts a file's rows from its bytes, where Python ends them, so a form feed no
+  longer adds a line; the layering check reads files as Python does.
+- `insert_ignore` on MySQL/MariaDB returned `1` for a skipped duplicate. It now returns `0`,
+  read from `lastrowid`; a skip leaves the session's `LAST_INSERT_ID()` at a sentinel value.
+- `docs/database.md` recommended `result.lastrowid` for inserted ids, which raises on Postgres;
+  it now shows `insert(...)` with `inserted_primary_key`.
+
 ## v0.22.0 — 2026-08-30
 
 ### Breaking
@@ -27,9 +148,10 @@ Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a ta
   and six fractional digits (was ISO `T`/`Z` with three), matching how SQLAlchemy renders
   a bound `DateTime`. A SQLite column holding values stamped by the old form no longer
   compares against a bound datetime; backfill with
-  `UPDATE t SET c = replace(rtrim(c, 'Z'), 'T', ' ') || '000'`. Mixed old/new rows also
-  sort wrong within a calendar date (`T` sorts above a space) and read back as a mix of
-  aware and naive datetimes.
+  `UPDATE t SET c = replace(rtrim(c, 'Z'), 'T', ' ') || '000' WHERE c LIKE '%T%'` — the
+  `WHERE` is required, or whole seconds also gain `000`. Mixed old/new rows sort wrong
+  within a calendar date (`T` sorts above a space) and read back as a mix of aware and
+  naive datetimes. `docs/db-dialect.md` has the per-column recipe.
 - `now_expr("mysql")` emits `CURRENT_TIMESTAMP(6)` (was `CURRENT_TIMESTAMP`). As a DDL
   default that is valid only against an fsp-6 column, or MySQL rejects the statement with
   `ERROR 1067`. `now_expr` and `on_update_now_clause` take `fractional=False` to pair with

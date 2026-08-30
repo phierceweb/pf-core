@@ -1,8 +1,13 @@
 """Tests for pf_core.db.repository.Repository base class."""
 
-from sqlalchemy import text
+from sqlalchemy import Column, Integer, MetaData, String, Table, insert, text
 
 from pf_core.db.repository import Repository
+
+
+_items = Table(
+    "items", MetaData(), Column("id", Integer, primary_key=True), Column("name", String(255))
+)
 
 
 class ItemRepo(Repository):
@@ -10,11 +15,8 @@ class ItemRepo(Repository):
 
     def insert(self, name: str) -> int:
         with self._tx() as conn:
-            result = conn.execute(
-                text("INSERT INTO items (name) VALUES (:name)"),
-                {"name": name},
-            )
-            return result.lastrowid
+            result = conn.execute(insert(_items).values(name=name))
+            return result.inserted_primary_key[0]
 
     def get_by_name(self, name: str) -> dict | None:
         with self._tx() as conn:

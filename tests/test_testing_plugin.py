@@ -8,13 +8,14 @@ import pytest
 from sqlalchemy import text
 
 from pf_core.testing._ddl import created_objects, dropped_objects
+from pf_core.testing._server_db import active_dialect
 
 
 class TestEngineFixture:
-    """pf_engine provides a working file-backed SQLite engine."""
+    """pf_engine provides a working engine on the configured backend."""
 
-    def test_engine_is_sqlite(self, pf_engine):
-        assert str(pf_engine.url).startswith("sqlite")
+    def test_engine_matches_configured_backend(self, pf_engine):
+        assert pf_engine.dialect.name == active_dialect()
 
     def test_engine_can_execute(self, pf_engine):
         with pf_engine.connect() as conn:
@@ -45,19 +46,10 @@ class TestConnectionFixture:
 
 
 class TestConcurrentAccess:
-    """pf_engine must be safe under multi-threaded repo access.
+    """pf_engine must be safe under multi-threaded repo access: each worker thread
+    gets its own connection."""
 
-    Regression: the previous in-memory ``StaticPool`` engine shared one
-    DBAPI connection across all threads, so driving
-    ``pf_core.parallel.run_parallel`` through ``transaction()`` raised
-    ``sqlite3.InterfaceError: bad parameter or other API misuse``
-    (SQLITE_MISUSE). The file-backed ``NullPool`` engine gives each
-    worker thread its own connection.
-    """
-
-    @pytest.mark.pf_tables(
-        "CREATE TABLE concurrent_items (id INTEGER PRIMARY KEY, val INTEGER NOT NULL)"
-    )
+    @pytest.mark.pf_tables("CREATE TABLE concurrent_items (val INTEGER NOT NULL)")
     def test_parallel_writes_through_transaction(self, pf_tables):
         from pf_core.db import transaction
         from pf_core.parallel import run_parallel
@@ -75,9 +67,7 @@ class TestConcurrentAccess:
             count = conn.execute(text("SELECT COUNT(*) FROM concurrent_items")).scalar()
         assert count == 50
 
-    @pytest.mark.pf_tables(
-        "CREATE TABLE repo_concurrent (id INTEGER PRIMARY KEY, val INTEGER NOT NULL)"
-    )
+    @pytest.mark.pf_tables("CREATE TABLE repo_concurrent (val INTEGER NOT NULL)")
     def test_parallel_writes_through_repository(self, pf_tables):
         """The layering-mandated path: services reach the DB via a
         ``Repository``, not raw ``transaction()``. A repo opening its own
@@ -104,11 +94,9 @@ class TestConcurrentAccess:
             count = conn.execute(text("SELECT COUNT(*) FROM repo_concurrent")).scalar()
         assert count == 50
 
-    @pytest.mark.pf_tables("CREATE TABLE mixed_rw (id INTEGER PRIMARY KEY, val INTEGER NOT NULL)")
+    @pytest.mark.pf_tables("CREATE TABLE mixed_rw (val INTEGER NOT NULL)")
     def test_concurrent_reads_during_writes(self, pf_tables):
-        """Readers must not error while writers are committing — the
-        other half of the WAL contract (the regression test only
-        exercised concurrent writers)."""
+        """Readers must not error while writers are committing."""
         from pf_core.db import transaction
         from pf_core.parallel import run_parallel
 
@@ -127,20 +115,8 @@ class TestConcurrentAccess:
 
 
 class TestFixtureThreadSafetyInvariant:
-    """Guard against the *self-masking* property that hid the original bug.
-
-    A ``StaticPool``-backed ``pf_engine`` — a single shared DBAPI
-    connection — could not exercise concurrency: the fixture itself
-    raised ``SQLITE_MISUSE`` before any concurrency assertion could
-    run. That earlier shape had no test that *could*
-    trip it because the test infrastructure was the broken thing.
-
-    These assertions fail loudly if the fixture is ever reverted to a
-    thread-unsafe configuration (e.g. back to in-memory ``StaticPool``
-    "for speed"), instead of silently re-disabling every db test's
-    ability to catch this class of bug. Pinning the invariant is the
-    actual fix for what allowed the miss.
-    """
+    """pf_engine must stay NullPool and file-backed: a shared in-memory ``StaticPool``
+    connection raises SQLITE_MISUSE before any concurrency test can run."""
 
     def test_pf_engine_uses_nullpool(self, pf_engine):
         from sqlalchemy.pool import NullPool
@@ -161,7 +137,7 @@ class TestFixtureThreadSafetyInvariant:
 class TestTablesMarker:
     """@pytest.mark.pf_tables creates tables from inline DDL."""
 
-    @pytest.mark.pf_tables("CREATE TABLE custom_table (id INTEGER PRIMARY KEY, val TEXT)")
+    @pytest.mark.pf_tables("CREATE TABLE custom_table (val TEXT)")
     def test_marker_creates_table(self, pf_tables, pf_connection):
         pf_connection.execute(
             text("INSERT INTO custom_table (val) VALUES (:v)"),
@@ -218,6 +194,11 @@ class TestSchemaFixtureWithoutAutouse:
     pf-core's own conftest marks ``pf_schema`` autouse, which hides this path —
     an inner pytest session is the only way to observe it.
     """
+
+    @pytest.fixture(autouse=True)
+    def _sqlite_inner_session(self, monkeypatch):
+        # The inner DDL is SQLite; these tests cover DDL merging, not dialects.
+        monkeypatch.delenv("PF_TEST_DATABASE_URL", raising=False)
 
     def test_schema_alone_creates_tables(self, pytester):
         pytester.makeconftest(_SCHEMA_CONFTEST)

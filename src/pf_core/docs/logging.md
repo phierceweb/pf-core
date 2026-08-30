@@ -87,6 +87,8 @@ except AppError as e:
 | `FlowException` | WARNING | No traceback | `COMP-ConfigurationError` |
 | Other | ERROR | No traceback | `COMP-ValueError` |
 
+A validation error wrapping a validator's `InvalidInputError` is logged as that `InvalidInputError` — see [exceptions.md](exceptions.md#builtin-bases-valueerror-and-runtimeerror).
+
 The event key format `{prefix}-{ClassName}` is designed for grep:
 
 ```bash

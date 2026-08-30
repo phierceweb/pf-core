@@ -12,9 +12,16 @@ import os
 import pytest
 from sqlalchemy import inspect, text
 
+from pf_core.testing._server_db import active_dialect
+
 # Module state for observing pf_engine teardown-hook execution (the hook
 # fires after its test's body has finished, so a sibling test asserts).
 _TEARDOWN_CALLS: list[str] = []
+
+# MySQL has no CREATE INDEX IF NOT EXISTS, so re-running index DDL there errors.
+_skip_on_mysql = pytest.mark.skipif(
+    active_dialect() == "mysql", reason="MySQL index DDL is unconditional"
+)
 
 
 class TestMetadataDdl:
@@ -42,6 +49,7 @@ class TestMetadataDdl:
         assert "md_items" in joined
         assert "CREATE INDEX" in joined and "idx_md_items_name" in joined
 
+    @_skip_on_mysql
     def test_executes_and_is_idempotent(self, pf_engine):
         from pf_core.testing.db_fixtures import metadata_ddl
 
@@ -79,6 +87,7 @@ class TestFrameworkDdl:
         }
         assert expected <= names, f"missing: {expected - names}"
 
+    @_skip_on_mysql
     def test_idempotent(self, pf_engine):
         from pf_core.testing.db_fixtures import framework_ddl
 
@@ -118,7 +127,6 @@ class TestPfSchemaSplice:
         return framework_ddl() + [
             """
             CREATE TABLE IF NOT EXISTS proj_refs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_id INTEGER NOT NULL REFERENCES jobs(id)
             )
             """

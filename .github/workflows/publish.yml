@@ -2,7 +2,7 @@
 # tags are the public consumption surface; main carries no stability promise.
 #
 # The `build` job builds the sdist/wheel and runs twine check; the `test` job
-# runs the full suite on the tagged sha; the `publish` job waits for both and
+# runs every job in test.yml on the tagged sha; the `publish` job waits for both and
 # uploads to PyPI via OIDC Trusted Publishing — the trusted publisher is
 # registered on pypi.org (project "pf-core" → GitHub publisher: owner
 # phierceweb, repo pf-core, workflow publish.yml, environment pypi), so no
@@ -38,14 +38,7 @@ jobs:
           path: dist/
 
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install -e ".[full,articles,anthropic,image-phash,dev]"
-      - run: python -m pytest tests/ -q
+    uses: ./.github/workflows/test.yml
 
   publish:
     needs: [build, test]

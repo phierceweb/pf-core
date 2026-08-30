@@ -10,7 +10,7 @@ from pf_core.db.soft_delete import not_deleted, restore, soft_delete
 
 _PRODUCTS_TABLE = """
 CREATE TABLE products (
-    id TEXT PRIMARY KEY,
+    id VARCHAR(64) PRIMARY KEY,
     name TEXT,
     deleted_at TEXT,
     deleted_reason TEXT
@@ -19,7 +19,7 @@ CREATE TABLE products (
 
 _NOTES_TABLE = """
 CREATE TABLE notes (
-    id TEXT PRIMARY KEY,
+    id VARCHAR(64) PRIMARY KEY,
     name TEXT,
     deleted_at TEXT
 )

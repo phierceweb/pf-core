@@ -28,7 +28,7 @@ app = create_app(
 | `log_requests` | `bool` | `True` | Enable request logging middleware |
 | `rate_limit` | `bool` | `True` | Enable rate limiting. Reads `API_RATE_LIMIT_PER_MINUTE` from env (default 60). Requires `pf-core[ratelimit]`. |
 
-Additional kwargs are passed through to `FastAPI()`.
+Additional kwargs are passed through to `FastAPI()`. The app returned is a `FastAPI` subclass that wraps the validation-error handlers when it starts (see [Error handling](#error-handling)); anything you can do with a `FastAPI` app works on it.
 
 ## What's included
 
@@ -55,9 +55,13 @@ Exceptions are mapped to HTTP responses automatically. Each `FlowException` subc
 | `ConfigurationError` | 500 | Logged with traceback; generic message shown |
 | `CostBudgetExceeded` (from `pf_core.budget`) | 429 | Clean message shown to user |
 | `FlowException` (catch-all) | 400 | Clean message shown to user |
+| A validation error wrapping a validator's `InvalidInputError` | That of the `InvalidInputError` | pydantic's `ValidationError`, or FastAPI's `RequestValidationError` / `WebSocketRequestValidationError` / `ResponseValidationError`: answered by the handler for the `InvalidInputError`'s class (→ 422), whatever else it holds |
+| Any other validation error | As without pf-core | FastAPI's own answer for request and websocket errors; a `ValidationError` goes to the app's `ValueError` handler if it has one, else 500 |
 | `AppError` | 500 | Logged with traceback; generic message shown to user |
 | `HTTPException` | Status from exception | Standard FastAPI behavior |
 | Unhandled `Exception` | 500 | Logged with traceback; generic message shown |
+
+A validator's `InvalidInputError` used to escape validation and reach the `InvalidInputError` handler directly; pydantic now wraps it because it is a `ValueError` (see [exceptions.md](exceptions.md#builtin-bases-valueerror-and-runtimeerror)). The handlers for the four validation-error classes are wrapped when the app builds its middleware stack, so a handler you register for one of them — before or after `create_app`, or through `exception_handlers=` — still receives only the ordinary ones.
 
 ### Error pages
 

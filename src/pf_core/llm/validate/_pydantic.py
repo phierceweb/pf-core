@@ -17,6 +17,7 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
     raise extra_import_error("validate", "pydantic", feature="pf_core.llm.validate") from e
 
+from pf_core.exceptions import unwrap_flow_exception
 from pf_core.llm.validate._pipeline import ValidationSignal
 
 
@@ -38,20 +39,28 @@ class PydanticValidator:
             ``(instance, passed_signal)`` on success, ``(None, failed_signal)``
             otherwise. The failure signal's ``details`` contains the full
             Pydantic ``errors()`` list (location + type + message per error).
+
+        Raises:
+            InvalidInputError: a validator raised one; it escapes as itself, as
+                it did before pydantic wrapped it.
         """
         name = f"{agent_type}_shape"
         try:
             instance = self.model.model_validate(parsed)
         except ValidationError as e:
-            return None, ValidationSignal(
+            escaped = unwrap_flow_exception(e)
+            if escaped is None:
+                return None, ValidationSignal(
+                    validator=name,
+                    severity="error",
+                    passed=False,
+                    details={"errors": e.errors(include_url=False)},
+                )
+        else:
+            return instance, ValidationSignal(
                 validator=name,
                 severity="error",
-                passed=False,
-                details={"errors": e.errors(include_url=False)},
+                passed=True,
+                details=None,
             )
-        return instance, ValidationSignal(
-            validator=name,
-            severity="error",
-            passed=True,
-            details=None,
-        )
+        raise escaped  # outside the handler, so its own __context__ is kept

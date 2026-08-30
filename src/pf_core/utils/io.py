@@ -28,9 +28,17 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from pf_core.log import get_logger
+_log = None
 
-_log = get_logger(__name__)
+
+def _logger():
+    global _log
+    if _log is None:
+        from pf_core.log import get_logger  # structlog loads on first use, not at import
+
+        _log = get_logger(__name__)
+    return _log
+
 
 # Default file permissions for newly-written files: rw-r--r-- (0o644).
 # tempfile.mkstemp creates with 0o600 (owner-only), which surprises
@@ -52,7 +60,7 @@ def _fsync_dir(directory: Path) -> None:
         finally:
             os.close(fd)
     except OSError as exc:
-        _log.debug("dir_fsync_unsupported", directory=str(directory), error=str(exc))
+        _logger().debug("dir_fsync_unsupported", directory=str(directory), error=str(exc))
 
 
 def atomic_write_text(

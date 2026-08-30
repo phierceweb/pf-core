@@ -218,3 +218,159 @@ class TestCors:
         client = self._client(cors_origins=None)
         r = client.get("/x", headers={"Origin": "https://evil.example"})
         assert not [h for h in r.headers if h.startswith("access-control-")]
+
+
+class TestBuiltinHandlersDoNotWin:
+    """InvalidInputError is a ValueError and PreconditionError a RuntimeError; a handler an
+    app registers for the builtin must not take their 422 / 409 away."""
+
+    @pytest.fixture
+    def builtin_client(self):
+        from fastapi.responses import JSONResponse
+
+        app = create_app(title="Test", log_requests=False)
+
+        @app.exception_handler(ValueError)
+        async def value_error(request, exc):
+            return JSONResponse({"detail": "value"}, status_code=400)
+
+        @app.exception_handler(RuntimeError)
+        async def runtime_error(request, exc):
+            return JSONResponse({"detail": "runtime"}, status_code=503)
+
+        @app.get("/invalid-input")
+        async def raise_invalid_input():
+            raise InvalidInputError("name is required")
+
+        @app.get("/precondition")
+        async def raise_precondition():
+            raise PreconditionError("task already complete")
+
+        @app.get("/value")
+        async def raise_value():
+            raise ValueError("plain")
+
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_invalid_input_still_returns_422(self, builtin_client):
+        assert builtin_client.get("/invalid-input").status_code == 422
+
+    def test_precondition_still_returns_409(self, builtin_client):
+        assert builtin_client.get("/precondition").status_code == 409
+
+    def test_a_plain_value_error_reaches_its_own_handler(self, builtin_client):
+        assert builtin_client.get("/value").status_code == 400
+
+    def test_a_flow_exception_handler_beats_a_value_error_handler(self):
+        """A bare FastAPI app with only the base FlowException handler, registered last."""
+        from fastapi import FastAPI
+        from fastapi.responses import JSONResponse
+
+        app = FastAPI()
+
+        @app.exception_handler(ValueError)
+        async def value_error(request, exc):
+            return JSONResponse({"detail": "value"}, status_code=400)
+
+        @app.exception_handler(FlowException)
+        async def flow(request, exc):
+            return JSONResponse({"detail": "flow"}, status_code=422)
+
+        @app.get("/invalid-input")
+        async def raise_invalid_input():
+            raise InvalidInputError("name is required")
+
+        r = TestClient(app, raise_server_exceptions=False).get("/invalid-input")
+        assert (r.status_code, r.json()["detail"]) == (422, "flow")
+
+
+class TestFlowExceptionInsideValidation:
+    """A model built in a route whose validator raises InvalidInputError: pydantic wraps it in a
+    ValidationError, which must still answer 422, as it did before the builtin bases."""
+
+    @pytest.fixture
+    def app(self):
+        from datetime import date
+
+        from fastapi.responses import JSONResponse
+        from pydantic import BaseModel, field_validator
+
+        from pf_core.utils.dates import parse_date
+
+        class Window(BaseModel):
+            start: date
+
+            @field_validator("start", mode="before")
+            @classmethod
+            def _start(cls, v: object) -> date:
+                return parse_date(v)  # raises InvalidInputError on "2026-13-45"
+
+        class SpecError(InvalidInputError):
+            pass
+
+        class Spec(BaseModel):
+            name: str
+
+            @field_validator("name")
+            @classmethod
+            def _name(cls, v: str) -> str:
+                raise SpecError(f"no spec called {v}")
+
+        class Count(BaseModel):
+            n: int
+
+        class Both(Count, Window):
+            pass
+
+        app = create_app(title="Test", log_requests=False)
+
+        @app.exception_handler(SpecError)
+        async def spec_error(request, exc):
+            return JSONResponse({"detail": str(exc)}, status_code=418)
+
+        @app.get("/window")
+        async def window(start: str):
+            return {"start": str(Window(start=start).start)}
+
+        @app.get("/spec")
+        async def spec(name: str):
+            return {"name": Spec(name=name).name}
+
+        @app.get("/count")
+        async def count(n: str):
+            return {"n": Count(n=n).n}
+
+        @app.get("/both")
+        async def both(n: str, start: str):
+            return {"n": Both(n=n, start=start).n}
+
+        return app
+
+    def test_a_bad_date_answers_422(self, app):
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/window", params={"start": "2026-13-45"}, headers={"accept": "application/json"}
+        )
+        assert (r.status_code, r.json()["detail"]) == (
+            422,
+            "Invalid calendar date: '2026-13-45'",
+        )
+
+    def test_the_handler_for_the_raised_class_answers(self, app):
+        r = TestClient(app, raise_server_exceptions=False).get("/spec", params={"name": "x"})
+        assert (r.status_code, r.json()["detail"]) == (418, "no spec called x")
+
+    def test_a_bad_date_beside_ordinary_bad_input_still_answers_422(self, app):
+        """Before, the InvalidInputError escaped validation whatever else was wrong."""
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/both",
+            params={"n": "x", "start": "2026-13-45"},
+            headers={"accept": "application/json"},
+        )
+        assert (r.status_code, r.json()["detail"]) == (422, "Invalid calendar date: '2026-13-45'")
+
+    def test_ordinary_bad_input_is_untouched(self, app):
+        from pydantic import ValidationError
+
+        assert TestClient(app, raise_server_exceptions=False).get("/count?n=x").status_code == 500
+        with pytest.raises(ValidationError):
+            TestClient(app).get("/count?n=x")

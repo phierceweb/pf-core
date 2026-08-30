@@ -125,6 +125,14 @@ def _ok_run(stdout: str = "ok response") -> MagicMock:
     return _envelope_run(result=stdout)
 
 
+_FILE_FLAGS = ("--system-prompt-file", "--append-system-prompt-file")
+
+
+def _argv(cmd: list[str]) -> list[str]:
+    """``cmd`` without the binary, with each system-prompt temp file path as ``<file>``."""
+    return ["<file>" if i and cmd[i - 1] in _FILE_FLAGS else arg for i, arg in enumerate(cmd)][1:]
+
+
 class TestJsonEnvelope:
     """`--output-format json` is what makes truncation reportable at all: the
     envelope's top-level stop_reason is the model's, the text-mode stdout has
@@ -253,6 +261,7 @@ class TestJsonEnvelope:
             mock_which,
             mock_run,
             _text_run("stream text\n"),
+            tools=["Bash"],
             extra_args=["--allowedTools", "Bash", "--output-format", "text"],
         )
         cmd = mock_run.call_args.args[0]
@@ -469,9 +478,16 @@ class TestChatHappyPath:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_passes_flattened_prompt_to_subprocess(self, mock_which, mock_run):
+    def test_user_content_goes_on_stdin_and_system_in_a_file(self, mock_which, mock_run):
         mock_which.return_value = "/usr/local/bin/claude"
-        mock_run.return_value = _ok_run("ok")
+        seen = {}
+
+        def run(cmd, **kwargs):
+            with open(cmd[cmd.index("--system-prompt-file") + 1], encoding="utf-8") as fh:
+                seen["system"] = fh.read()
+            return _ok_run("ok")
+
+        mock_run.side_effect = run
         client = ClaudeCodeClient()
         client.chat(
             messages=[
@@ -480,18 +496,15 @@ class TestChatHappyPath:
             ]
         )
         cmd = mock_run.call_args.args[0]
-        # Prompt is piped via stdin, not argv — argv has an OS hard limit
-        # (ARG_MAX) that large prompts trip over. `--print` is the final
-        # argv element; there is no positional prompt after it.
         assert cmd[-1] == "--print"
-        assert mock_run.call_args.kwargs["input"] == "be brief\n\n---\n\nsummarize this"
+        assert mock_run.call_args.kwargs["input"] == "summarize this"
+        assert seen["system"] == "be brief"
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
     def test_large_prompt_uses_stdin_not_argv(self, mock_which, mock_run):
         """A multi-megabyte prompt must not appear in argv, where it would
-        trip ARG_MAX (E2BIG) on macOS/Linux. Regression for a batch pipeline
-        whose rendered prompt can exceed 256 KB."""
+        trip ARG_MAX (E2BIG)."""
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
         big = "x" * 2_000_000  # 2 MB — well past macOS ARG_MAX (~256 KB)
@@ -503,15 +516,20 @@ class TestChatHappyPath:
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
-    def test_extra_args_inserted_before_print(self, mock_which, mock_run):
+    def test_extra_args_inserted_before_print(self, mock_which, mock_run, monkeypatch):
+        monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
-        client = ClaudeCodeClient(extra_args=["--allowedTools", "Bash"])
+        client = ClaudeCodeClient(tools=["Bash"], extra_args=["--allowedTools", "Bash"])
         client.chat(messages=[{"role": "user", "content": "x"}])
-        cmd = mock_run.call_args.args[0]
-        # --safe-mode leads (isolate defaults True); extra_args follow, before --print.
-        assert cmd[1:7] == [
+        # The client's own flags lead; extra_args follow, before --print.
+        assert _argv(mock_run.call_args.args[0]) == [
             "--safe-mode",
+            "--no-session-persistence",
+            "--tools",
+            "Bash",
+            "--system-prompt-file",
+            "<file>",
             "--allowedTools",
             "Bash",
             "--output-format",
@@ -607,16 +625,8 @@ class TestEnvIsolation:
 
 
 class TestSafeModeIsolation:
-    """``claude --print`` runs in the caller's working directory, so without
-    isolation it auto-loads the surrounding project's CLAUDE.md, skills,
-    hooks, and plugins. A weaker model can then OBEY that ambient context
-    instead of the caller's request — emitting skill text where the caller
-    expected a completion. ``--safe-mode`` ("start with all customizations
-    off"; auth, model, and explicit flags still apply) strips that ambient
-    context. It is ON by default — a programmatic library call almost never
-    wants the surrounding repo's instructions — with an ``isolate=False``
-    opt-out for the rare consumer that deliberately runs claude inside a
-    project to use that project's customizations."""
+    """``--safe-mode`` keeps the cwd's CLAUDE.md, skills, hooks and plugins out of the
+    call; on by default, ``isolate=False`` opts out."""
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -659,18 +669,22 @@ class TestSafeModeIsolation:
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
     def test_safe_mode_coexists_with_extra_args_and_model(self, mock_which, mock_run, monkeypatch):
-        """Canonical argv with everything set: ``[binary, --safe-mode,
-        *extra_args, --model X, --output-format json, --print]``. ``--safe-mode``
-        strips ambient customizations but explicit flags (--allowedTools,
-        --model) still apply, so they coexist."""
+        """``--safe-mode`` strips ambient customizations; explicit flags (--tools,
+        --allowedTools, --model) still apply."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
-        client = ClaudeCodeClient(extra_args=["--allowedTools", "Bash"], model="haiku")
+        client = ClaudeCodeClient(
+            tools=["Bash"], extra_args=["--allowedTools", "Bash"], model="haiku"
+        )
         client.chat(messages=[{"role": "user", "content": "x"}])
-        cmd = mock_run.call_args.args[0]
-        assert cmd[1:9] == [
+        assert _argv(mock_run.call_args.args[0]) == [
             "--safe-mode",
+            "--no-session-persistence",
+            "--tools",
+            "Bash",
+            "--system-prompt-file",
+            "<file>",
             "--allowedTools",
             "Bash",
             "--model",
@@ -706,6 +720,96 @@ class TestSafeModeIsolation:
     def test_new_client_passes_isolate(self, monkeypatch):
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         assert new_client(isolate=False).isolate is False
+
+
+class TestSessionPersistence:
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_no_persistence_by_default(self, mock_which, mock_run):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = _ok_run("ok")
+        ClaudeCodeClient().chat(messages=[{"role": "user", "content": "x"}])
+        cmd = mock_run.call_args.args[0]
+        assert cmd.count("--no-session-persistence") == 1
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_flag_follows_safe_mode(self, mock_which, mock_run):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = _ok_run("ok")
+        ClaudeCodeClient().chat(messages=[{"role": "user", "content": "x"}])
+        cmd = mock_run.call_args.args[0]
+        assert cmd[1:3] == ["--safe-mode", "--no-session-persistence"]
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_flag_leads_without_isolation(self, mock_which, mock_run):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = _ok_run("ok")
+        ClaudeCodeClient(isolate=False).chat(messages=[{"role": "user", "content": "x"}])
+        cmd = mock_run.call_args.args[0]
+        assert cmd[1] == "--no-session-persistence"
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_persist_session_true_omits_flag(self, mock_which, mock_run):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = _ok_run("ok")
+        ClaudeCodeClient(persist_session=True).chat(messages=[{"role": "user", "content": "x"}])
+        cmd = mock_run.call_args.args[0]
+        assert "--no-session-persistence" not in cmd
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_preflight_does_not_persist(self, mock_which, mock_run):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = _ok_run("ok")
+        ClaudeCodeClient().preflight()
+        cmd = mock_run.call_args.args[0]
+        assert "--no-session-persistence" in cmd
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            ["--resume", "abc"],
+            ["--resume=abc"],
+            ["-r", "abc"],
+            ["--continue"],
+            ["-c"],
+            ["--session-id", "0d9e1b6a-0000-4000-8000-000000000000"],
+        ],
+    )
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_resuming_extra_args_keep_persistence(self, mock_which, mock_run, extra):
+        """Without the transcript there is nothing for the next call to resume."""
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = _ok_run("ok")
+        ClaudeCodeClient(extra_args=extra).chat(messages=[{"role": "user", "content": "x"}])
+        cmd = mock_run.call_args.args[0]
+        assert "--no-session-persistence" not in cmd
+
+    @patch("pf_core.clients.claude_code.subprocess.run")
+    @patch("pf_core.clients.claude_code.shutil.which")
+    def test_unrelated_extra_args_still_suppress_persistence(self, mock_which, mock_run):
+        mock_which.return_value = "/usr/local/bin/claude"
+        mock_run.return_value = _ok_run("ok")
+        ClaudeCodeClient(extra_args=["--continue-on-error"]).chat(
+            messages=[{"role": "user", "content": "x"}]
+        )
+        cmd = mock_run.call_args.args[0]
+        assert "--no-session-persistence" in cmd
+
+    def test_persist_session_defaults_false(self):
+        assert ClaudeCodeClient().persist_session is False
+
+    def test_get_client_passes_persist_session(self, monkeypatch):
+        monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
+        assert get_client(persist_session=True).persist_session is True
+
+    def test_new_client_passes_persist_session(self, monkeypatch):
+        monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
+        assert new_client(persist_session=True).persist_session is True
 
 
 class TestChatErrors:
@@ -783,13 +887,8 @@ class TestChatErrors:
 
 
 class TestRetry:
-    """A3a: ClaudeCodeClient(retry=N) — auto-retry on non-zero exit and
-    timeout. Cheap insurance against transient session blips
-    (rate-limit windows, momentary auth refresh). Default ``retry=0``
-    preserves the pre-A3 behavior of raising on the first failure.
-
-    Missing binary and empty-messages are NOT retryable (deterministic
-    config errors); only subprocess failures are."""
+    """ClaudeCodeClient(retry=N) retries non-zero exits and timeouts; a missing
+    binary or empty messages raise at once."""
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -921,12 +1020,7 @@ class TestRetry:
 
 
 class TestPreflight:
-    """A2: ClaudeCodeClient.preflight() — fail-fast auth check before
-    launching long batches. Issues a tiny ``claude --print "ok"`` and
-    raises ClaudeCodeError with an actionable ``<binary> /login``
-    remediation message on any failure (auth, missing binary, timeout) — so a
-    bad auth state surfaces in seconds instead of after a whole batch of
-    parallel calls errors on "Not logged in · Please run /login"."""
+    """ClaudeCodeClient.preflight(): fail-fast auth check before a batch."""
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -1054,11 +1148,8 @@ class TestPreflight:
 
 
 class TestModelOverride:
-    """A1: ClaudeCodeClient honors ``model=`` (constructor or per-call), falls
-    back to ``PF_CORE_CLAUDE_CODE_MODEL`` env var, and adds no ``--model``
-    flag when none is set — the CLI then uses the active interactive session
-    model, which can silently land batch calls on Sonnet/Opus and chew
-    through quota."""
+    """ClaudeCodeClient honors ``model=`` (constructor or per-call), falls back to
+    ``PF_CORE_CLAUDE_CODE_MODEL``, and adds no ``--model`` flag when none is set."""
 
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
@@ -1233,18 +1324,20 @@ class TestModelOverride:
     @patch("pf_core.clients.claude_code.subprocess.run")
     @patch("pf_core.clients.claude_code.shutil.which")
     def test_model_lands_after_extra_args(self, mock_which, mock_run, monkeypatch):
-        """Order: [binary, --safe-mode, *extra_args, --model X, --output-format
-        json, --print]. Putting --model in extra_args manually still works
-        (caller's choice), but the per-instance/per-call model uses this
-        canonical position so callers don't accidentally double up."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run("ok")
-        client = ClaudeCodeClient(extra_args=["--allowedTools", "Bash"], model="haiku")
+        client = ClaudeCodeClient(
+            tools=["Bash"], extra_args=["--allowedTools", "Bash"], model="haiku"
+        )
         client.chat(messages=[{"role": "user", "content": "x"}])
-        cmd = mock_run.call_args.args[0]
-        assert cmd[1:9] == [
+        assert _argv(mock_run.call_args.args[0]) == [
             "--safe-mode",
+            "--no-session-persistence",
+            "--tools",
+            "Bash",
+            "--system-prompt-file",
+            "<file>",
             "--allowedTools",
             "Bash",
             "--model",
@@ -1277,21 +1370,19 @@ class TestSingleton:
         assert c.timeout == 42
         assert c.binary == "claude-canary"
 
-    def test_subsequent_args_ignored(self):
+    def test_other_args_get_their_own_client(self):
         first = get_client(timeout=42)
-        second = get_client(timeout=99)  # ignored
-        assert second is first
-        assert second.timeout == 42
+        second = get_client(timeout=99)
+        assert second is not first
+        assert (first.timeout, second.timeout) == (42, 99)
+        assert get_client(timeout=99) is second
 
     def test_default_timeout_when_none_passed(self):
         c = get_client()
         assert c.timeout == DEFAULT_TIMEOUT_SECONDS
 
     def test_different_models_get_different_singletons(self, monkeypatch):
-        """Per-task model pinning needs distinct singletons. A document-
-        pipeline consumer wants `get_client(model='sonnet')` for markdown
-        analysis AND `get_client(model='haiku')` for vision in the same
-        process."""
+        """Each model gets its own singleton, so one process can pin different models."""
         monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
         haiku = get_client(model="haiku")
         sonnet = get_client(model="sonnet")

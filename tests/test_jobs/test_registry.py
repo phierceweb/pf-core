@@ -116,6 +116,24 @@ def test_validate_inputs_raises_on_schema_mismatch():
         desc.validate_inputs({"x": "not an int"})
 
 
+def test_a_validators_invalid_input_error_escapes_as_itself():
+    """Before pydantic wrapped it, the validator's own InvalidInputError escaped validation."""
+    from pydantic import field_validator
+
+    class Dated(BaseModel):
+        day: str
+
+        @field_validator("day")
+        @classmethod
+        def _day(cls, v: str) -> str:
+            raise InvalidInputError(f"not a date: {v}")
+
+    desc = register_kind(kind="dated", inputs_schema=Dated)
+    with pytest.raises(InvalidInputError) as raised:
+        desc.validate_inputs({"day": "x"})
+    assert str(raised.value) == "not a date: x"
+
+
 def test_validate_outputs_rejects_non_basemodel_schema():
     desc = register_kind(kind="bad_schema", outputs_schema=dict)
     with pytest.raises(ConfigurationError, match="Unsupported outputs_schema"):

@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from pf_core.exceptions import ConfigurationError, InvalidInputError
+from pf_core.exceptions import ConfigurationError, InvalidInputError, unwrap_flow_exception
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +226,8 @@ def _validate_against_schema(value: Any, schema: Any, *, label: str) -> Any:
       - ``None`` — returns ``value`` unchanged
 
     Raises ``InvalidInputError`` on failure, preserving the underlying error
-    as ``__cause__``.
+    as ``__cause__`` — or, when a validator raised one, that ``InvalidInputError``
+    itself, as before pydantic wrapped it.
     """
     if schema is None:
         return value
@@ -242,9 +243,12 @@ def _validate_against_schema(value: Any, schema: Any, *, label: str) -> Any:
         try:
             return schema.model_validate(value)
         except ValidationError as e:
-            raise InvalidInputError(
-                f"Job {label} failed schema validation: {e}",
-            ) from e
+            escaped = unwrap_flow_exception(e)
+            if escaped is None:
+                raise InvalidInputError(
+                    f"Job {label} failed schema validation: {e}",
+                ) from e
+        raise escaped  # outside the handler, so its own __context__ is kept
 
     raise ConfigurationError(
         f"Unsupported {label}_schema type: {type(schema).__name__}. "

@@ -22,7 +22,7 @@ All five land in the same place: one `llm_runs` row per call, plus sidecar table
 
 In a complex data pipeline the stakes are higher, because prompts feed prompts: step 3 consumes what steps 1 and 2 produced, so an upstream prompt or model change ripples through everything downstream. The same tables answer that too. Every call in a pipeline run shares a job id, and every run records the exact prompt version and model it used — so whole pipeline runs can be grouped by their upstream configuration and compared on their downstream results. Concretely: run the pipeline with steps 1 and 2 on prompt v2 and one model, run it again with the same prompts on a different model, leave every later step unchanged, and compare the later steps' validations and metrics between the two groups. The question being answered is not "which prompt is better in isolation" but "which upstream choice produced better results three steps later" — and it's answerable with a query, because everything landed in one schema.
 
-Dialect portability is structural rather than incidental: every query is built from SQLAlchemy constructs — no dialect-detection branches, no raw SQL — and MySQL sessions are pinned to UTC with cutoffs computed server-side. CI runs the full suite on SQLite across Python 3.12–3.13, plus a bare-install job that proves the foundation imports with none of the extras present; the MySQL upsert paths have opt-in tests against an ephemeral MySQL container (`[test-containers]` + Docker), and provider clients are tested against mocked transports, not live APIs. Misconfiguration fails at deploy time: an unresolvable eval judge or an invalid router entry raises `ConfigurationError` rather than silently picking a default.
+Dialect portability is structural rather than incidental: queries are SQLAlchemy constructs where one exists, the hand-written SQL that remains is parameterized, and the places where the databases genuinely differ are handled in a few modules (`pf_core.db.dialect`, `types`, `json_compat`, `upsert`, and the session setup in `connection`) — code built on pf-core need not branch on dialect. MySQL and Postgres sessions are pinned to UTC with cutoffs computed server-side. CI runs the full suite on SQLite across Python 3.12–3.13, then again against real PostgreSQL and MySQL servers with each test in its own schema or database, plus a bare-install job that proves the foundation imports with none of the extras present; provider clients are tested against mocked transports, not live APIs. Misconfiguration fails at deploy time: an unresolvable eval judge or an invalid router entry raises `ConfigurationError` rather than silently picking a default.
 
 ## One interface over multiple LLM backends — including Claude Code
 
@@ -34,7 +34,7 @@ LLMs return fenced, truncated, or not-quite-JSON output; pf-core recovers it (`p
 
 ## The database layer
 
-One API over SQLite, MySQL, and PostgreSQL — develop on SQLite, deploy on a server database without query changes; a shared Alembic runner handles migrations. The tracking tables are written by parallel workers, and the write paths are shaped for that: reference-table lookups resolve in their own short transactions before the main write opens, sidecar writes are idempotent upserts rather than delete-then-insert, and worker claims use a portable SELECT-then-UPDATE that also runs on SQLite. MySQL connections are pinned to UTC and time cutoffs are computed server-side, so timestamps agree across dialects. Details: **[docs/llm-tracking.md](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-tracking.md)** and **[docs/database.md](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/database.md)**.
+One API over SQLite, MySQL, and PostgreSQL — develop on SQLite, deploy on a server database without query changes; a shared Alembic runner handles migrations. The tracking tables are written by parallel workers, and the write paths are shaped for that: reference-table lookups resolve in their own short transactions before the main write opens, sidecar writes are idempotent upserts rather than delete-then-insert, and worker claims use a portable SELECT-then-UPDATE that also runs on SQLite. MySQL and Postgres connections are pinned to UTC and time cutoffs are computed server-side, so timestamps agree across dialects. Details: **[docs/llm-tracking.md](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/llm-tracking.md)** and **[docs/database.md](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/database.md)**.
 
 ## The application framework
 
@@ -53,7 +53,7 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.22.0"` (picks up `0.22.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.23.0"` (picks up `0.23.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
@@ -169,3 +169,7 @@ Pytest fixtures auto-register as a plugin via the `pf_core` entry point — no `
 ## Project history
 
 pf-core was developed privately from early April 2026 and first published on June 14, 2026, with the pre-publication history squashed. Public releases are tagged (`v*`) and published to PyPI by CI via OIDC trusted publishing ([publish.yml](https://github.com/phierceweb/pf-core/blob/main/.github/workflows/publish.yml)); `main` is the development line and is pushed with each release.
+
+## License
+
+Apache-2.0 — see [LICENSE](https://github.com/phierceweb/pf-core/blob/main/LICENSE). Releases through v0.22.0 were published under the MIT license and stay MIT.

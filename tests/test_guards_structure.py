@@ -35,6 +35,21 @@ class TestScanFileSizes:
         out = scan_file_sizes(tmp_path, hard=500, soft=300)
         assert out[0].path == "pkg/big.py"
 
+    def test_a_file_with_a_coding_cookie_is_counted(self, tmp_path: Path) -> None:
+        rows = "".join(f"NAME_{i} = 'caf\xe9'\n" for i in range(599))
+        (tmp_path / "legacy.py").write_bytes(f"# -*- coding: latin-1 -*-\n{rows}".encode("latin-1"))
+        out = scan_file_sizes(tmp_path, hard=500, soft=300)
+        assert out == [FileSizeViolation("legacy.py", 600, 500, "hard")]
+
+    def test_rows_are_counted_where_python_ends_them(self, tmp_path: Path) -> None:
+        """A form feed does not end a row; ``\\r\\n`` and a bare ``\\r`` do."""
+        rows = [b"\x0cx_%d = 1" % i for i in range(400)]
+        (tmp_path / "rows.py").write_bytes(
+            b"\r\n".join(rows[:200]) + b"\r" + b"\n".join(rows[200:])
+        )
+        out = scan_file_sizes(tmp_path, hard=500, soft=300)
+        assert out == [FileSizeViolation("rows.py", 400, 300, "soft")]
+
 
 class TestBaseline:
     def test_baselined_hard_violation_is_suppressed(self) -> None:

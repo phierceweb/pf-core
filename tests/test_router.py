@@ -135,3 +135,39 @@ def test_explicit_retry_on_is_honoured_as_given(routed):
 
     assert resolved.backend == "fake_b"
     assert content == "ok-fake_b"
+
+
+def _wrapped_flow() -> Exception:
+    """What building a model raises when its validator raises InvalidInputError."""
+    from pydantic import BaseModel, field_validator
+
+    class Reply(BaseModel):
+        text: str
+
+        @field_validator("text")
+        @classmethod
+        def _text(cls, v: str) -> str:
+            raise InvalidInputError("reply is malformed")
+
+    try:
+        Reply(text="x")
+    except Exception as exc:
+        return exc
+    raise AssertionError("the validator did not raise")
+
+
+def test_a_validators_flow_exception_does_not_burn_a_second_backend(routed):
+    routed["fake_a"].chat_exc = _wrapped_flow()
+
+    with pytest.raises(Exception, match="reply is malformed"):
+        call_with_fallback("routed", MSGS)
+
+    assert routed["fake_b"].instances == []
+
+
+def test_retry_on_a_flow_exception_class_matches_a_validators_one(routed):
+    routed["fake_a"].chat_exc = _wrapped_flow()
+
+    content, _, resolved = call_with_fallback("routed", MSGS, retry_on=(InvalidInputError,))
+
+    assert resolved.backend == "fake_b"

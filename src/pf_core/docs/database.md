@@ -85,7 +85,7 @@ When using MySQL, the engine enables `SET foreign_key_checks = 1` on each connec
 
 ### PostgreSQL
 
-No per-connection setup. psycopg negotiates UTC for `TIMESTAMPTZ` via the server's `timezone` setting (default UTC); FK constraints are always enforced. JSON columns use `JSONB` (preferred over `JSON`) — see `json_compat.json_col_type("postgresql")`.
+Each connection runs `SET TIME ZONE 'UTC'`, so `TIMESTAMPTZ` values come back in UTC whatever the server's `timezone` setting; FK constraints are always enforced. JSON columns use `JSONB` (preferred over `JSON`) — see `json_compat.json_col_type("postgresql")`.
 
 ## Transactions
 
@@ -163,11 +163,15 @@ params["_id"] = record_id
 conn.execute(text(f"UPDATE mytable SET {sets} WHERE id = :_id"), params)
 ```
 
-**Last inserted ID**:
+**Last inserted ID** — use a Core `insert()` and `inserted_primary_key`, which SQLAlchemy fills on every dialect. `result.lastrowid` works on SQLite and MySQL only; psycopg has no `lastrowid`, so it raises on Postgres:
 
 ```python
-result = conn.execute(text("INSERT INTO t (name) VALUES (:name)"), {"name": "x"})
-new_id = result.lastrowid
+from sqlalchemy import Column, Integer, MetaData, String, Table, insert
+
+t = Table("t", MetaData(), Column("id", Integer, primary_key=True), Column("name", String(255)))
+
+result = conn.execute(insert(t).values(name="x"))
+new_id = result.inserted_primary_key[0]
 ```
 
 ## Migrating from pymysql
@@ -178,7 +182,7 @@ If you're converting code that used raw pymysql cursors, watch for these:
 |---------|-------------------|
 | `%s` positional params | `:name` named params |
 | `.fetchone()` returns dict | `.mappings().fetchone()` for dict-like rows |
-| `cur.lastrowid` | `result.lastrowid` |
+| `cur.lastrowid` | `result.inserted_primary_key[0]` from a Core `insert()` (see above) |
 | `cur.rowcount` | `result.rowcount` |
 | `%%` to escape `%` in SQL strings | Single `%` — no escaping needed |
 | `WHERE id IN %s` with tuple | Build `:p0, :p1, ...` placeholders (see dynamic IN above) |

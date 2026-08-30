@@ -66,7 +66,7 @@ class TestGenerateId:
         assert len(result) == 8
 
 
-_WIDGETS_TABLE = "CREATE TABLE widgets (id TEXT PRIMARY KEY, name TEXT)"
+_WIDGETS_TABLE = "CREATE TABLE widgets (id VARCHAR(64) PRIMARY KEY, name TEXT)"
 
 
 class TestAllocateId:

@@ -2,7 +2,7 @@
 
 Wraps the official `anthropic` Python SDK's `messages.create()` with pf-core's `(content, usage)` return convention. Implements the same `.chat(messages, model, ...) -> (content, usage)` interface as [`OpenRouterClient`](openrouter.md) and [`ClaudeCodeClient`](claude-code.md), so the three are drop-in interchangeable.
 
-The Anthropic backend is one of the three built-in backends in the [model router](model-router.md#client-registry) — useful when you want the official SDK's vision support and direct usage / cache-token reporting (rather than going through OpenRouter, which charges a markup, or Claude Code, which uses a Claude Max session and has no per-call cost / token reporting).
+The Anthropic backend is one of the three built-in backends in the [model router](model-router.md#client-registry) — useful when you want the official SDK's vision support and direct usage / cache-token reporting (rather than going through OpenRouter, which charges a markup, or Claude Code, which uses a Claude Max session and reports no per-call cost).
 
 ## Install
 

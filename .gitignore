@@ -25,7 +25,8 @@ logs/
 .vscode/
 
 # AI / agent workspace
-# .ai/docs/, .ai/plans/, .ai/reviews/, .ai/scripts/, .ai/skills/ are local-only working docs.
+# .ai/docs/, .ai/plans/, .ai/receipts/, .ai/reviews/, .ai/scripts/, .ai/skills/ are
+# local-only working docs.
 # Tracked: .ai/rules/ (project conventions, useful to contributors) + .gitkeep
 # markers.
 .ai/docs/*
@@ -37,6 +38,7 @@ logs/
 !.ai/scripts/.gitkeep
 .ai/skills/*
 !.ai/skills/.gitkeep
+.ai/receipts
 
 # Claude Code local-only state
 .claude/settings.local.json

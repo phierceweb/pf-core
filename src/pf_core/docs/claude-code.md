@@ -2,6 +2,8 @@
 
 Thin wrapper around the local `claude --print` CLI. Implements the same `.chat(messages, model, ...) -> (content, usage)` interface as [`OpenRouterClient`](openrouter.md), so the two are drop-in interchangeable. Uses the machine's active Claude Max session and consumes no API credits.
 
+By default each call is a **plain completion**: no tools, and your `system` messages as the system prompt in place of Claude Code's own agent prompt. That matches what the other backends send and keeps the call to your prompt's tokens (see [Tools and the system prompt](#tools-and-the-system-prompt)). `tools` and `agent_prompt` turn a call back into an agent turn.
+
 Pair with the [model router](#routing) (`resolve_agent`) to flip a single env var and swap an agent's backend without touching call-site code.
 
 ## Usage
@@ -33,15 +35,17 @@ content, usage = client.chat(
 - **`system_fingerprint`** — always `None`.
 - **`finish_reason`** — the model's stop reason, read off the `--output-format json` envelope. Present whenever that envelope reports one (see [Truncation reporting](#truncation-reporting)).
 - **Authentication** — the child `claude` process inherits the parent environment with `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` stripped out. This protects the Claude Max session path: a stray key in a project's `.env` would otherwise hijack `claude --print` into billable — and possibly invalid — external API-key auth. All other env vars (PATH, HOME, session config) pass through.
-- **Isolation** — by default (`isolate=True`) the call runs with `--safe-mode`, so `claude --print` starts with all customizations **off**: the surrounding project's `CLAUDE.md`, skills, hooks, and plugins are not loaded (auth, model, and explicit flags like `--allowedTools` still apply). This is the secure default for a programmatic call, which runs in whatever directory the consumer happens to be in and almost never wants that directory's ambient instructions steering it — without it, a weaker model can be hijacked into obeying an ambient "invoke the relevant skill" instruction and emit skill text where the caller expected a completion. Pass `isolate=False` only when you deliberately run claude inside a project to use that project's customizations. Note `--safe-mode` does not remove the CLI's own workspace context: a call made from inside a git repo can see that repo's status, and a weak model may answer about it instead of the prompt — run batch consumers from a neutral cwd. Requires a `claude` CLI new enough to support `--safe-mode` (Claude Code 2.x); on an older binary the call exits non-zero with `unknown option '--safe-mode'` — set `isolate=False` to fall back.
+- **Tools** — none by default: the call passes `--tools ""` and `--strict-mcp-config`, so the model has no built-in or MCP tool to call. A prompt that asks the model to use one (read this file, run this command) gets an answer written without it — not an error — so name every tool a prompt relies on: `tools=["Read", "Grep"]`, or `["default"]` for the CLI's full set. See [Tools and the system prompt](#tools-and-the-system-prompt).
+- **System prompt** — your `system` messages, in a private temp file passed with `--system-prompt-file`, replace Claude Code's agent prompt; the other messages go on stdin. `agent_prompt=True` keeps Claude Code's prompt and appends yours instead. See [Messages and the system prompt](#messages-and-the-system-prompt).
+- **Isolation** — by default (`isolate=True`) the call runs with `--safe-mode`, so `claude --print` starts with all customizations **off**: the surrounding project's `CLAUDE.md`, skills, hooks, plugins, and MCP servers — including ones passed with `--mcp-config` — are not loaded (auth, model, and explicit flags like `--tools` still apply). This is the secure default for a programmatic call, which runs in whatever directory the consumer happens to be in and almost never wants that directory's ambient instructions steering it — without it, a weaker model can be hijacked into obeying an ambient "invoke the relevant skill" instruction and emit skill text where the caller expected a completion. Pass `isolate=False` only when you deliberately run claude inside a project to use that project's customizations (the user's `CLAUDE.md` is then injected even when your system prompt replaces Claude Code's). With `agent_prompt=True`, `--safe-mode` does not remove the CLI's own workspace context: Claude Code's prompt carries the cwd and the repo's git status, and a weak model may answer about them instead of the prompt — run such consumers from a neutral cwd. Requires a `claude` CLI new enough to support `--safe-mode` (Claude Code 2.x); on an older binary the call exits non-zero with `unknown option '--safe-mode'` — set `isolate=False` to fall back.
+- **Session persistence** — off by default (`persist_session=False`): the call passes `--no-session-persistence`, so the CLI saves no transcript under `~/.claude/projects/`. Without it a batch consumer leaves one session file per call, crowding real conversations out of transcript tooling. Set `persist_session=True` to keep transcripts while debugging a specific call; a `--resume`, `--continue` or `--session-id` in `extra_args` keeps them too, since a resumable session is what that flag asks for.
 
-## Message flattening
+## Messages and the system prompt
 
-Chat-message lists collapse into a single prompt:
+A chat-message list is split in two:
 
-- All `system` messages are joined with blank lines.
-- All non-system messages (`user`, `assistant`, …) are joined with blank lines.
-- The two blocks are separated by `\n\n---\n\n`.
+- All `system` messages, joined with blank lines, become the **system prompt**. They are written to a private temp file (mode `0600`, removed when the call returns, kept across retries) and passed as `--system-prompt-file`, which **replaces** Claude Code's agent prompt. A file rather than `--system-prompt <text>`: argv has an ARG_MAX ceiling and is visible to other users through `ps`. With no `system` message the file is empty — the call still runs without Claude Code's prompt.
+- All other messages (`user`, `assistant`, …), joined with blank lines, go on **stdin**.
 
 ```python
 client.chat(
@@ -50,12 +54,53 @@ client.chat(
         {"role": "user", "content": "summarize this"},
     ]
 )
-# Becomes (prompt piped on stdin, not in argv — argv has a hard ARG_MAX
-# limit that large rendered prompts blow past):
-#   $ echo "be brief\n\n---\n\nsummarize this" | claude --print
+# Runs, with "be brief" in the temp file:
+#   $ echo "summarize this" | claude --safe-mode --no-session-persistence \
+#       --tools "" --strict-mcp-config --system-prompt-file /tmp/pf-core-claude-system-….md \
+#       --output-format json --print
 ```
 
-Empty / missing content is skipped. An empty messages list (or one with only empty-content messages) raises `ClaudeCodeError`.
+The CLI prepends a one-line agent identity to a replacement prompt ("You are a Claude agent, built on Anthropic's Claude Agent SDK."); your text follows it.
+
+`agent_prompt=True` keeps Claude Code's own prompt and appends the `system` messages to it with `--append-system-prompt-file` (no file at all when there are none).
+
+System-prompt flags in `extra_args`: the CLI accepts one replacement flag and one append flag.
+
+- `--append-system-prompt` / `--append-system-prompt-file` composes with the client's `--system-prompt-file`: your system messages replace Claude Code's prompt and the flag's text is appended.
+- `--system-prompt` / `--system-prompt-file` — or an append flag while `agent_prompt=True` holds the one append slot — leaves the client no flag to use. It adds none and flattens the messages onto stdin instead: `system` block, `\n\n---\n\n`, then the rest.
+
+Empty / missing content is skipped. An empty messages list (or one with only `system` content) raises `ClaudeCodeError`.
+
+## Tools and the system prompt
+
+`claude --print` is a full Claude Code agent turn unless told otherwise: it carries Claude Code's own system prompt and tool definitions (about 30k tokens with the default tool set), and a model that has tools uses them — a batch summarizer asked for a word count will run `wc` through Bash, write drafts to files, and re-read its context each turn. The defaults turn that off:
+
+| Default | Flags | Input tokens beyond your prompt, measured on Haiku |
+|---|---|---|
+| Claude Code's prompt and tools (before v0.23.0) | none | ~30k (26k cache read + 4.7k cache write) |
+| no tools | `--tools "" --strict-mcp-config` | ~4k |
+| no tools, your system prompt (**default**) | + `--system-prompt-file` | ~250, plus your system prompt |
+
+On a real 77-entry summarization prompt with a 2k-character system prompt (Sonnet), the default took 18k input tokens in one turn where the pre-v0.23.0 call took 57k over several tool turns.
+
+`--tools ""` removes only the built-in tools. Without `--safe-mode` (`isolate=False`) the user's MCP servers would still load theirs; `--strict-mcp-config` (with no `--mcp-config`) stops that. Under the default `isolate=True` no MCP server loads either way.
+
+For an agent call, name the tools:
+
+```python
+client = new_client(
+    model="sonnet",
+    tools=["Read", "Grep", "Glob"],
+    extra_args=["--allowedTools", "Read,Grep,Glob"],
+)
+```
+
+Tool turns are prompt-cached either way: once your system prompt, the tool definitions and the conversation so far pass the model's minimum cacheable length, each turn re-reads the earlier context from cache. Add `agent_prompt=True` when you want Claude Code's own tool-use guidance and workspace context in the prompt — it costs about 5k tokens with one tool enabled and about 30k with the default set, mostly read from cache after the first turn.
+
+- `tools` accepts built-in tool names only; an MCP name (`mcp__…`) raises `ConfigurationError`. MCP tools come from the user's MCP config, which `--safe-mode` switches off entirely, so they need `isolate=False` — then run from a neutral cwd, since the cwd's `CLAUDE.md`, skills and hooks load too. Grant them in `extra_args`: `new_client(isolate=False, tools=["Read"], extra_args=["--allowedTools", "Read,mcp__server__tool"])`. With named `tools` and `isolate=False`, every configured MCP server loads, and each server's tool definitions count as input tokens; `--allowedTools` pre-approves tools, it does not limit which load. For MCP tools and no built-ins, pass `--tools` yourself — `extra_args=["--tools", "", "--allowedTools", "mcp__server__tool"]` with `isolate=False`; a `--tools` in `extra_args` replaces the client's tool flags, `--strict-mcp-config` included.
+- Granting tools only through `--allowedTools` / `--allowed-tools` in `extra_args` raises `ConfigurationError` at construction: with `tools=()` those tools would not exist. So do `tools` given as a string, and `tools` together with a `--tools` in `extra_args`.
+- **Reasoning effort** is the CLI session's default, and on Sonnet it can dominate a call's output: the 77-entry prompt above produced ~29.5k output tokens for a ~2.5k-token answer in 6 minutes at the default, and ~3k tokens in under a minute with `extra_args=["--effort", "low"]` or `"medium"` — which also covered a few fewer entries. Set it per agent where output quality allows.
+- The flags need a Claude Code CLI that supports them (`--no-session-persistence`, `--tools`, `--strict-mcp-config`, `--system-prompt-file`, `--append-system-prompt-file`; verified on 2.1.250). An older binary exits non-zero with `unknown option`.
 
 ## Class
 
@@ -70,6 +115,9 @@ ClaudeCodeClient(
     model: str | None = None,
     retry: int = 0,
     isolate: bool = True,
+    persist_session: bool = False,
+    tools: Sequence[str] | None = (),
+    agent_prompt: bool = False,
 )
 ```
 
@@ -77,10 +125,13 @@ ClaudeCodeClient(
 |-----------|------|---------|-------------|
 | `timeout` | `int` | `600` | Wall-clock cap (seconds) for one CLI call |
 | `binary` | `str` | `"claude"` | Path or name of the executable to run |
-| `extra_args` | `list[str]` | `None` | Flags inserted after `--safe-mode`, before `--model` / `--output-format` / `--print` (e.g. `["--allowedTools", "Bash"]`). Passing `--output-format` or `--verbose` here suppresses the client's envelope — see [Truncation reporting](#truncation-reporting) |
+| `extra_args` | `list[str]` | `None` | Flags inserted after the client's own (`--safe-mode`, `--no-session-persistence`, tool and system-prompt flags), before `--model` / `--output-format` / `--print` (e.g. `["--allowedTools", "Read"]` with `tools=["Read"]`). A `--tools` here replaces the client's tool flags; a system-prompt flag composes with or replaces the client's — see [Messages and the system prompt](#messages-and-the-system-prompt); `--output-format` or `--verbose` suppresses the client's envelope — see [Truncation reporting](#truncation-reporting) |
 | `model` | `str \| None` | `None` | Default model passed as `--model X` on every call. Falls back to `$PF_CORE_CLAUDE_CODE_MODEL`; `None` omits the flag entirely. Per-call `chat(model=...)` overrides for one call. |
 | `retry` | `int` | `0` | Auto-retry count for transient failures, sleeping `0.5 * attempt` seconds between attempts. `retry=0` (default) raises on the first failure. `retry=1` makes up to 2 total attempts; `retry=N` makes up to N+1. Both timeout and non-zero exit are retried (transient causes: rate-limit windows, momentary auth refresh, model warm-up). Missing binary and empty messages are NOT retried (deterministic config errors). |
-| `isolate` | `bool` | `True` | Run with `--safe-mode` so the call ignores the ambient project's `CLAUDE.md` / skills / hooks / plugins (auth, model, and explicit flags still apply). `True` is the secure default for a programmatic call; set `False` only to deliberately use the surrounding project's customizations. See **Isolation** above. |
+| `isolate` | `bool` | `True` | Run with `--safe-mode` so the call ignores the ambient project's `CLAUDE.md` / skills / hooks / plugins / MCP servers (auth, model, and explicit flags still apply). `True` is the secure default for a programmatic call; set `False` only to deliberately use the surrounding project's customizations. See **Isolation** above. |
+| `persist_session` | `bool` | `False` | Save each call as a Claude Code session transcript. `False` passes `--no-session-persistence`, unless `extra_args` resume a session. See **Session persistence** above. |
+| `tools` | `Sequence[str] \| None` | `()` | Built-in tools the model may call, passed as `--tools` (`["default"]` for the full set). Empty passes `--tools ""` and `--strict-mcp-config`: no built-in or MCP tools. See [Tools and the system prompt](#tools-and-the-system-prompt). |
+| `agent_prompt` | `bool` | `False` | Keep Claude Code's agent system prompt and append the `system` messages to it (`--append-system-prompt-file`). `False` replaces it with them (`--system-prompt-file`). See [Messages and the system prompt](#messages-and-the-system-prompt). |
 
 #### chat
 
@@ -128,7 +179,7 @@ Text-mode stdout carries the answer and nothing else, so a truncated response is
 
 A `--verbose` transcript array unwraps via its final `result` entry.
 
-Passing `--output-format` or `--verbose` in `extra_args` suppresses envelope mode entirely: your flag wins, the client adds none of its own, and stdout is read as plain text with no `finish_reason`. Consumers that pass `--allowedTools` and nothing else are unaffected.
+Passing `--output-format` or `--verbose` in `extra_args` suppresses envelope mode entirely: your flag wins, the client adds none of its own, and stdout is read as plain text with no `finish_reason`. Other `extra_args` (`--allowedTools`, `--tools`) leave envelope mode on.
 
 When the client *did* request the envelope and stdout is still unreadable — not valid JSON, or no string `result` (an older CLI, a wrapper script, a changed schema) — `chat()` raises `ClaudeCodeError` rather than returning machine output as the answer. The error names the remediation: upgrade the CLI, or pass `extra_args=["--output-format", "text"]` to restore text-mode output (truncation then unreportable).
 
@@ -166,9 +217,9 @@ from pf_core.clients.claude_code import get_client, new_client, reset_client
 
 | Function | Description |
 |---|---|
-| `get_client(*, timeout=None, binary=None, extra_args=None, model=None, retry=0, isolate=True)` | Per-model singleton. The cache is keyed on `model`, so `get_client(model="haiku")` and `get_client(model="sonnet")` return distinct instances; `get_client()` is its own slot under the key `None`. For each cache slot the first call's other args (timeout / binary / extra_args / retry / isolate) win. Because `isolate` defaults to `True`, a model's shared client is safe-mode-isolated by default — a later caller cannot accidentally downgrade it to non-isolated. |
-| `new_client(*, timeout=None, binary=None, extra_args=None, model=None, retry=0, isolate=True)` | Fresh instance with `get_client()`'s defaults but no caching. The escape hatch when different agents need differently-tuned clients (timeout, retry, isolate) in one process (also used by the model router's per-backend `client_kwargs`). |
-| `reset_client()` | Drop all cached per-model singletons. Useful in tests. |
+| `get_client(*, timeout=None, binary=None, extra_args=None, model=None, retry=0, isolate=True, persist_session=False, tools=(), agent_prompt=False)` | Shared client per distinct set of arguments: calls with the same args get the same instance, and a call with any other arg — another `model`, `tools`, `extra_args`, `isolate`, `timeout` — gets its own. One caller's tool grant, flags or `isolate=False` never reaches a client another caller asked for, and `get_client()` is always the isolated, tool-less default. |
+| `new_client(*, timeout=None, binary=None, extra_args=None, model=None, retry=0, isolate=True, persist_session=False, tools=(), agent_prompt=False)` | Fresh instance with `get_client()`'s defaults but no caching (the model router caches its per-backend `client_kwargs` clients itself, e.g. `client_kwargs: {tools: [Read, Grep], agent_prompt: true}`). |
+| `reset_client()` | Drop all cached clients. Useful in tests. |
 
 ### Per-task model pinning
 
@@ -187,9 +238,11 @@ def get_summarizer_client():
     return get_client(model="sonnet")  # smarter — reasoning over longer text
 ```
 
-Each is cached independently; subsequent calls return the same per-model instance. Pin via constructor (`get_client(model=...)`), env var (`$PF_CORE_CLAUDE_CODE_MODEL` — applies to the no-model slot), or per call (`client.chat(messages, model=...)`).
+Each is cached independently; subsequent calls with the same args return the same instance. Pin via constructor (`get_client(model=...)`), env var (`$PF_CORE_CLAUDE_CODE_MODEL` — applies when no `model` is passed), or per call (`client.chat(messages, model=...)`).
 
 ## Errors
+
+`ConfigurationError` is raised at construction for a `tools` / `extra_args` combination that cannot work (see [Tools and the system prompt](#tools-and-the-system-prompt)).
 
 `ClaudeCodeError` (subclass of `pf_core.exceptions.ClientError`) is raised when:
 
@@ -198,7 +251,7 @@ Each is cached independently; subsequent calls return the same per-model instanc
 - `claude --print` returns a non-zero exit code.
 - `claude --print` exceeds the wall-clock timeout.
 
-Catching `pf_core.exceptions.ClientError` (or `AppError`) will catch all of these.
+Catching `pf_core.exceptions.ClientError` (or `AppError`) catches every `ClaudeCodeError`; the construction-time `ConfigurationError` is a `FlowException` and is not among them.
 
 ## Routing
 

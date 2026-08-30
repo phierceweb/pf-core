@@ -22,13 +22,20 @@ from __future__ import annotations
 
 import importlib
 import sys
+from types import CodeType
 from typing import TYPE_CHECKING, Any, cast
 
 import typer
 from rich.console import Console
 from rich.markup import escape
 
-from pf_core.exceptions import AppError, FlowException
+from pf_core.exceptions import (
+    AppError,
+    FlowException,
+    InvalidInputError,
+    _converted_before,
+    unwrap_flow_exception,
+)
 from pf_core.log import get_logger, log_exception, setup_logging
 
 if TYPE_CHECKING:
@@ -73,6 +80,29 @@ _USAGE = cast(
 )
 
 
+def _converter_code(module: str) -> tuple[CodeType, ...]:
+    try:
+        return (importlib.import_module(module).FuncParamType.convert.__code__,)
+    except (ImportError, AttributeError):
+        return ()
+
+
+# click's FuncParamType, which runs a typer parser=, turns a ValueError into a usage error
+# showing only the raw value, and InvalidInputError is one.
+_CONVERTERS = frozenset(_converter_code("typer._click.types") + _converter_code("click.types"))
+
+
+def _parser_flow_exception(exc: BaseException) -> FlowException | None:
+    """The InvalidInputError a ``parser=`` raised, when click's conversion turned it into ``exc``."""
+    raised = exc.__context__
+    tb = None if raised is None else raised.__traceback__
+    if raised is None or tb is None or tb.tb_frame.f_code not in _CONVERTERS:
+        return None
+    if isinstance(raised, InvalidInputError) and not _converted_before(type(raised)):
+        return raised
+    return unwrap_flow_exception(raised)
+
+
 def create_cli(name: str, *, help: str = "", **kwargs: Any) -> typer.Typer:
     """Create a Typer app with standard framework configuration.
 
@@ -108,8 +138,11 @@ def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
     - ``typer.Exit(N)`` — exits with N (see below).
     - ``ClickException`` (bad option, missing argument, ``typer.BadParameter``)
       — shows the usage message, exits with the exception's own ``exit_code``
-      (2 for usage errors, 1 otherwise).
-    - ``FlowException`` — prints message to stderr, exits 1.
+      (2 for usage errors, 1 otherwise). The usage error click makes of an
+      ``InvalidInputError`` from a ``parser=`` is answered as that error.
+    - ``FlowException`` — prints message to stderr, exits 1. So does a pydantic
+      ``ValidationError`` holding one a validator raised (``InvalidInputError``):
+      the first one's message, whatever else the error holds.
     - ``AppError`` — logs with traceback, prints message to stderr, exits 1.
     - ``typer.Abort`` — prints "Interrupted.", exits 130.
     - ``KeyboardInterrupt`` — exits 130 silently: typer converts it to
@@ -138,6 +171,10 @@ def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
         _stderr.print("\nInterrupted.")
         sys.exit(130)
     except _USAGE as exc:
+        flow = _parser_flow_exception(exc)
+        if flow is not None:
+            _print_error(flow)
+            sys.exit(1)
         exc.show()
         sys.exit(exc.exit_code)
     except FlowException as exc:
@@ -146,4 +183,10 @@ def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
     except AppError as exc:
         log_exception(exc, message_prepend="cli error")
         _print_error(exc)
+        sys.exit(1)
+    except Exception as exc:
+        flow = unwrap_flow_exception(exc)
+        if flow is None:
+            raise
+        _print_error(flow)
         sys.exit(1)

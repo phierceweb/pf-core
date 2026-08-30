@@ -44,6 +44,24 @@ def test_pydantic_validator_extra_forbid_rejects_extras():
     assert sig.passed is False
 
 
+def test_pydantic_validator_lets_a_validators_invalid_input_error_escape():
+    """It escaped validate_shape before pydantic wrapped it, rather than failing the shape."""
+    from pydantic import BaseModel, field_validator
+
+    from pf_core.exceptions import InvalidInputError
+
+    class Scored(BaseModel):
+        score: int
+
+        @field_validator("score")
+        @classmethod
+        def _score(cls, v: int) -> int:
+            raise InvalidInputError("score out of range")
+
+    with pytest.raises(InvalidInputError, match="score out of range"):
+        PydanticValidator(Scored).validate_shape({"score": 5}, agent_type="t")
+
+
 def test_jsonschema_validator_raises_without_extra(monkeypatch):
     """When ``jsonschema`` isn't importable, constructor must fail loud
     with a remediation message naming the extra. Simulate the no-extra

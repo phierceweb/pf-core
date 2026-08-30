@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
 from typing import TYPE_CHECKING, Any, Callable
 
-from pf_core.exceptions import AppError, FlowException
+from pf_core.exceptions import AppError, FlowException, unwrap_flow_exception
 from pf_core.log import get_logger, log_exception
 
 _log = get_logger(__name__)
@@ -209,7 +209,9 @@ def resilient(
         catch: Exception types to absorb. Defaults to ``Exception``;
             narrow this if a specific subset of failures should propagate
             (e.g. ``catch=DomainError`` would let ``KeyboardInterrupt``
-            and unrelated bugs still surface).
+            and unrelated bugs still surface). A validation error wrapping
+            a validator's ``InvalidInputError`` is matched, logged and
+            recorded as that ``InvalidInputError``.
 
     Example::
 
@@ -240,7 +242,10 @@ def resilient(
             label = resolved_label_fn(item)
             try:
                 return fn(item)
-            except catch as exc:
+            except BaseException as raised:
+                exc = unwrap_flow_exception(raised) or raised
+                if not isinstance(exc, catch):
+                    raise
                 # Domain exceptions carry intentional messages; everything
                 # else gets type-prefixed for diagnosis.
                 if isinstance(exc, (AppError, FlowException)):

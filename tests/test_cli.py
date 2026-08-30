@@ -231,6 +231,119 @@ class TestRunCliUsageErrors:
         with pytest.raises(RuntimeError, match="boom"):
             run_cli(self._make_app(run), args=["run"])
 
+    def _validated(self, value: str):
+        from pydantic import BaseModel, field_validator
+
+        class Spec(BaseModel):
+            n: int
+            name: str = "ok"
+
+            @field_validator("name")
+            @classmethod
+            def _name(cls, v: str) -> str:
+                if v == "bad":
+                    raise InvalidInputError("name is reserved")
+                return v
+
+        def build():
+            n = 1 if value == "bad" else value
+            Spec(n=n, name="bad" if value in ("bad", "mixed") else "ok")
+
+        return self._make_app(build)
+
+    def test_a_flow_exception_inside_a_validation_error_exits_1(self, capsys):
+        """pydantic wraps it; the boundary still answers the InvalidInputError it was."""
+        with pytest.raises(SystemExit) as exit_info:
+            run_cli(self._validated("bad"), args=["build"])
+        assert exit_info.value.code == 1
+        assert "name is reserved" in capsys.readouterr().err
+
+    def test_a_flow_exception_beside_ordinary_bad_input_exits_1(self, capsys):
+        """Before the wrap it escaped validation on its own, so it is still what is answered."""
+        with pytest.raises(SystemExit) as exit_info:
+            run_cli(self._validated("mixed"), args=["build"])
+        assert exit_info.value.code == 1
+        assert "name is reserved" in capsys.readouterr().err
+
+    def test_an_ordinary_validation_error_still_propagates(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            run_cli(self._validated("x"), args=["build"])
+
+
+class TestRunCliParserErrors:
+    """click turns a ValueError from a ``parser=`` into a usage error showing only the raw
+    value; an InvalidInputError is one, and run_cli answers it as the FlowException."""
+
+    def _run(self, parse, capsys):
+        app = create_cli("test")
+
+        @app.command()
+        def run(count: int = typer.Option(..., parser=parse)):
+            print(count)
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_cli(app, args=["run", "--count", "5"])
+        return exc_info.value.code, capsys.readouterr().err
+
+    def test_its_message_is_printed_and_it_exits_1(self, capsys):
+        def parse(value):
+            raise InvalidInputError(f"count must be even, got {value}")
+
+        code, err = self._run(parse, capsys)
+        assert code == 1
+        assert "count must be even, got 5" in err
+        assert "Usage" not in err
+
+    def test_one_wrapped_by_a_model_the_parser_builds_is_answered_too(self, capsys):
+        from pydantic import BaseModel, field_validator
+
+        class Count(BaseModel):
+            n: int
+
+            @field_validator("n")
+            @classmethod
+            def _even(cls, v: int) -> int:
+                raise InvalidInputError(f"count must be even, got {v}")
+
+        code, err = self._run(lambda value: Count(n=value).n, capsys)
+        assert code == 1
+        assert "count must be even, got 5" in err
+
+    def test_a_plain_value_error_stays_a_usage_error(self, capsys):
+        def parse(value):
+            raise ValueError("not a count")
+
+        code, err = self._run(parse, capsys)
+        assert code == 2
+        assert "Invalid value" in err
+
+    def test_a_flow_exception_that_is_a_value_error_itself_stays_a_usage_error(self, capsys):
+        class OddCount(InvalidInputError, ValueError):
+            pass
+
+        def parse(value):
+            raise OddCount("count must be even")
+
+        code, _ = self._run(parse, capsys)
+        assert code == 2
+
+    def test_a_bad_parameter_raised_while_handling_one_is_kept(self, capsys):
+        app = create_cli("test")
+
+        @app.command()
+        def run():
+            try:
+                raise InvalidInputError("count is odd")
+            except InvalidInputError:
+                raise typer.BadParameter("count must be even")
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_cli(app, args=["run"])
+        assert exc_info.value.code == 2
+        assert "count must be even" in capsys.readouterr().err
+
 
 class TestExceptionResolution:
     def test_missing_module_or_attr_resolves_empty(self):

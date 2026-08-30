@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from pf_core.exceptions import ConfigurationError
 from pf_core.guards.config import GuardsConfig, app_rel, hard_limit_for, load_guards_config
+from pf_core.guards.structure import run_cli
 
 
 class TestLoadGuardsConfig:
@@ -47,6 +51,48 @@ class TestLoadGuardsConfig:
 
         with pytest.raises(ValueError, match="baseline"):
             load_guards_config(p)
+
+    @pytest.mark.parametrize(
+        ("body", "named", "suggested"),
+        [
+            ("max_function_line = 1\n", "max_function_line", "max_function_lines"),
+            ("[tool.pf_guards.framwork]\n", "framwork", "framework"),
+            ("[tool.pf_guards.comment_budgets]\n", "comment_budgets", "comment_budget"),
+            ("[tool.pf_guards.limit]\n", "limit", "limits"),
+            ('roots = ["src"]\n', "roots", "root"),
+        ],
+    )
+    def test_an_unknown_key_is_refused_by_name(
+        self, tmp_path: Path, body: str, named: str, suggested: str
+    ) -> None:
+        """A misspelled key would leave the check it names off, with nothing saying so."""
+        p = tmp_path / ".pf-guards.toml"
+        p.write_text(f'[tool.pf_guards]\nroot = "src"\n{body}', encoding="utf-8")
+        with pytest.raises(ConfigurationError, match=rf"'{named}'.*{suggested}"):
+            load_guards_config(p)
+
+    def test_an_unknown_key_exits_two(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        (tmp_path / "src").mkdir()
+        (tmp_path / ".pf-guards.toml").write_text(
+            '[tool.pf_guards]\nroot = "src"\n[tool.pf_guards.framwork]\n', encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        assert run_cli([]) == 2
+        assert "framwork" in capsys.readouterr().out
+
+    def test_every_key_a_consumer_uses_is_known(self, tmp_path: Path) -> None:
+        p = tmp_path / ".pf-guards.toml"
+        p.write_text(
+            '[tool.pf_guards]\nroot = ["app", "tests"]\nhard = 500\nsoft = 300\nutil = 400\n'
+            "soft_fraction = 0.8\nmax_function_lines = 60\n"
+            "[tool.pf_guards.layers]\ncli = 400\n[tool.pf_guards.limits]\ntests = 600\n"
+            '[tool.pf_guards.baseline]\n"app/x.py" = 700\n'
+            '[tool.pf_guards.allowed_imports]\napi = ["services"]\n'
+            '[tool.pf_guards.layering_allowlist]\n"app/db/c.py" = ["app.services.x"]\n'
+            "[tool.pf_guards.framework]\n[tool.pf_guards.comment_budget]\n",
+            encoding="utf-8",
+        )
+        assert load_guards_config(p).util == 400
 
     def test_util_and_soft_fraction_parsed(self, tmp_path: Path) -> None:
         p = tmp_path / ".pf-guards.toml"

@@ -95,7 +95,7 @@ class TestClearCache:
 class _FakeResult:
     """Stand-in result: pretends a fresh row was inserted/selected.
 
-    ``insert_ignore`` reads ``.first()`` (Postgres/SQLite) or ``.rowcount``
+    ``insert_ignore`` reads ``.first()`` (Postgres/SQLite) or ``.lastrowid``
     (MySQL); ``resolve_model_id``'s SELECT reads ``.fetchone()``.
     """
 
@@ -108,7 +108,7 @@ class _FakeResult:
         return self._row
 
     @property
-    def rowcount(self) -> int:
+    def lastrowid(self) -> int:
         return 1
 
 
