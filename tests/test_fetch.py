@@ -63,8 +63,11 @@ def _headers(items: dict[str, str] | None = None) -> Message:
 class _Resp:
     """Minimal stand-in for the response objects ``_open`` returns."""
 
-    def __init__(self, body: bytes = b"", headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, body: bytes = b"", headers: dict[str, str] | None = None, status: int = 200
+    ) -> None:
         self.headers = _headers(headers)
+        self.status = status
         self._body = body
         self.closed = False
 
@@ -292,6 +295,18 @@ class TestTextDecoding:
         _, text = Fetcher().get_text(URL)
         assert text == "ok �"
 
+    @pytest.mark.parametrize("charset", ["utf8mb4", "binary", "base64"])
+    def test_charset_without_a_text_codec_decodes_as_utf8(self, monkeypatch, charset):
+        body = "café".encode() + b"\xff"
+        _script_open(monkeypatch, [_Resp(body, {"Content-Type": f"text/html; charset={charset}"})])
+        _, text = Fetcher().get_text(URL)
+        assert text == "café\ufffd"
+
+    def test_unknown_encoding_kwarg_raises(self, monkeypatch):
+        _script_open(monkeypatch, [_Resp(b"ok")])
+        with pytest.raises(LookupError):
+            Fetcher().get_text(URL, encoding="utf8mb4")
+
 
 class TestContentEncoding:
     def test_gzip_body_decoded(self, monkeypatch):
@@ -461,6 +476,46 @@ class TestNotModified:
         _script_open(monkeypatch, [_Resp(b"changed")])
         assert Fetcher().not_modified(URL, etag='"abc"', last_modified=None) is False
 
+    def test_200_with_the_same_strong_etag_true_and_closed(self, monkeypatch):
+        resp = _Resp(b"unchanged", {"ETag": '"abc"'})
+        _script_open(monkeypatch, [resp])
+        assert Fetcher().not_modified(URL, etag='"abc"', last_modified=None) is True
+        assert resp.closed
+
+    @pytest.mark.parametrize("status", [202, 203, 204, 206])
+    def test_other_2xx_with_the_same_strong_etag_false(self, monkeypatch, status):
+        resp = _Resp(b"", {"ETag": '"abc"'}, status=status)
+        _script_open(monkeypatch, [resp])
+        assert Fetcher().not_modified(URL, etag='"abc"', last_modified=None) is False
+        assert resp.closed
+
+    def test_require_304_ignores_a_strong_etag_match(self, monkeypatch):
+        resp = _Resp(b"unchanged", {"ETag": '"abc"'})
+        _script_open(monkeypatch, [resp, _http_error(304)])
+        fetcher = Fetcher()
+        probe = {"etag": '"abc"', "last_modified": None, "require_304": True}
+        assert fetcher.not_modified(URL, **probe) is False
+        assert resp.closed
+        assert fetcher.not_modified(URL, **probe) is True
+
+    @pytest.mark.parametrize(
+        ("sent", "served"),
+        [
+            ('W/"abc"', 'W/"abc"'),
+            ('"abc"', 'W/"abc"'),
+            ('"abc"', '"abd"'),
+            (None, '"abc"'),
+            ("", ""),
+        ],
+        ids=["weak-both", "weak-served", "different", "none-sent", "empty"],
+    )
+    def test_200_without_a_strong_etag_match_false(self, monkeypatch, sent, served):
+        stamp = "Mon, 01 Jan 2024 00:00:00 GMT"
+        resp = _Resp(b"body", {"ETag": served, "Last-Modified": stamp})
+        _script_open(monkeypatch, [resp])
+        assert Fetcher().not_modified(URL, etag=sent, last_modified=stamp) is False
+        assert resp.closed
+
     @pytest.mark.parametrize(
         "item", [urllib.error.URLError("boom"), _http_error(500), _http_error(404)]
     )
@@ -587,6 +642,11 @@ class TestModuleFunctions:
     def test_not_modified(self, monkeypatch):
         _script_open(monkeypatch, [_http_error(304)])
         assert not_modified(URL, etag='"e"', last_modified=None) is True
+
+    def test_not_modified_passes_require_304(self, monkeypatch):
+        _script_open(monkeypatch, [_Resp(b"d", {"ETag": '"e"'}), _Resp(b"d", {"ETag": '"e"'})])
+        assert not_modified(URL, etag='"e"', last_modified=None) is True
+        assert not_modified(URL, etag='"e"', last_modified=None, require_304=True) is False
 
 
 class TestTlsVerification:

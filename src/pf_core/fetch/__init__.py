@@ -132,11 +132,15 @@ class Fetcher:
         self, url: str, *, timeout_s: float = 30.0, encoding: str | None = None
     ) -> tuple[str, str]:
         """Return ``(final_url, text)``; decode ``encoding`` > Content-Type charset > utf-8,
-        always with replacement, never raising on bad bytes."""
+        always with replacement. A charset with no text codec decodes as utf-8; an
+        unknown ``encoding`` raises ``LookupError``."""
         final_url, raw, headers = self._fetch(url, timeout_s=timeout_s)
-        return final_url, raw.decode(
-            encoding or headers.get_content_charset() or "utf-8", "replace"
-        )
+        if encoding:
+            return final_url, raw.decode(encoding, "replace")
+        try:
+            return final_url, raw.decode(headers.get_content_charset() or "utf-8", "replace")
+        except LookupError:
+            return final_url, raw.decode("utf-8", "replace")
 
     def get_bytes(self, url: str, *, timeout_s: float = 180.0) -> tuple[str, bytes]:
         """Return ``(final_url, raw_bytes)`` — longer default timeout for binary downloads."""
@@ -165,11 +169,13 @@ class Fetcher:
         etag: str | None,
         last_modified: str | None,
         timeout_s: float = 30.0,
+        require_304: bool = False,
     ) -> bool:
-        """One conditional GET: ``True`` ONLY on a definitive 304. ``False`` on
-        anything else — changed content, no validators to send, or any error —
-        so a caller can always fall back to the full fetch path safely. Never
-        raises; makes no request when both validators are absent."""
+        """One conditional GET: ``True`` on a definitive 304, or — unless
+        ``require_304`` — on a 200 carrying the strong ``etag`` it was sent.
+        ``False`` on anything else — changed content, no validators to send, or
+        any error — so a caller can always fall back to the full fetch path
+        safely. Never raises; makes no request when both validators are absent."""
         if not etag and not last_modified:
             return False
         extra: dict[str, str] = {}
@@ -182,8 +188,15 @@ class Fetcher:
                 assert_public_url(url)
             if self._throttle is not None:
                 self._throttle.acquire()
-            self._open(self._request(url, extra), timeout_s).close()
-            return False
+            resp = self._open(self._request(url, extra), timeout_s)
+            try:
+                return (
+                    not require_304
+                    and resp.status == 200
+                    and _strong_match(etag, resp.headers.get("ETag"))
+                )
+            finally:
+                resp.close()
         except urllib.error.HTTPError as exc:
             return exc.code == 304
         except Exception:
@@ -281,6 +294,13 @@ class Fetcher:
         return decode_body(data, resp.headers, self._max_bytes, url)
 
 
+def _strong_match(sent: str | None, served: str | None) -> bool:
+    """Strong ETag comparison: a non-empty, non-weak tag was sent and served unchanged."""
+    if not sent or sent.startswith("W/"):
+        return False
+    return sent == served
+
+
 def fetch_text(
     url: str, *, timeout_s: float = 30.0, retries: int = 2, encoding: str | None = None
 ) -> tuple[str, str]:
@@ -300,9 +320,13 @@ def fetch_bytes_meta(
     return Fetcher(retries=retries).get_bytes_meta(url, timeout_s=timeout_s)
 
 
-def not_modified(url: str, *, etag: str | None, last_modified: str | None) -> bool:
+def not_modified(
+    url: str, *, etag: str | None, last_modified: str | None, require_304: bool = False
+) -> bool:
     """:meth:`Fetcher.not_modified` via a default per-call Fetcher."""
-    return Fetcher().not_modified(url, etag=etag, last_modified=last_modified)
+    return Fetcher().not_modified(
+        url, etag=etag, last_modified=last_modified, require_304=require_304
+    )
 
 
 def browser_headers() -> dict[str, str]:

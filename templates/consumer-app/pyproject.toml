@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     # pf-core with the whole framework surface. Add a DB driver extra
     # ([postgres] or [mysql]) for non-SQLite backends. ~= takes patch releases only.
-    "pf-core[__EXTRAS__]~=0.23.0",
+    "pf-core[__EXTRAS__]~=0.24.0",
 ]
 
 [project.optional-dependencies]

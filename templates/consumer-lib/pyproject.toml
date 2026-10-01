@@ -9,7 +9,7 @@ description = "A pf-core library / tool."
 requires-python = ">=3.12"
 dependencies = [
     # pf-core foundation + the extras this project uses; ~= takes patch releases only.
-    "pf-core[__EXTRAS__]~=0.23.0",
+    "pf-core[__EXTRAS__]~=0.24.0",
 ]
 
 [project.optional-dependencies]

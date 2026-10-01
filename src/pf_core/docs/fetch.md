@@ -51,7 +51,7 @@ Constructor knobs (all keyword-only):
 | `max_redirects` | `5` | Hop budget for the manual redirect walk. |
 | `verify_tls` | kwarg > `PF_VERIFY_TLS` env > legacy `URL_CHECK_VERIFY_TLS` > on | Frozen at construction — see below. |
 
-`get_text` decodes with `encoding` kwarg > Content-Type charset > utf-8, always with replacement. `get_bytes` defaults to a longer timeout than `get_text` (binary payloads run large on slow CDNs); both take a per-call `timeout_s`. Responses with `Content-Encoding: gzip`/`deflate` are decoded transparently; the default request headers advertise no `Accept-Encoding`, so servers send identity unless you opt in via headers.
+`get_text` decodes with `encoding` kwarg > Content-Type charset > utf-8, always with replacement. A charset Python has no text codec for (`utf8mb4`, `binary`) decodes as utf-8; an unknown `encoding` kwarg raises `LookupError`, since that one is the caller's. `get_bytes` defaults to a longer timeout than `get_text` (binary payloads run large on slow CDNs); both take a per-call `timeout_s`. Responses with `Content-Encoding: gzip`/`deflate` are decoded transparently; the default request headers advertise no `Accept-Encoding`, so servers send identity unless you opt in via headers.
 
 Decoding runs against `max_bytes`, not just the wire read — a cap that bounded only the compressed bytes would leave a compressed response free to exhaust memory as it inflated. A body that exceeds the budget while inflating raises `ClientError` mid-decode, and one that cannot be decoded at all (bad magic, corrupt payload, truncated stream) raises `ClientError` rather than escaping as `gzip.BadGzipFile` / `zlib.error` / `EOFError`. **Set `max_bytes` on any fetcher pointed at URLs you don't control** — the default is unlimited in both directions.
 
@@ -74,7 +74,7 @@ Certificates are verified by default. Resolution is `verify_tls=` kwarg > `PF_VE
 
 `PF_VERIFY_TLS=0` disables verification for **every** outbound path in the process — this `Fetcher` tier and the `[http]` tier both. It is not scoped to URL inspection despite the legacy name; pass `verify_tls=False` to one `Fetcher` instead of reaching for the env var when only one client needs it.
 
-Unlike the `[http]` tier, which re-reads the setting per request, a `Fetcher` resolves it **once at construction** and freezes it into its opener — rebuild the `Fetcher` to change policy. The module-level `fetch_text` / `fetch_bytes` / `fetch_bytes_meta` helpers build a fresh `Fetcher` per call, so they pick up env changes immediately.
+Unlike the `[http]` tier, which re-reads the setting per request, a `Fetcher` resolves it **once at construction** and freezes it into its opener — rebuild the `Fetcher` to change policy. The module-level `fetch_text` / `fetch_bytes` / `fetch_bytes_meta` / `not_modified` helpers build a fresh `Fetcher` per call, so they pick up env changes immediately.
 
 ## Retry contract
 
@@ -93,7 +93,7 @@ Redirects are walked manually: each 3xx hop's `Location` is resolved and — whe
 
 ## Conditional GETs
 
-`get_bytes_meta` returns the response's cache validators (`Validators`: `etag`, `last_modified`) alongside the body, for callers that persist them. `not_modified(url, etag=..., last_modified=...)` performs one conditional GET and returns `True` **only on a definitive 304** — anything else (changed content, missing validators, any error) returns `False` so the caller can always fall back to a full fetch. It never raises, and sends no request when both validators are `None`.
+`get_bytes_meta` returns the response's cache validators (`Validators`: `etag`, `last_modified`) alongside the body, for callers that persist them. `not_modified(url, etag=..., last_modified=...)` performs one conditional GET and returns `True` **only on a definitive 304, or on a 200 carrying the strong ETag it was sent** — a server that ignores `If-None-Match` but still names the same bytes. Weak ETags (`W/`), a matching `Last-Modified`, and any other 2xx status never count. The 200 path trusts the ETag of a server that has already ignored the conditional header, so a server that sends one ETag for changing content reads as unchanged on every probe; pass `require_304=True` for a source like that, and only a 304 counts. Anything else (changed content, missing validators, any error) returns `False` so the caller can always fall back to a full fetch. It never raises, and sends no request when both validators are `None`.
 
 ## browser_headers
 

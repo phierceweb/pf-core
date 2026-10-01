@@ -2,6 +2,17 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.24.0 — 2026-09-30
+
+### Changed
+- `Fetcher.not_modified` and the module-level `not_modified` return `True` on a 200 that carries
+  the same strong ETag they sent, as well as on a 304. Weak ETags, a matching `Last-Modified`
+  and any other 2xx status still return `False`. `require_304=True` counts only a 304.
+
+### Fixed
+- `Fetcher.get_text` / `fetch_text` decode as utf-8 when the Content-Type charset names no text
+  codec (`utf8mb4`, `binary`); they raised `LookupError`. An unknown `encoding=` still raises.
+
 ## v0.23.0 — 2026-09-29
 
 ### Breaking
