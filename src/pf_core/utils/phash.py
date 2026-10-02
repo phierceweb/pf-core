@@ -38,6 +38,10 @@ from pf_core.log import get_logger
 
 logger = get_logger(__name__)
 
+# Pillow picks the decoder from the file's content, not its extension, so without this list a
+# crafted embedded image reaches every decoder Pillow ships (PSD, FITS, JPEG 2000, ...).
+_DOCUMENT_IMAGE_FORMATS = ("PNG", "JPEG", "GIF", "BMP", "TIFF", "WEBP")
+
 
 def compute_phash(image_path: Path) -> str:
     """Perceptual hash of an image as a 16-char hex string.
@@ -51,6 +55,9 @@ def compute_phash(image_path: Path) -> str:
     Raises:
         ImportError: If the ``ImageHash`` / ``Pillow`` extra isn't
             installed (``pip install 'pf-core[image-phash]'``).
+        PIL.UnidentifiedImageError: If the file's content is not PNG,
+            JPEG, GIF, BMP, TIFF or WebP, whatever its extension. No
+            other format's decoder runs.
     """
     try:
         import imagehash  # type: ignore[import-untyped]
@@ -61,7 +68,7 @@ def compute_phash(image_path: Path) -> str:
             "Install with: pip install 'pf-core[image-phash]'"
         ) from e
 
-    with Image.open(image_path) as img:
+    with Image.open(image_path, formats=_DOCUMENT_IMAGE_FORMATS) as img:
         return str(imagehash.phash(img))
 
 

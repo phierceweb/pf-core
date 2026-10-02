@@ -3,12 +3,13 @@
 These tests exercise the hex-string utilities (Hamming distance,
 clustering, decoration detection) directly. The ``compute_phash``
 function itself needs ``ImageHash`` + ``Pillow`` from the
-``[image-phash]`` extra; we test it lightly with a real PNG when the
+``[image-phash]`` extra; we test it with real image files when the
 deps are importable, and skip cleanly when they aren't.
 """
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
 import pytest
@@ -132,6 +133,86 @@ def test_compute_phash_returns_hex_string(tmp_path: Path) -> None:
     assert len(digest) == 16
     # Hex.
     int(digest, 16)
+
+
+def _write_psd(path: Path) -> None:
+    """8x8 grayscale PSD that Pillow's PSD plugin decodes: header, three empty sections, raw pixels."""
+    header = b"8BPS" + struct.pack(">H6xHIIHH", 1, 1, 8, 8, 8, 1)
+    path.write_bytes(header + bytes(12) + bytes(2) + bytes(range(0, 256, 4)))
+
+
+@pytest.mark.skipif(not _have_phash_deps(), reason="[image-phash] extra not installed")
+def test_compute_phash_refuses_psd_without_decoding(tmp_path: Path, monkeypatch) -> None:
+    """Pillow picks the decoder by content, so a PSD named .png must not reach the PSD plugin."""
+    from PIL import PsdImagePlugin, UnidentifiedImageError
+
+    from pf_core.utils.phash import compute_phash
+
+    target = tmp_path / "embedded.png"
+    _write_psd(target)
+    reached: list[object] = []
+    real_open = PsdImagePlugin.PsdImageFile._open
+
+    def spy(self: PsdImagePlugin.PsdImageFile) -> None:
+        reached.append(self)
+        real_open(self)
+
+    monkeypatch.setattr(PsdImagePlugin.PsdImageFile, "_open", spy)
+
+    with pytest.raises(UnidentifiedImageError):
+        compute_phash(target)
+    assert reached == []
+
+
+@pytest.mark.skipif(not _have_phash_deps(), reason="[image-phash] extra not installed")
+@pytest.mark.parametrize("fmt", ["JPEG2000", "AVIF", "ICO", "TGA", "PPM"])
+def test_compute_phash_refuses_other_raster_formats(tmp_path: Path, fmt: str) -> None:
+    """Formats outside the allowlist are refused even when Pillow can decode them, so widening the list fails here."""
+    from PIL import Image, UnidentifiedImageError
+
+    from pf_core.utils.phash import compute_phash
+
+    target = tmp_path / "embedded.png"
+    try:
+        Image.linear_gradient("L").convert("RGB").resize((32, 32)).save(target, format=fmt)
+    except (KeyError, OSError):
+        pytest.skip(f"this Pillow cannot write {fmt}")
+    with Image.open(target) as unrestricted:
+        assert unrestricted.format == fmt
+
+    with pytest.raises(UnidentifiedImageError):
+        compute_phash(target)
+
+
+@pytest.mark.skipif(not _have_phash_deps(), reason="[image-phash] extra not installed")
+@pytest.mark.parametrize(
+    ("fmt", "name"),
+    [
+        ("PNG", "img.png"),
+        ("JPEG", "img.jpg"),
+        ("MPO", "multi-picture.jpg"),
+        ("GIF", "img.gif"),
+        ("BMP", "img.bmp"),
+        ("TIFF", "img.tif"),
+        ("WEBP", "img.webp"),
+    ],
+)
+def test_compute_phash_hashes_document_formats(tmp_path: Path, fmt: str, name: str) -> None:
+    """Each format documents carry hashes exactly as an unrestricted open does, so cache keys hold."""
+    import imagehash
+    from PIL import Image
+
+    from pf_core.utils.phash import compute_phash
+
+    target = tmp_path / name
+    img = Image.linear_gradient("L").convert("RGB").resize((32, 32))
+    extra = {"save_all": True, "append_images": [img]} if fmt == "MPO" else {}
+    img.save(target, format=fmt, **extra)
+    with Image.open(target) as reference:
+        assert reference.format == fmt
+        expected = str(imagehash.phash(reference))
+
+    assert compute_phash(target) == expected
 
 
 @pytest.mark.skipif(not _have_phash_deps(), reason="[image-phash] extra not installed")

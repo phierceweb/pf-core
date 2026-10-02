@@ -30,6 +30,14 @@ decoration_basenames = detect_decoration_basenames(
 
 Walks the image set, computes a perceptual hash per image, clusters near-duplicates, and returns the basenames of any cluster large enough to be a recurring decoration. Missing files and per-image hash failures are logged and skipped — a single unreadable image won't kill a long dedup pass.
 
+## Accepted formats
+
+`compute_phash` decodes only PNG, JPEG (multi-picture JPEGs included), GIF, BMP, TIFF and WebP. Pillow identifies a file by its content, not its extension, and any other content (AVIF, PSD, FITS, JPEG 2000, ICO, SVG, EMF, …) raises `PIL.UnidentifiedImageError` before a decoder runs. `detect_decoration_basenames` logs and skips such a file like any other unreadable image, and a cache keyed by `compute_phash` has no key for it.
+
+JPEG 2000 is refused on purpose, although PDFs can embed it (`/JPXDecode`). An extractor that saves a PDF's image streams as-is gets those images refused; one that re-encodes every image to PNG or JPEG doesn't.
+
+Images extracted from documents are untrusted input. The restriction keeps a crafted one away from the rest of Pillow's decoders, and it holds for a consumer that pins its own older Pillow: Pillow 10.4, for example, carries CVEs in the PSD, FITS, McIdas and JPEG 2000 decoders, all fixed in the Pillow the `[image-phash]` extra requires. It narrows the exposure rather than closing it — that release also fixes code the allowed decoders reach, such as the crop routine an animated PNG's first frame goes through (CVE-2026-59199) — so stay on the extra's floor where you can.
+
 ## Why DCT-based phash, not sha256
 
 `sha256` flips entirely with a single re-encoded byte. The same source figure rasterized at two different resolutions, or with one pixel of margin variation, produces totally different sha256 digests but near-identical perceptual hashes (typically within a handful of bits). DCT-based phash captures the visual signal, not the byte signal — so "same logo, scanned twice" clusters together.

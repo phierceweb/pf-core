@@ -2,6 +2,11 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.24.1 — 2026-10-01
+
+### Security
+- `compute_phash` decodes only PNG, JPEG, GIF, BMP, TIFF and WebP, identified by content rather than extension. Any other file raises `PIL.UnidentifiedImageError` before a decoder runs, so a crafted image extracted from a document never reaches Pillow's PSD, FITS, McIdas or JPEG 2000 decoders, on a Pillow older than the extra's 12.3 floor too. **Breaking (narrow):** other formats (JPEG 2000, AVIF, ICO, TGA, PSD, …) no longer hash, so a cache keyed by the hash has no entry for them; `detect_decoration_basenames` logs and skips them like any unreadable image.
+
 ## v0.24.0 — 2026-09-30
 
 ### Changed
