@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 import pytest
@@ -15,6 +16,7 @@ from pf_core.llm.tracking import (
     llm_runs,
     metadata,
     clear_resolver_caches,
+    purge_old_payloads,
 )
 
 
@@ -375,3 +377,30 @@ def test_add_does_not_warn_on_complete_payload(tracking_db, seed_run, caplog):
     with caplog.at_level(logging.WARNING, logger="pf_core.eval._golden"):
         GoldenSetRepo().add(seed_run, version="warn_v1")
     assert not [r for r in caplog.records if "golden_missing" in r.getMessage()]
+
+
+# ---------------------------------------------------------------------------
+# Retention — purge_old_payloads must not strand golden members
+# ---------------------------------------------------------------------------
+
+
+def _purge_as_of_next_year(**kwargs) -> int:
+    future = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(days=365)
+    return purge_old_payloads(older_than_days=90, now=future, **kwargs)
+
+
+@pytest.mark.parametrize("keep_flagged", [True, False])
+def test_purge_keeps_golden_member_payload(tracking_db, seed_run, keep_flagged):
+    GoldenSetRepo().add(seed_run, version="golden_v1")
+
+    assert _purge_as_of_next_year(keep_flagged=keep_flagged) == 0
+    assert GoldenSetRepo().get_payload(seed_run) is not None
+
+
+def test_purge_drops_payload_once_removed_from_golden_set(tracking_db, seed_run):
+    repo = GoldenSetRepo()
+    repo.add(seed_run, version="golden_v1")
+    repo.remove(seed_run, version="golden_v1")
+
+    assert _purge_as_of_next_year() == 1
+    assert repo.get_payload(seed_run) is None

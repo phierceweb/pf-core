@@ -37,6 +37,8 @@ A golden run is an `llm_runs` row that has been reviewed, found good, and tagged
 
 Membership is tag-based. A run can belong to multiple versions (`golden_v1`, `golden_v2`).
 
+`purge_old_payloads` skips members, so retention never strands a golden without the payload it replays from; tagging a run by hand without `add()` gets no such protection.
+
 ### Replay
 
 Given a golden run, the replay engine:

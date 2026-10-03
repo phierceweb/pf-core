@@ -1,10 +1,5 @@
 """
-Retention helper for ``llm_run_payloads``.
-
-The hot ``llm_runs`` table keeps every analytics-relevant column forever;
-the cold sidecar (rendered prompts, raw response, parsed output) is the
-expensive one. ``purge_old_payloads`` drops payload rows past a given age
-while preserving the parent run rows.
+Retention helper for ``llm_run_payloads``, the expensive cold sidecar of ``llm_runs``.
 
 Retention is a deliberate operator decision — never called automatically.
 """
@@ -27,6 +22,8 @@ def purge_old_payloads(
 ) -> int:
     """Delete ``llm_run_payloads`` rows whose parent run is older than the cutoff.
 
+    Golden-set members are always kept, regardless of ``keep_flagged``.
+
     Args:
         older_than_days: Age threshold in days. Payloads attached to runs
             created strictly before ``now - older_than_days`` are purged.
@@ -44,6 +41,19 @@ def purge_old_payloads(
     cutoff = reference_now - dt.timedelta(days=older_than_days)
 
     eligible = select(s.llm_runs.c.id).where(s.llm_runs.c.created_at < cutoff)
+    # Golden members replay from their payload. GoldenSetRepo.add() writes both
+    # rows; remove() drops only the tag, so the pair means "currently a member".
+    golden_approved = (
+        select(s.llm_run_outcomes.c.llm_run_id)
+        .where(s.llm_run_outcomes.c.llm_run_id == s.llm_runs.c.id)
+        .where(s.llm_run_outcomes.c.outcome_kind == "golden_approved")
+    )
+    eval_tagged = (
+        select(s.llm_run_tags.c.llm_run_id)
+        .where(s.llm_run_tags.c.llm_run_id == s.llm_runs.c.id)
+        .where(s.llm_run_tags.c.tag.like("eval:%"))
+    )
+    eligible = eligible.where(~(exists(golden_approved) & exists(eval_tagged)))
     if keep_flagged:
         failed_validation = (
             select(s.llm_run_validations.c.llm_run_id)

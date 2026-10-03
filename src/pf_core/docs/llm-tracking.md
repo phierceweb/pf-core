@@ -295,6 +295,8 @@ purge_old_payloads(older_than_days=30, keep_flagged=False)
 
 Drops `llm_run_payloads` rows only — analytics columns on `llm_runs` are preserved forever. Returns the count of deleted payload rows.
 
+Golden-set members (`GoldenSetRepo.add`, see [eval-harness.md](eval-harness.md#the-golden-set)) always keep their payloads, whatever `keep_flagged` is — replay reads them. `GoldenSetRepo.remove` makes a run purgeable again.
+
 `keep_flagged=True` (default) preserves payloads attached to:
 - Any run whose `status != 'success'`, OR
 - Any run with at least one validation row where `passed = false`.

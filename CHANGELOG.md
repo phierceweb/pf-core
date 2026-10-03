@@ -2,6 +2,11 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.24.2 — 2026-10-03
+
+### Fixed
+- `purge_old_payloads` keeps golden-set members' payloads, whatever `keep_flagged` is; `EvalRunner` fails a golden whose payload is gone with `PreconditionError`, and a purged payload can't be recovered. A run removed with `GoldenSetRepo.remove` is purgeable again.
+
 ## v0.24.1 — 2026-10-01
 
 ### Security
